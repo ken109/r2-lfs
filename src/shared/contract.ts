@@ -1,6 +1,6 @@
 // Contracts shared by the Worker and the CLI. Keep this file free of runtime-specific APIs.
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.0.0"; // x-release-please-version
 
 /** Must match `compatibility_date` in wrangler.jsonc; `r2-lfs setup` deploys with it. */
 export const WORKER_COMPATIBILITY_DATE = "2026-08-22";

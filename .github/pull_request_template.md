@@ -4,4 +4,5 @@
 
 - [ ] `pnpm lint`, `pnpm typecheck` and `pnpm test` pass
 - [ ] Tests cover the change
-- [ ] README and CHANGELOG are updated if users will notice the change
+- [ ] The PR title follows Conventional Commits (it becomes the changelog entry)
+- [ ] README is updated if users will notice the change
