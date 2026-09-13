@@ -7,13 +7,15 @@ import { UsageError } from "./domain/errors.ts";
 import { type LfsLocation, parseLfsUrl } from "./domain/remote.ts";
 import { Git, gitLfsInstalled } from "./infra/git.ts";
 import { GhCli } from "./infra/github-cli.ts";
-import { UserGitConfig } from "./infra/global-git-config.ts";
+import { GH_CREDENTIAL_HELPER, UserGitConfig } from "./infra/global-git-config.ts";
 import { HttpLfsClient } from "./infra/lfs-client.ts";
 import { LocalFiles } from "./infra/local-files.ts";
 import { R2Bucket, r2Configured } from "./infra/r2-bucket.ts";
 import { NpxWrangler } from "./infra/wrangler-cli.ts";
 
 export const gitConfig = new UserGitConfig();
+/** The credential helper `init` installs, so `doctor` can recognise it. */
+export const ghCredentialHelper = GH_CREDENTIAL_HELPER;
 export const files = new LocalFiles();
 export const wrangler = new NpxWrangler();
 

@@ -18,12 +18,17 @@
     "unicorn/no-array-for-each": "error",
     "eqeqeq": "error",
     "prefer-template": "error",
+    // Layer rules below match Node.js modules by the node: prefix.
+    "unicorn/prefer-node-protocol": "error",
     // Loops that await are sequential on purpose: paginated listings, ordered progress output,
     // and not hammering the GitHub, R2 or LFS APIs with parallel requests.
     "no-await-in-loop": "off",
     // Spreading small result objects in map() reads better, and none of these paths are hot.
     "oxc/no-map-spread": "off"
   },
+  // Layer boundaries (docs/architecture.md). Each override lists every pattern for its files, because a later
+  // override replaces the rule rather than adding to it. The regex engine has no lookahead; exceptions use
+  // gitignore-style groups such as ["../app/*", "!../app/ports.ts"].
   "overrides": [
     {
       "files": ["src/shared/**"],
@@ -32,22 +37,10 @@
           "error",
           {
             "patterns": [
-              { "regex": "^\\.\\.?/", "message": "src/shared is the contract between the Worker and the CLI; it imports nothing." }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/**"],
-      "excludeFiles": ["src/shared/**", "src/domain/**", "src/app/**", "src/infra/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              { "regex": "(^|/)cli/", "message": "The Worker must not depend on the CLI." },
-              { "regex": "^node:", "message": "The Worker runs on workerd, not Node.js." }
+              {
+                "regex": ".",
+                "message": "src/shared is the contract between the Worker and the CLI; it imports nothing."
+              }
             ]
           }
         ]
@@ -61,10 +54,21 @@
           {
             "patterns": [
               {
+                "regex": "(^|/)cli/",
+                "message": "The Worker must not depend on the CLI."
+              },
+              {
+                "regex": "^node:",
+                "message": "The Worker runs on workerd, not Node.js."
+              },
+              {
                 "regex": "^\\.\\./(app|infra|http)/|^\\.\\./(env|index)\\.ts$",
                 "message": "domain holds rules only; it depends on nothing but shared."
               },
-              { "regex": "^(aws4fetch|node:.*)$", "message": "domain must not do I/O." }
+              {
+                "regex": "^aws4fetch$",
+                "message": "domain must not do I/O."
+              }
             ]
           }
         ]
@@ -78,10 +82,21 @@
           {
             "patterns": [
               {
+                "regex": "(^|/)cli/",
+                "message": "The Worker must not depend on the CLI."
+              },
+              {
+                "regex": "^node:",
+                "message": "The Worker runs on workerd, not Node.js."
+              },
+              {
                 "regex": "^\\.\\./(infra|http)/|^\\.\\./(env|index)\\.ts$",
                 "message": "app reaches the outside world only through ports.ts."
               },
-              { "regex": "^(aws4fetch|node:.*)$", "message": "app must not do I/O directly; add a port." }
+              {
+                "regex": "^aws4fetch$",
+                "message": "app must not do I/O directly; add a port."
+              }
             ]
           }
         ]
@@ -92,7 +107,46 @@
       "rules": {
         "no-restricted-imports": [
           "error",
-          { "patterns": [{ "regex": "^\\.\\./http/|^\\.\\./index\\.ts$", "message": "infra must not depend on the HTTP layer." }] }
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)cli/",
+                "message": "The Worker must not depend on the CLI."
+              },
+              {
+                "regex": "^node:",
+                "message": "The Worker runs on workerd, not Node.js."
+              },
+              {
+                "regex": "^\\.\\./http/|^\\.\\./index\\.ts$",
+                "message": "infra must not depend on the HTTP layer."
+              },
+              {
+                "group": ["../app/*", "!../app/ports.ts"],
+                "message": "infra implements ports; it must not call use cases."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/http/**", "src/index.ts", "src/env.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)cli/",
+                "message": "The Worker must not depend on the CLI."
+              },
+              {
+                "regex": "^node:",
+                "message": "The Worker runs on workerd, not Node.js."
+              }
+            ]
+          }
         ]
       }
     },
@@ -104,10 +158,17 @@
           {
             "patterns": [
               {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              },
+              {
                 "regex": "^\\.\\./(app|infra|ui|commands)/|^\\.\\./(composition|main)\\.ts$",
                 "message": "domain holds rules only; it depends on nothing but src/shared."
               },
-              { "regex": "^(citty|@clack/prompts|aws4fetch|node:.*)$", "message": "domain must not do I/O or talk to the terminal." }
+              {
+                "regex": "^(citty|@clack/prompts|aws4fetch)$|^node:",
+                "message": "domain must not do I/O or talk to the terminal."
+              }
             ]
           }
         ]
@@ -121,13 +182,20 @@
           {
             "patterns": [
               {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              },
+              {
                 "regex": "^\\.\\./(infra|ui|commands)/|^\\.\\./(composition|main)\\.ts$",
                 "message": "app reaches the outside world only through ports.ts."
               },
-              { "regex": "^(citty|@clack/prompts|aws4fetch)$", "message": "app must not talk to the terminal or the network directly." },
               {
-                "regex": "^node:(fs|fs/promises|child_process|os|net|http|https|process|readline)$",
-                "message": "app must not do I/O directly; add a port."
+                "regex": "^(citty|@clack/prompts|aws4fetch)$",
+                "message": "app must not talk to the terminal or the network directly."
+              },
+              {
+                "group": ["node:*", "!node:path", "!node:crypto"],
+                "message": "app may use only pure Node modules (node:path, node:crypto); add a port for I/O."
               }
             ]
           }
@@ -142,10 +210,21 @@
           {
             "patterns": [
               {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              },
+              {
                 "regex": "^\\.\\./(ui|commands)/|^\\.\\./(composition|main)\\.ts$",
                 "message": "infra implements ports; it must not depend on presentation."
               },
-              { "regex": "^(citty|@clack/prompts)$", "message": "infra must not talk to the terminal." }
+              {
+                "group": ["../app/*", "!../app/ports.ts"],
+                "message": "infra implements ports; it must not call use cases."
+              },
+              {
+                "regex": "^(citty|@clack/prompts)$",
+                "message": "infra must not talk to the terminal."
+              }
             ]
           }
         ]
@@ -159,10 +238,25 @@
           {
             "patterns": [
               {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              },
+              {
                 "regex": "^\\.\\./(infra|commands)/|^\\.\\./(composition|main)\\.ts$",
                 "message": "ui renders; it must not reach infrastructure."
               },
-              { "regex": "^citty$", "message": "Argument parsing belongs to commands." }
+              {
+                "group": ["../app/*", "!../app/ports.ts"],
+                "message": "ui renders; it must not call use cases."
+              },
+              {
+                "regex": "^(citty|aws4fetch)$",
+                "message": "Argument parsing belongs to commands, and ui does no network I/O."
+              },
+              {
+                "group": ["node:*", "!node:util"],
+                "message": "ui renders; it must not do I/O."
+              }
             ]
           }
         ]
@@ -175,8 +269,61 @@
           "error",
           {
             "patterns": [
-              { "regex": "^\\.\\./infra/(?!global-git-config\\.ts$)", "message": "commands get adapters from composition.ts." },
-              { "regex": "^(aws4fetch|node:(fs|fs/promises|child_process))$", "message": "commands must not do I/O; call a use case." }
+              {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              },
+              {
+                "regex": "^\\.\\./infra/",
+                "message": "commands get adapters from composition.ts."
+              },
+              {
+                "regex": "^(aws4fetch|@clack/prompts)$",
+                "message": "commands talk to the terminal through ui/ and to the network through use cases."
+              },
+              {
+                "group": ["node:*", "!node:path"],
+                "message": "commands must not do I/O; call a use case."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["cli/composition.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              },
+              { "regex": "^\\./(ui|commands)/|^\\./main\\.ts$", "message": "composition wires adapters; it must not reach presentation." },
+              {
+                "regex": "^(citty|@clack/prompts|aws4fetch)$",
+                "message": "composition constructs adapters; packages are used by the layers that need them."
+              },
+              { "group": ["./app/*", "!./app/ports.ts"], "message": "composition wires adapters to ports; commands call the use cases." },
+              { "group": ["node:*", "!node:url"], "message": "composition constructs adapters; I/O belongs in infra." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["cli/main.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)src/(domain|app|infra|http)/|(^|/)src/(env|index)\\.ts$",
+                "message": "The CLI shares only src/shared with the Worker."
+              }
             ]
           }
         ]
@@ -184,7 +331,9 @@
     },
     {
       "files": ["scripts/**"],
-      "rules": { "no-console": "off" }
+      "rules": {
+        "no-console": "off"
+      }
     }
   ]
 }

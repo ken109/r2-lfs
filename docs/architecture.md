@@ -10,6 +10,7 @@ src/shared/contract.ts   bucket key layout, server info, the tokens file; import
 
 Both are split into layers with dependencies pointing inwards. The rules are enforced by
 `no-restricted-imports` in [`.oxlintrc.json`](../.oxlintrc.json), so `pnpm lint` fails on a violation.
+The CLI may import only `src/shared` from the Worker, and the Worker nothing from the CLI or Node.js.
 
 ## Worker (`src/`)
 
@@ -39,9 +40,11 @@ them to responses.
 ```mermaid
 flowchart LR
   main[main.ts] --> commands
+  main --> infra
   commands --> composition[composition.ts]
   commands --> app
   commands --> ui
+  commands --> domain
   composition --> infra
   ui --> app
   infra --> app
@@ -50,14 +53,15 @@ flowchart LR
   domain --> shared[src/shared]
 ```
 
-| Layer            | Holds                                                                                                                                      | May import                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `domain/`        | gc planning, retention policy and globs, history aggregation, usage math, tar layout, token file edits                                     | `src/shared`                                                       |
-| `app/`           | Use cases (`init`, `doctor`, `migrate`, `usage`, `verify`, `why`, `gc`, `restore`, `archive`, `setup`, `token`) and `ports.ts`             | `domain/`, pure Node modules such as `node:path` and `node:crypto` |
-| `infra/`         | `Git` (git and git-lfs executables), `R2Bucket` (S3 API via aws4fetch), `HttpLfsClient`, `GhCli`, `NpxWrangler`, `LocalFiles`, `TarWriter` | `app/ports.ts`, `domain/`                                          |
-| `ui/`            | `Terminal` (clack output, prompts, the `Reporter` implementation) and formatting                                                           | `app/ports.ts`, `domain/`                                          |
-| `composition.ts` | The only module that constructs adapters                                                                                                   | `infra/`                                                           |
-| `commands/`      | citty definitions: parse arguments, ask questions, call a use case, render the result                                                      | `app/`, `ui/`, `composition.ts`                                    |
+| Layer            | Holds                                                                                                                                      | May import                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `domain/`        | gc planning, retention policy and globs, history aggregation, usage math, tar layout, token file edits                                     | `src/shared`                                                                     |
+| `app/`           | Use cases (`init`, `doctor`, `migrate`, `usage`, `verify`, `why`, `gc`, `restore`, `archive`, `setup`, `token`) and `ports.ts`             | `domain/`, `node:path` and `node:crypto`                                         |
+| `infra/`         | `Git` (git and git-lfs executables), `R2Bucket` (S3 API via aws4fetch), `HttpLfsClient`, `GhCli`, `NpxWrangler`, `LocalFiles`, `TarWriter` | `app/ports.ts`, `domain/`                                                        |
+| `ui/`            | `Terminal` (clack output, prompts, the `Reporter` implementation) and formatting                                                           | `app/ports.ts`, `domain/`, `node:util`                                           |
+| `composition.ts` | The only module that constructs adapters                                                                                                   | `infra/`                                                                         |
+| `commands/`      | citty definitions: parse arguments, ask questions, call a use case, render the result                                                      | `app/`, `domain/` (errors, types, presets), `ui/`, `composition.ts`, `node:path` |
+| `main.ts`        | The entry point: lazy sub commands and turning errors into messages                                                                        | everything                                                                       |
 
 Use cases never print. They report progress through the `Reporter` port and return data, which
 commands render as text or `--json`. Tests drive use cases with in-memory fakes

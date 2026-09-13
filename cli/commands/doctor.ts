@@ -2,7 +2,6 @@ import { defineCommand } from "citty";
 
 import { diagnose } from "../app/doctor.ts";
 import * as compose from "../composition.ts";
-import { GH_CREDENTIAL_HELPER } from "../infra/global-git-config.ts";
 import { red } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
 import { jsonArg } from "./shared.ts";
@@ -29,7 +28,7 @@ export default defineCommand({
       gh: compose.gh(repo?.dir),
       connect: compose.connect,
       r2Configured: compose.r2Configured(),
-      ghHelper: GH_CREDENTIAL_HELPER,
+      ghHelper: compose.ghCredentialHelper,
     });
 
     if (args.json) term.json(checks);
