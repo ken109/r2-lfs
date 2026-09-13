@@ -1,9 +1,7 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
     "types": ["node"]
   },
-  "include": ["."]
+  "include": [".", "../src/shared", "../test/cli"]
 }

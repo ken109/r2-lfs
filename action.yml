@@ -1,0 +1,45 @@
+name: r2-lfs gc
+description: Move Git LFS objects that no recent commit needs to the trash of an r2-lfs bucket
+author: Kensuke Kubo
+branding:
+  icon: trash-2
+  color: orange
+
+inputs:
+  apply:
+    description: Make the changes. Without it gc only reports what it would do.
+    default: "false"
+  args:
+    description: Extra arguments for `r2-lfs gc`, e.g. `--keep-days 60 --no-trash`.
+    default: ""
+  version:
+    description: r2-lfs version to run from npm.
+    default: "0"
+  working-directory:
+    description: The repository checkout to scan.
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: r2-lfs gc
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        R2_LFS_VERSION: ${{ inputs.version }}
+        R2_LFS_APPLY: ${{ inputs.apply }}
+        R2_LFS_ARGS: ${{ inputs.args }}
+      run: |
+        if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+          echo "::error::gc needs full history; use actions/checkout with fetch-depth: 0"
+          exit 1
+        fi
+        apply=""
+        if [ "${R2_LFS_APPLY}" = "true" ]; then apply="--apply"; fi
+        # Word splitting of R2_LFS_ARGS is intended.
+        # shellcheck disable=SC2086
+        npx --yes "r2-lfs@${R2_LFS_VERSION}" gc ${apply} ${R2_LFS_ARGS}

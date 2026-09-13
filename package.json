@@ -1,17 +1,49 @@
 {
   "name": "r2-lfs",
   "version": "0.1.0",
-  "private": true,
-  "description": "A Git LFS server on Cloudflare Workers that stores objects in R2",
+  "description": "Git LFS server on Cloudflare Workers and R2, with a CLI to inspect, clean up and archive LFS objects",
+  "keywords": [
+    "git-lfs",
+    "lfs",
+    "cloudflare",
+    "workers",
+    "r2",
+    "git",
+    "large-files"
+  ],
+  "homepage": "https://github.com/ken109/r2-lfs#readme",
+  "bugs": {
+    "url": "https://github.com/ken109/r2-lfs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ken109/r2-lfs.git"
+  },
   "license": "MIT",
+  "author": "Kensuke Kubo",
   "type": "module",
   "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "r2-lfs": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "build": "node scripts/build.mjs",
+    "cli": "node cli/main.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p cli",
+    "lint": "oxlint --deny-warnings && oxfmt --check .",
+    "format": "oxfmt . && oxlint --fix",
     "test": "vitest run",
-    "gc": "node scripts/gc.ts"
+    "prepublishOnly": "pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build"
   },
   "cloudflare": {
     "bindings": {
@@ -50,13 +82,17 @@
       }
     }
   },
-  "dependencies": {
-    "aws4fetch": "^1.0.20"
-  },
   "devDependencies": {
+    "@clack/prompts": "^1.8.0",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260911.1",
     "@types/node": "^24.0.0",
+    "aws4fetch": "^1.0.20",
+    "citty": "^0.2.2",
+    "esbuild": "^0.28.2",
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0",
+    "smol-toml": "^1.8.0",
     "typescript": "^5.9.0",
     "vitest": "~4.1.0",
     "wrangler": "^4.131.1"
