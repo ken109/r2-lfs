@@ -86,15 +86,15 @@
     "@clack/prompts": "^1.8.0",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260911.1",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.5.1",
     "aws4fetch": "^1.0.20",
     "citty": "^0.2.2",
     "esbuild": "^0.28.2",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
     "smol-toml": "^1.8.0",
-    "typescript": "^5.9.0",
-    "vitest": "~4.1.0",
+    "typescript": "^7.0.2",
+    "vitest": "~5.0.0",
     "wrangler": "^4.131.1"
   }
 }
