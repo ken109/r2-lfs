@@ -1,7 +1,7 @@
 import { TRASH_PREFIX } from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
 import type { StoredObject } from "../domain/objects.ts";
-import { mergeFacts, type Planned, planObjects } from "../domain/plan.ts";
+import { combinePlans, type Planned, planObjects } from "../domain/plan.ts";
 import type { Policy } from "../domain/policy.ts";
 import { collectFacts, livePrefix, loadPolicy, type PolicyOverrides, resolveLayout } from "./common.ts";
 import type { Bucket, GitRepository, LfsClient, Reporter } from "./ports.ts";
@@ -25,6 +25,7 @@ export interface GcPlanOptions extends PolicyOverrides {
 
 export interface GcPlan {
   prefix: string;
+  /** The policy of the repository gc runs in; other repositories are judged by their own. */
   policy: Policy;
   planned: Planned[];
   /** Objects gc would act on: to delete or to tier. */
@@ -34,18 +35,23 @@ export interface GcPlan {
 }
 
 export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan> {
-  const { repo, client, bucket, reporter } = deps;
+  const { client, bucket, reporter } = deps;
   const layout = await resolveLayout(client, opts.layout);
   if (layout === "per-repo" && deps.otherRepos.length > 0) throw new UsageError("--repos only applies to the shared layout");
+  const sharedWithoutRepos = layout === "shared" && deps.otherRepos.length === 0;
+  if (sharedWithoutRepos && opts.mode === "apply") {
+    throw new UsageError("refusing to --apply in the shared layout without --repos; pick objects with -i or pass every repository");
+  }
 
-  const repos = [repo, ...deps.otherRepos];
+  const repos = [deps.repo, ...deps.otherRepos];
   for (const r of repos) {
     const gaps = r.historyGaps();
     // Objects only the missing commits use would look unreferenced.
     if (gaps.length > 0) throw new UsageError(`gc needs the full history of ${r.dir}, but ${gaps.join("; ")}`);
   }
 
-  const policy = loadPolicy(repo, opts);
+  // Each repository is judged by its own .r2-lfs.toml.
+  const views = repos.map((r) => ({ repo: r, policy: loadPolicy(r, opts) }));
   const now = opts.now ?? new Date();
   const acting = (opts.mode ?? "dry-run") !== "dry-run";
   const facts = await reporter.task(
@@ -58,11 +64,13 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
           reporter.warn(`git fetch failed in ${r.dir}; judging from the refs you already have`);
         }
       }
-      const merged = collectFacts(repo, policy, now);
-      for (const other of deps.otherRepos) mergeFacts(merged, collectFacts(other, policy, now));
-      return merged;
+      return views.map((v) => collectFacts(v.repo, v.policy, now));
     },
-    (f) => `${f.paths.size} objects known to history, ${f.tips.size} in branch and tag tips`,
+    (all) => {
+      const known = new Set(all.flatMap((f) => [...f.paths.keys()]));
+      const tips = new Set(all.flatMap((f) => [...f.tips]));
+      return `${known.size} objects known to history, ${tips.size} in branch and tag tips`;
+    },
   );
 
   const prefix = livePrefix(client, layout);
@@ -71,13 +79,13 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
     () => bucket.list(prefix),
     (s) => `${s.length} objects in ${bucket.name}/${prefix}`,
   );
-  const planned = planObjects(stored, facts, policy, now);
+  const planned = combinePlans(views.map((v, i) => planObjects(stored, facts[i]!, v.policy, now)));
   return {
     prefix,
-    policy,
+    policy: views[0]!.policy,
     planned,
     candidates: planned.filter((p) => p.decision.kind === "delete" || p.decision.kind === "tier"),
-    sharedWithoutRepos: layout === "shared" && deps.otherRepos.length === 0,
+    sharedWithoutRepos,
   };
 }
 

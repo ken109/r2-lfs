@@ -141,16 +141,48 @@ describe("gc", () => {
     expect(reporter.warnings).toEqual([expect.stringContaining("git fetch failed")]);
   });
 
-  it("flags the shared layout without other repositories", async () => {
+  it("flags the shared layout without other repositories and refuses to apply without picking", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     s.client.serverInfo.storageLayout = "shared";
-    const plan = await planGc(
-      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter: new SilentReporter() },
-      { fetch: false },
-    );
+    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter: new SilentReporter() };
+    const plan = await planGc(deps, { fetch: false });
     expect(plan.sharedWithoutRepos).toBe(true);
     expect(plan.prefix).toBe("_shared/");
+    await expect(planGc(deps, { fetch: false, mode: "apply" })).rejects.toThrow(/without --repos/);
+    expect((await planGc(deps, { fetch: false, mode: "interactive" })).sharedWithoutRepos).toBe(true);
+  });
+
+  it("judges each repository in the shared layout by its own policy", async () => {
+    const s = scenario();
+    const other = new TempRepo();
+    cleanup.push(
+      () => s.repo.remove(),
+      () => other.remove(),
+    );
+    other.write(".r2-lfs.toml", '[[rule]]\npath = "final/**"\nkeep = "all"\n');
+    const finalOld = other.writeLfs("final/cut.exr", "cut v1");
+    other.commit("v1", 300);
+    const finalNew = other.writeLfs("final/cut.exr", "cut v2");
+    other.commit("v2", 200);
+
+    s.client.serverInfo.storageLayout = "shared";
+    const bucket = new MemoryBucket();
+    for (const oid of [s.oldOid, s.newOid, finalOld, finalNew, s.orphan]) bucket.seed(`_shared/${oid}`, { size: 5, ageDays: 400 });
+    const reporter = new SilentReporter();
+    const deps = { repo: s.git, otherRepos: [Git.open(other.dir)], client: s.client, bucket, reporter };
+
+    const plan = await planGc(deps, { fetch: false, mode: "apply" });
+    expect(Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision.kind]))).toEqual({
+      [s.oldOid]: "delete",
+      [s.newOid]: "keep",
+      [finalOld]: "keep",
+      [finalNew]: "keep",
+      [s.orphan]: "delete",
+    });
+
+    const perRepo = { ...deps, client: new FakeLfsClient() };
+    await expect(planGc(perRepo, { fetch: false })).rejects.toThrow(/only applies to the shared layout/);
   });
 });
 

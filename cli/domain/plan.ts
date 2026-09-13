@@ -61,19 +61,17 @@ export function planObjects(stored: readonly StoredObject[], facts: Facts, polic
   });
 }
 
-export function mergeFacts(into: Facts, other: Facts): void {
-  for (const [oid, paths] of other.paths) {
-    const set = into.paths.get(oid) ?? new Set<string>();
-    for (const p of paths) set.add(p);
-    into.paths.set(oid, set);
-  }
-  for (const oid of other.tips) into.tips.add(oid);
-  for (const [days, oids] of other.windows) {
-    const set = into.windows.get(days) ?? new Set<string>();
-    for (const oid of oids) set.add(oid);
-    into.windows.set(days, set);
-  }
-  for (const [path, oids] of other.versions) {
-    into.versions.set(path, [...new Set([...(into.versions.get(path) ?? []), ...oids])]);
-  }
+const LENIENCY: Record<Decision["kind"], number> = { keep: 0, foreign: 0, young: 1, tier: 2, delete: 3 };
+
+/**
+ * Combines plans made for the same stored objects from different repositories, each with its own policy.
+ * The most lenient decision wins, so an object any repository keeps is kept.
+ */
+export function combinePlans(plans: readonly (readonly Planned[])[]): Planned[] {
+  const [first = [], ...rest] = plans;
+  return first.map((planned, i) => {
+    const all = [planned, ...rest.map((plan) => plan[i]!)];
+    const winner = all.reduce((best, p) => (LENIENCY[p.decision.kind] < LENIENCY[best.decision.kind] ? p : best));
+    return { ...winner, paths: [...new Set(all.flatMap((p) => p.paths))].toSorted() };
+  });
 }

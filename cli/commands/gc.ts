@@ -2,7 +2,6 @@ import { defineCommand } from "citty";
 
 import { applyGc, planGc } from "../app/gc.ts";
 import * as compose from "../composition.ts";
-import { UsageError } from "../domain/errors.ts";
 import type { Planned } from "../domain/plan.ts";
 import { dim, formatBytes, formatDate, red, shortOid, table } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
@@ -53,7 +52,6 @@ export default defineCommand({
       term.warn(
         "The bucket uses the shared layout. Objects that only other repositories need look unreferenced from here;\npass every repository that uses the bucket with --repos.",
       );
-      if (args.apply && !args.interactive) throw new UsageError("refusing to --apply in the shared layout without --repos");
     }
 
     const by = (kind: string) => plan.planned.filter((p) => p.decision.kind === kind);

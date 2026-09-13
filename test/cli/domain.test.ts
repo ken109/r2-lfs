@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { UsageError } from "../../cli/domain/errors.ts";
 import { buildHistory } from "../../cli/domain/history.ts";
-import { type Facts, planObjects } from "../../cli/domain/plan.ts";
+import { combinePlans, type Facts, planObjects } from "../../cli/domain/plan.ts";
 import { parsePointer } from "../../cli/domain/pointer.ts";
 import { effectiveFor, globMatch, keepDayWindows, parsePolicy } from "../../cli/domain/policy.ts";
 import { expandTracks } from "../../cli/domain/presets.ts";
@@ -166,6 +166,23 @@ describe("planObjects", () => {
     const policy = parsePolicy(`[[rule]]\npath = "final/**"\nkeep = "all"\n`);
     const [planned] = planObjects([stored(`r/${A}`, 400)], facts({ paths: new Map([[A, new Set(["final/hero.blend"])]]) }), policy, now);
     expect(planned?.decision.kind).toBe("keep");
+  });
+
+  it("combines plans from several repositories, letting the most lenient decision win", () => {
+    const objects = [stored(`r/${A}`, 400), stored(`r/${B}`, 400), stored(`r/${C}`, 400), stored(`r/${D}`, 400)];
+    const policy = parsePolicy(undefined);
+    const tiering = parsePolicy('old_versions = "infrequent-access"\n');
+    const first = planObjects(objects, facts({ paths: new Map([[A, new Set(["a.png"])]]) }), policy, now);
+    const second = planObjects(
+      objects,
+      facts({ tips: new Set([A]), paths: new Map([[A, new Set(["b/a.png"])]]), windows: new Map([[90, new Set([B])]]) }),
+      tiering,
+      now,
+    );
+    const combined = combinePlans([first, second]);
+    expect(combined.map((p) => p.decision.kind)).toEqual(["keep", "keep", "tier", "tier"]);
+    expect(combined[0]?.paths).toEqual(["a.png", "b/a.png"]);
+    expect(combinePlans([first]).map((p) => p.decision.kind)).toEqual(["delete", "delete", "delete", "delete"]);
   });
 });
 
