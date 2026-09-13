@@ -7,7 +7,7 @@ import { type Fetcher, GithubApiPermissions } from "../infra/github-permissions.
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
 import { PresignedLinks, ProxyLinks } from "../infra/transfer-links.ts";
-import { type ServerInfo, VERSION } from "../shared/contract.ts";
+import { type MisconfiguredInfo, type ServerInfo, VERSION } from "../shared/contract.ts";
 import { extractToken } from "./credentials.ts";
 import { lfsError, lfsJson } from "./responses.ts";
 import { route } from "./router.ts";
@@ -53,7 +53,10 @@ function info(env: Env): Response {
     };
     return Response.json(body);
   } catch (err) {
-    if (err instanceof ConfigError) return Response.json({ name: "r2-lfs", version: VERSION, problems: err.problems }, { status: 500 });
+    if (err instanceof ConfigError) {
+      const body: MisconfiguredInfo = { name: "r2-lfs", version: VERSION, problems: err.problems };
+      return Response.json(body, { status: 500 });
+    }
     throw err;
   }
 }

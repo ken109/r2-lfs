@@ -1,4 +1,4 @@
-import { SCOPE_PATTERN, type StorageLayout } from "../shared/contract.ts";
+import { type AuthMode, SCOPE_PATTERN, type StorageLayout } from "../shared/contract.ts";
 
 /** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
 export interface ConfigVars {
@@ -13,8 +13,6 @@ export interface ConfigVars {
   R2_SECRET_ACCESS_KEY?: string;
   AUTH_TOKENS?: string;
 }
-
-export type AuthMode = "github" | "token";
 
 export interface StaticToken {
   /** `owner/repo`, `owner/*` or `*`, lowercased. */

@@ -15,14 +15,45 @@ export const TOKENS_KEY = "_meta/tokens.json";
 export const INFO_PATH = "/_r2-lfs/info";
 
 export type StorageLayout = "per-repo" | "shared";
+export type AuthMode = "github" | "token";
 
+/** What `INFO_PATH` answers with status 200. */
 export interface ServerInfo {
   name: "r2-lfs";
   version: string;
-  authMode: "github" | "token";
+  authMode: AuthMode;
   storageLayout: StorageLayout;
   transfer: "presigned" | "proxy";
   proxyMaxUploadBytes: number;
+}
+
+/** A transfer action in a Git LFS batch response. */
+export interface LfsAction {
+  href: string;
+  header?: Record<string, string>;
+  expires_in?: number;
+}
+
+/** One object in a Git LFS batch response: actions to take, or an error for this object alone. */
+export interface BatchObjectResult {
+  oid: string;
+  size: number;
+  authenticated?: boolean;
+  actions?: Record<string, LfsAction>;
+  error?: { code: number; message: string };
+}
+
+export interface BatchResponse {
+  transfer: "basic";
+  objects: BatchObjectResult[];
+  hash_algo: "sha256";
+}
+
+/** What `INFO_PATH` answers with status 500 when the settings are invalid. */
+export interface MisconfiguredInfo {
+  name: "r2-lfs";
+  version: string;
+  problems: string[];
 }
 
 export interface StoredToken {

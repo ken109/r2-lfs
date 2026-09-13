@@ -1,4 +1,4 @@
-import { INFO_PATH, type ServerInfo } from "../../src/shared/contract.ts";
+import { INFO_PATH, type MisconfiguredInfo, type ServerInfo } from "../../src/shared/contract.ts";
 import { type BatchObject, BatchRequestError, type InfoResult, type LfsClient } from "../app/ports.ts";
 import type { ObjectRef } from "../domain/objects.ts";
 import type { LfsLocation } from "../domain/remote.ts";
@@ -30,10 +30,10 @@ export class HttpLfsClient implements LfsClient {
 
   async info(): Promise<InfoResult> {
     const res = await fetch(`${this.location.origin}${INFO_PATH}`);
-    const body = (await res.json().catch(() => undefined)) as (ServerInfo & { problems?: string[] }) | undefined;
+    const body = (await res.json().catch(() => undefined)) as ServerInfo | MisconfiguredInfo | undefined;
     if (body?.name !== "r2-lfs") return { kind: "not-r2-lfs", status: res.status };
-    if (!res.ok) return { kind: "misconfigured", problems: body.problems ?? [`status ${res.status}`] };
-    return { kind: "ok", info: body };
+    if (!res.ok) return { kind: "misconfigured", problems: "problems" in body ? body.problems : [`status ${res.status}`] };
+    return { kind: "ok", info: body as ServerInfo };
   }
 
   private async batchOnce(operation: "upload" | "download", objects: ObjectRef[]): Promise<BatchObject[]> {

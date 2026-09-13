@@ -11,7 +11,8 @@ import {
 } from "../domain/batch.ts";
 import type { Config } from "../domain/config.ts";
 import { objectKey, type Repo } from "../domain/repo.ts";
-import type { Action, ObjectStore, TransferLinks } from "./ports.ts";
+import type { BatchObjectResult, BatchResponse } from "../shared/contract.ts";
+import type { ObjectStore, TransferLinks } from "./ports.ts";
 
 export type Result<T> = { ok: true; value: T } | ({ ok: false } & Rejection);
 
@@ -23,20 +24,6 @@ export interface LfsContext {
   permission: Permission;
   store: ObjectStore;
   links: TransferLinks;
-}
-
-export interface BatchObjectResult {
-  oid: string;
-  size: number;
-  authenticated?: boolean;
-  actions?: Record<string, Action>;
-  error?: { code: number; message: string };
-}
-
-export interface BatchResult {
-  transfer: "basic";
-  objects: BatchObjectResult[];
-  hash_algo: "sha256";
 }
 
 function denied(required: Permission): Result<never> {
@@ -70,7 +57,7 @@ async function planObject(
   };
 }
 
-export async function batch(ctx: LfsContext, body: unknown): Promise<Result<BatchResult>> {
+export async function batch(ctx: LfsContext, body: unknown): Promise<Result<BatchResponse>> {
   const parsed = parseBatchRequest(body);
   if (!parsed.ok) return parsed;
   const required = requiredPermission(parsed.value.operation);

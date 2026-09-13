@@ -6,7 +6,7 @@ import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
 import { clearGithubCache, type Fetcher } from "../../src/infra/github-permissions.ts";
 import { clearStoredTokensCache } from "../../src/infra/token-directory.ts";
-import { TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
+import { type BatchObjectResult, TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
 
 const ORIGIN = "https://lfs.example.com";
 const WRITE_TOKEN = "w".repeat(32);
@@ -64,26 +64,19 @@ async function blob(size = 64): Promise<{ data: Uint8Array; oid: string; size: n
   return { data, oid, size };
 }
 
-interface BatchObject {
-  oid: string;
-  size: number;
-  actions?: Record<string, { href: string; header?: Record<string, string>; expires_in?: number }>;
-  error?: { code: number; message: string };
-}
-
 async function batch(
   e: Env,
   repoPath: string,
   operation: "upload" | "download",
   objects: { oid: string; size: number }[],
   opts: CallOptions = {},
-): Promise<{ status: number; headers: Headers; objects: BatchObject[]; body: { message?: string } }> {
+): Promise<{ status: number; headers: Headers; objects: BatchObjectResult[]; body: { message?: string } }> {
   const res = await call(e, `${repoPath}/objects/batch`, {
     token: WRITE_TOKEN,
     ...opts,
     json: { operation, transfers: ["basic"], objects },
   });
-  const body = (await res.json()) as { objects?: BatchObject[]; message?: string };
+  const body = (await res.json()) as { objects?: BatchObjectResult[]; message?: string };
   return { status: res.status, headers: res.headers, objects: body.objects ?? [], body };
 }
 

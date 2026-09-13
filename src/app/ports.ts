@@ -1,5 +1,6 @@
 import type { Grant, Permission } from "../domain/access.ts";
 import type { Repo } from "../domain/repo.ts";
+import type { LfsAction } from "../shared/contract.ts";
 
 /** Where LFS objects live. */
 export interface ObjectStore {
@@ -9,11 +10,7 @@ export interface ObjectStore {
   put(key: string, body: ReadableStream, sha256: string): Promise<"stored" | "checksum-mismatch">;
 }
 
-export interface Action {
-  href: string;
-  header?: Record<string, string>;
-  expires_in?: number;
-}
+export type Action = LfsAction;
 
 /** How clients reach an object: presigned R2 URLs, or back through this Worker. */
 export interface TransferLinks {

@@ -1,6 +1,6 @@
 // Interfaces the use cases depend on. Implementations live in ../infra; tests supply fakes.
 
-import type { ServerInfo } from "../../src/shared/contract.ts";
+import type { BatchObjectResult, ServerInfo } from "../../src/shared/contract.ts";
 import type { PointerChange } from "../domain/history.ts";
 import type { ObjectRef, StoredObject } from "../domain/objects.ts";
 import type { Pointer } from "../domain/pointer.ts";
@@ -118,12 +118,7 @@ export interface Bucket {
   copy(source: string, target: string, storageClass?: "STANDARD" | "STANDARD_IA"): Promise<WriteResult>;
 }
 
-export interface BatchObject {
-  oid: string;
-  size: number;
-  actions?: Record<string, { href: string; header?: Record<string, string> }>;
-  error?: { code: number; message: string };
-}
+export type BatchObject = BatchObjectResult;
 
 export type InfoResult =
   | { kind: "ok"; info: ServerInfo }

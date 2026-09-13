@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 
 import { readDays } from "../app/common.ts";
-import { setupServer } from "../app/setup.ts";
+import { type SetupOptions, setupServer } from "../app/setup.ts";
 import * as compose from "../composition.ts";
 import { bold } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
@@ -38,8 +38,8 @@ export default defineCommand({
         name: args.name,
         bucket: args.bucket,
         owners: commaList(args.owners),
-        authMode: args.auth as "github" | "token",
-        layout: args.layout as "per-repo" | "shared",
+        authMode: args.auth as SetupOptions["authMode"],
+        layout: args.layout as SetupOptions["layout"],
         lockDays: readDays("lock-days", args["lock-days"])!,
         trashDays: readDays("trash-days", args["trash-days"])!,
         deploy: args.deploy,

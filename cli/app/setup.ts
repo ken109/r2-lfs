@@ -1,6 +1,13 @@
 import { join } from "node:path";
 
-import { OWNER_NAME, SHARED_PREFIX, type StorageLayout, TRASH_PREFIX, WORKER_COMPATIBILITY_DATE } from "../../src/shared/contract.ts";
+import {
+  type AuthMode,
+  OWNER_NAME,
+  SHARED_PREFIX,
+  type StorageLayout,
+  TRASH_PREFIX,
+  WORKER_COMPATIBILITY_DATE,
+} from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
 import type { Files, Reporter, Wrangler } from "./ports.ts";
 
@@ -16,7 +23,7 @@ export interface SetupOptions {
   name: string;
   bucket: string;
   owners: string[];
-  authMode: "github" | "token";
+  authMode: AuthMode;
   layout: StorageLayout;
   /** 0 disables the lock rules. */
   lockDays: number;
