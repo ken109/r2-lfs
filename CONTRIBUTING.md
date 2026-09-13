@@ -35,17 +35,18 @@ rejects imports that break these boundaries.
 - Add or update tests for behaviour you change. Prefer testing use cases with the fakes in
   `test/cli/helpers.ts`, and domain logic directly.
 - Keep `pnpm lint`, `pnpm typecheck` and `pnpm test` passing; CI runs them on Linux, macOS and Windows.
-- Write commit messages in the [Conventional Commits](https://www.conventionalcommits.org/) style,
-  such as `fix(gc): keep objects referenced by annotated tags`.
-- Add a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+- Write commit messages (and PR titles, which become squash commit messages) in the
+  [Conventional Commits](https://www.conventionalcommits.org/) style, such as
+  `fix(gc): keep objects referenced by annotated tags`. `feat` and `fix` appear in the changelog;
+  mark breaking changes with `!` or a `BREAKING CHANGE:` footer.
 - Update the README when you change commands, options or server settings.
 
 ## Releasing
 
-Maintainers only.
+Releases are automated with [release-please](https://github.com/googleapis/release-please).
+Every push to `main` updates a release pull request that bumps the version in `package.json` and
+`src/shared/contract.ts` and adds the new commits to [CHANGELOG.md](CHANGELOG.md).
+Do not edit those by hand.
 
-1. Move the `Unreleased` entries in `CHANGELOG.md` under a new version heading.
-2. Bump `version` in `package.json` and `VERSION` in `src/shared/contract.ts` (a test keeps them equal).
-3. Commit, tag `vX.Y.Z` and push the tag. The release workflow runs the checks, publishes to npm
-   with provenance through trusted publishing, creates the GitHub release and moves the `vX` tag
-   used by the GitHub Action.
+Merging the release pull request tags the release, creates the GitHub release, publishes to npm
+with provenance through trusted publishing, and moves the `vX` tag used by the GitHub Action.

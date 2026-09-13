@@ -9,7 +9,8 @@ export default defineConfig({
         test: { name: "worker", include: ["test/worker/**/*.test.ts"] },
       },
       {
-        test: { name: "cli", include: ["test/cli/**/*.test.ts"], environment: "node" },
+        // CLI tests drive real git processes, which start slowly on Windows runners.
+        test: { name: "cli", include: ["test/cli/**/*.test.ts"], environment: "node", testTimeout: 30_000 },
       },
     ],
   },
