@@ -49,6 +49,13 @@ describe("parsePointer", () => {
   it("rejects files that only look similar", () => {
     expect(parsePointer(`oid sha256:${A}\nsize 42\n`)).toBeUndefined();
     expect(parsePointer("version https://git-lfs.github.com/spec/v1\nsize 42\n")).toBeUndefined();
+    expect(parsePointer(`version https://example.com/spec/v1\noid sha256:${A}\nsize 42\n`)).toBeUndefined();
+  });
+
+  it("accepts CRLF line endings and the version lines git-lfs still reads", () => {
+    for (const version of ["https://git-lfs.github.com/spec/v1", "https://hawser.github.com/spec/v1", "http://git-media.io/v/2"]) {
+      expect(parsePointer(`version ${version}\r\noid sha256:${A}\r\nsize 42\r\n`)).toEqual({ oid: A, size: 42 });
+    }
   });
 });
 
@@ -97,6 +104,12 @@ describe("policy", () => {
     expect(String(error)).toMatch(/keep_days must be/);
     expect(String(error)).toMatch(/unknown setting "foo"/);
     expect(String(error)).toMatch(/rule #1: path is required/);
+
+    const patterns = thrown(() => parsePolicy('[[rule]]\npath = "shots/take[[:Digit:]].exr"\nkeep = "all"\n[[rule]]\npath = "[z-a]/**"\n'));
+    expect(String(patterns)).toMatch(/rule #1: path "shots\/take\[\[:Digit:\]\]\.exr" is not a valid pattern/);
+    expect(String(patterns)).toMatch(/rule #2: path "\[z-a\]\/\*\*" is not a valid pattern/);
+    expect(() => parsePolicy('[[rule]]\npath = "shots/[0-9"\n')).toThrow(/is not a valid pattern/);
+    expect(() => parsePolicy("[[rule]]\npath = 'trailing\\'\n")).toThrow(/is not a valid pattern/);
   });
 
   it.each([
@@ -109,6 +122,44 @@ describe("policy", () => {
     ["/top.psd", "top.psd", true],
     ["/top.psd", "sub/top.psd", false],
     ["tex?.png", "tex1.png", true],
+    ["*.[pP][nN][gG]", "shots/HERO.PNG", true],
+    ["shots/[0-9]*/final.exr", "shots/010/final.exr", true],
+    ["shots/[0-9]*/final.exr", "shots/intro/final.exr", false],
+    ["take[!0-9].wav", "takeA.wav", true],
+    ["take[!0-9].wav", "take1.wav", false],
+    ["take[^0-9].wav", "takeB.wav", true],
+    ["a[!x]b", "a/b", false],
+    ["take[[:digit:]].wav", "take1.wav", true],
+    ["take[[:digit:][:upper:]].wav", "takeZ.wav", true],
+    ["take[![:alpha:]].wav", "take1.wav", true],
+    ["take[![:alpha:]].wav", "takeA.wav", false],
+    ["take[[:bogus:]].wav", "takeb].wav", false],
+    ["a[[:digit:]-z]b", "a-b", true],
+    ["[z-a].bin", "b.bin", false],
+    ["a[]]b", "a]b", true],
+    ["literal[", "literal[", false],
+    ["[!-x].bin", "a.bin", true],
+    ["[!-x].bin", "-.bin", false],
+    ["[^-x].bin", "5.bin", true],
+    ["a[/]b", "a/b", false],
+    ["a[.-0]b", "a/b", false],
+    ["a[[:punct:]]b", "a/b", false],
+    ["a[[:punct:]]b", "a.b", true],
+    ["a**b.bin", "a/x/b.bin", false],
+    ["a**b.bin", "axyb.bin", true],
+    ["x**/y.bin", "xa/b/y.bin", false],
+    ["x**/y.bin", "xa/y.bin", true],
+    ["foo**", "foox", true],
+    ["shot\\[1\\].exr", "shot[1].exr", true],
+    ["shot\\[1\\].exr", "shot1.exr", false],
+    ["a\\*b", "a*b", true],
+    ["a\\*b", "axb", false],
+    ["take[a\\-c].wav", "take-.wav", true],
+    ["take[a\\-c].wav", "takeb.wav", false],
+    ["take[\\]].wav", "take].wav", true],
+    ["a/**/b.psd", "a/x/y/b.psd", true],
+    ["a/**/b.psd", "a/b.psd", true],
+    ["**", "any/depth/file.bin", true],
   ])("glob %s matches %s: %s", (pattern, path, expected) => {
     expect(globMatch(pattern, path)).toBe(expected);
   });
@@ -166,6 +217,27 @@ describe("planObjects", () => {
     const policy = parsePolicy(`[[rule]]\npath = "final/**"\nkeep = "all"\n`);
     const [planned] = planObjects([stored(`r/${A}`, 400)], facts({ paths: new Map([[A, new Set(["final/hero.blend"])]]) }), policy, now);
     expect(planned?.decision.kind).toBe("keep");
+  });
+
+  it("keeps an object when any of its paths keeps it, and tiers when any path asks for it", () => {
+    const policy = parsePolicy(
+      `[[rule]]\npath = "final/**"\nkeep = "all"\n[[rule]]\npath = "cold/**"\nold_versions = "infrequent-access"\n`,
+    );
+    const plan = planObjects(
+      [stored(`r/${A}`, 400), stored(`r/${B}`, 400)],
+      facts({
+        paths: new Map([
+          [A, new Set(["wip/a.exr", "final/a.exr"])],
+          [B, new Set(["wip/b.exr", "cold/b.exr"])],
+        ]),
+      }),
+      policy,
+      now,
+    );
+    expect(plan.map((p) => p.decision)).toEqual([
+      { kind: "keep", reason: 'final/a.exr: rule "final/**" keeps all versions' },
+      { kind: "tier" },
+    ]);
   });
 
   it("combines plans from several repositories, letting the most lenient decision win", () => {

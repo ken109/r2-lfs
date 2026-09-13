@@ -210,6 +210,32 @@ describe("gc", () => {
     expect(reporter.warnings).toEqual([expect.stringContaining("1 object(s) are needed by commits pushed")]);
   });
 
+  it("keeps objects of older commits inside the keep_days window of the rule for their path", async () => {
+    const repo = new TempRepo();
+    cleanup.push(() => repo.remove());
+    repo.write(".r2-lfs.toml", 'keep_days = 30\n[[rule]]\npath = "raw/**"\nkeep_days = 7\n');
+    const rawTenDays = repo.writeLfs("raw/take.wav", "take from 10 days ago");
+    const texTenDays = repo.writeLfs("tex/wood.png", "wood from 10 days ago");
+    repo.commit("ten days ago", 10);
+    const rawThreeDays = repo.writeLfs("raw/take.wav", "take from 3 days ago");
+    repo.commit("three days ago", 3);
+    repo.writeLfs("raw/take.wav", "take now");
+    repo.writeLfs("tex/wood.png", "wood now");
+    repo.commit("now");
+
+    const bucket = new MemoryBucket();
+    for (const oid of [rawTenDays, texTenDays, rawThreeDays]) bucket.seed(`acme/assets/${oid}`, { ageDays: 400 });
+    const plan = await planGc(
+      { repo: Git.open(repo.dir), otherRepos: [], client: new FakeLfsClient(), bucket, reporter: new SilentReporter() },
+      { fetch: false },
+    );
+    expect(Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision]))).toEqual({
+      [rawTenDays]: { kind: "delete" },
+      [texTenDays]: { kind: "keep", reason: "tex/wood.png: used in the last 30 days" },
+      [rawThreeDays]: { kind: "keep", reason: "raw/take.wav: used in the last 7 days" },
+    });
+  });
+
   it("honours .r2-lfs.toml and command-line overrides", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
