@@ -1,6 +1,3 @@
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { defineCommand } from "citty";
 
 import { archiveTag, DEFAULT_PART_BYTES } from "../app/archive.ts";
@@ -25,10 +22,9 @@ export default defineCommand({
     const term = new Terminal();
     term.intro(`r2-lfs archive ${args.tag}`);
     const repo = compose.openRepo();
-    const outputDir = args.output ?? join(tmpdir(), `r2-lfs-archive-${args.tag.replace(/[^\w.-]+/g, "-")}`);
     const result = await archiveTag(
       { repo, gh: compose.gh(repo.dir), files: compose.files, reporter: term },
-      { tag: args.tag, outputDir, partBytes, upload: args.upload, remote: args.remote },
+      { tag: args.tag, ...(args.output ? { outputDir: args.output } : {}), partBytes, upload: args.upload, remote: args.remote },
     );
 
     term.message(result.files.join("\n"));
@@ -36,7 +32,7 @@ export default defineCommand({
       term.note("Turn on Settings > General > Releases > Enable release immutability so no one can change it later.", "Tip");
       term.outro(`Published ${args.tag}: ${formatBytes(result.totalBytes)} in ${result.files.length - 1} part(s)`);
     } else {
-      term.outro(`Wrote ${formatBytes(result.totalBytes)} to ${outputDir}`);
+      term.outro(`Wrote ${formatBytes(result.totalBytes)} to ${result.outputDir}`);
     }
   },
 });

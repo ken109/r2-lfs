@@ -17,13 +17,15 @@ export interface ArchiveDeps {
 
 export interface ArchiveOptions {
   tag: string;
-  outputDir: string;
+  /** A fresh temporary directory when omitted. */
+  outputDir?: string;
   partBytes: number;
   upload: boolean;
   remote: string;
 }
 
 export interface ArchiveResult {
+  outputDir: string;
   files: string[];
   totalBytes: number;
   published: boolean;
@@ -70,24 +72,25 @@ export async function archiveTag(deps: ArchiveDeps, opts: ArchiveOptions): Promi
   const entries = entriesFor(repo, fs, commit);
   const parts = splitParts(entries, opts.partBytes);
   const names = partNames(remote?.repo ?? "archive", opts.tag, parts.length);
-  fs.mkdirp(opts.outputDir);
+  const outputDir = opts.outputDir ?? fs.tempDir("r2-lfs-archive-");
+  fs.mkdirp(outputDir);
 
   const totalBytes = entries.reduce((sum, e) => sum + e.size, 0);
   const bar = reporter.progress(entries.length, `Writing ${parts.length} part(s)`);
   const files: string[] = [];
   const sums: string[] = [];
   for (const [i, part] of parts.entries()) {
-    const file = join(opts.outputDir, names[i]!);
+    const file = join(outputDir, names[i]!);
     await fs.writeTar(file, part, (entry) => bar.advance(1, entry.name));
     files.push(file);
     sums.push(`${await fs.sha256(file)}  ${names[i]}`);
   }
-  bar.stop(`Wrote ${parts.length} part(s) to ${opts.outputDir}`);
-  const sumsFile = join(opts.outputDir, "SHA256SUMS");
+  bar.stop(`Wrote ${parts.length} part(s) to ${outputDir}`);
+  const sumsFile = join(outputDir, "SHA256SUMS");
   fs.writeText(sumsFile, `${sums.join("\n")}\n`);
   files.push(sumsFile);
 
-  if (!opts.upload) return { files, totalBytes, published: false };
+  if (!opts.upload) return { outputDir, files, totalBytes, published: false };
 
   // Assets go onto a draft first: once published, an immutable release cannot change.
   if (gh.releaseState(ghRepo, opts.tag) === undefined) {
@@ -99,5 +102,5 @@ export async function archiveTag(deps: ArchiveDeps, opts: ArchiveOptions): Promi
   const uploaded = await gh.uploadAssets(ghRepo, opts.tag, files);
   if (uploaded !== 0) throw new UsageError("gh release upload failed; the draft release is left in place for you to retry");
   await reporter.task("Publishing the release", () => gh.publishRelease(ghRepo, opts.tag));
-  return { files, totalBytes, published: true };
+  return { outputDir, files, totalBytes, published: true };
 }

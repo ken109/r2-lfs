@@ -7,7 +7,7 @@ import { parsePointer } from "../../cli/domain/pointer.ts";
 import { effectiveFor, globMatch, keepDayWindows, parsePolicy } from "../../cli/domain/policy.ts";
 import { expandTracks } from "../../cli/domain/presets.ts";
 import { githubLfsEndpoint, parseLfsUrl, parseRemote } from "../../cli/domain/remote.ts";
-import { END_BYTES, entryBytes, encodeHeader, paxRecordsFor, splitParts, type TarEntry } from "../../cli/domain/tar.ts";
+import { END_BYTES, entryBytes, encodeHeader, partNames, paxRecordsFor, splitParts, type TarEntry } from "../../cli/domain/tar.ts";
 import { addToken, emptyTokensFile, parseTokensFile, revokeToken } from "../../cli/domain/tokens.ts";
 import { bucketUsage, fileUsage, monthlyCost } from "../../cli/domain/usage.ts";
 import { DAY_MS } from "./helpers.ts";
@@ -345,6 +345,11 @@ describe("tar layout", () => {
     const parts = splitParts(entries, 512 * 6 + END_BYTES);
     expect(parts.map((p) => p.map((e) => e.name))).toEqual([["a", "b"], ["c"]]);
     expect(() => splitParts([tarFile("huge", 10_000)], 4096)).toThrow(UsageError);
+  });
+
+  it("names a single archive plainly and numbers parts, keeping tags file-name safe", () => {
+    expect(partNames("assets", "v1.0", 1)).toEqual(["assets-v1.0.tar"]);
+    expect(partNames("assets", "release/2026 09", 2)).toEqual(["assets-release-2026-09.part1.tar", "assets-release-2026-09.part2.tar"]);
   });
 });
 
