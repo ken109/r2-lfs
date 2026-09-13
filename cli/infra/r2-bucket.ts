@@ -1,12 +1,8 @@
 import { AwsClient } from "aws4fetch";
 
-import type { Bucket, BucketObject, WriteResult } from "../app/ports.ts";
+import { type Bucket, type BucketObject, ConflictError, type WriteResult } from "../app/ports.ts";
 import { UsageError } from "../domain/errors.ts";
 import type { StoredObject } from "../domain/objects.ts";
-
-export class ConflictError extends Error {
-  override readonly name = "ConflictError";
-}
 
 function decodeXml(text: string): string {
   return text

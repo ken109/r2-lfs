@@ -1,10 +1,9 @@
 import { defineCommand, runCommand, runMain } from "citty";
 
 import { VERSION } from "../src/shared/contract.ts";
-import { BatchRequestError } from "./app/ports.ts";
+import { BatchRequestError, ConflictError } from "./app/ports.ts";
 import { UsageError } from "./domain/errors.ts";
 import { CommandError } from "./infra/proc.ts";
-import { ConflictError } from "./infra/r2-bucket.ts";
 import { red } from "./ui/format.ts";
 
 const main = defineCommand({

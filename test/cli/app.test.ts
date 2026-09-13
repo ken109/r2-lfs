@@ -6,7 +6,15 @@ import { diagnose } from "../../cli/app/doctor.ts";
 import { applyGc, applyPlan, gcMode, planGc, recheckPlan, trashObject } from "../../cli/app/gc.ts";
 import { initRepository } from "../../cli/app/init.ts";
 import { migrate } from "../../cli/app/migrate.ts";
-import { BatchRequestError, type Files, type GitHubCli, type GlobalGitConfig, type LfsClient, type Wrangler } from "../../cli/app/ports.ts";
+import {
+  BatchRequestError,
+  ConflictError,
+  type Files,
+  type GitHubCli,
+  type GlobalGitConfig,
+  type LfsClient,
+  type Wrangler,
+} from "../../cli/app/ports.ts";
 import { listTrash, restoreObjects, selectTrash } from "../../cli/app/restore.ts";
 import { setupServer } from "../../cli/app/setup.ts";
 import { createToken, listTokens, revoke } from "../../cli/app/token.ts";
@@ -349,6 +357,31 @@ describe("tokens", () => {
     ]);
     await revoke(bucket, "laptop");
     expect(await listTokens(bucket)).toEqual([]);
+  });
+
+  it("refuses to overwrite tokens another command added in the meantime", async () => {
+    const bucket = new MemoryBucket();
+    await createToken(bucket, { label: "laptop", scope: "acme/*", readOnly: false });
+    const read = bucket.get.bind(bucket);
+    const racing = async (key: string) => {
+      const current = await read(key);
+      await bucket.put(key, JSON.stringify({ version: 1, tokens: [] }));
+      bucket.get = read;
+      return current;
+    };
+
+    bucket.get = racing;
+    await expect(createToken(bucket, { label: "ci", scope: "acme/*", readOnly: true })).rejects.toBeInstanceOf(ConflictError);
+    await createToken(bucket, { label: "desk", scope: "acme/*", readOnly: true });
+    bucket.get = racing;
+    await expect(revoke(bucket, "desk")).rejects.toBeInstanceOf(ConflictError);
+
+    const empty = new MemoryBucket();
+    empty.get = async (key) => {
+      await empty.put(key, JSON.stringify({ version: 1, tokens: [] }));
+      return undefined;
+    };
+    await expect(createToken(empty, { label: "first", scope: "*", readOnly: true })).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

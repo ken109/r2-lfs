@@ -7,10 +7,11 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { ConflictError } from "../../cli/app/ports.ts";
 import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
-import { ConflictError, parseListObjects, R2Bucket } from "../../cli/infra/r2-bucket.ts";
+import { parseListObjects, R2Bucket } from "../../cli/infra/r2-bucket.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { TempRepo } from "./helpers.ts";
 

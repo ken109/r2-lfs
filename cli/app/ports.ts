@@ -107,7 +107,10 @@ export interface Bucket {
   readonly name: string;
   list(prefix: string): Promise<StoredObject[]>;
   get(key: string): Promise<BucketObject | undefined>;
-  /** `expectEtag: null` writes only if the key does not exist; a string, only if it still has that ETag. */
+  /**
+   * `expectEtag: null` writes only if the key does not exist; a string, only if it still has that ETag.
+   * Throws `ConflictError` when that condition fails.
+   */
   put(key: string, body: string, opts?: { expectEtag?: string | null }): Promise<void>;
   /** Throws when the bucket cannot say. */
   exists(key: string): Promise<boolean>;
@@ -144,6 +147,11 @@ export class BatchRequestError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+/** A conditional write lost to a concurrent change; running the command again resolves it. */
+export class ConflictError extends Error {
+  override readonly name = "ConflictError";
 }
 
 /** Local files the use cases write or inspect. */

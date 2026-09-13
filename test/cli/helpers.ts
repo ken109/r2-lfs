@@ -5,7 +5,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { BatchObject, Bucket, BucketObject, InfoResult, LfsClient, Progress, Reporter, WriteResult } from "../../cli/app/ports.ts";
+import {
+  type BatchObject,
+  type Bucket,
+  type BucketObject,
+  ConflictError,
+  type InfoResult,
+  type LfsClient,
+  type Progress,
+  type Reporter,
+  type WriteResult,
+} from "../../cli/app/ports.ts";
 import type { ObjectRef, StoredObject } from "../../cli/domain/objects.ts";
 import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import type { ServerInfo } from "../../src/shared/contract.ts";
@@ -66,8 +76,8 @@ export class MemoryBucket implements Bucket {
 
   async put(key: string, body: string, opts: { expectEtag?: string | null } = {}): Promise<void> {
     const existing = this.objects.get(key);
-    if (opts.expectEtag === null && existing) throw new Error("precondition failed");
-    if (typeof opts.expectEtag === "string" && existing?.etag !== opts.expectEtag) throw new Error("precondition failed");
+    if (opts.expectEtag === null && existing) throw new ConflictError(`${key} already exists`);
+    if (typeof opts.expectEtag === "string" && existing?.etag !== opts.expectEtag) throw new ConflictError(`${key} changed`);
     this.seed(key, { body });
   }
 
