@@ -1,0 +1,223 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+
+import { Git } from "../../cli/infra/git.ts";
+import { ConflictError, parseListObjects, R2Bucket } from "../../cli/infra/r2-bucket.ts";
+import { TarWriter } from "../../cli/infra/tar-writer.ts";
+import { TempRepo } from "./helpers.ts";
+
+describe("Git adapter", () => {
+  let repo: TempRepo;
+
+  afterEach(() => repo.remove());
+
+  it("finds pointers in history, tips and recent commits", () => {
+    repo = new TempRepo();
+    const v1 = repo.writeLfs("scene.blend", "version one");
+    repo.write("notes.txt", "not an LFS file");
+    const oldCommit = repo.commit("first", 200);
+    const v2 = repo.writeLfs("scene.blend", "version two");
+    const tex = repo.writeLfs("textures/wood.png", "wood");
+    repo.commit("second", 1);
+    repo.git("tag", "-a", "v1", oldCommit, "-m", "annotated tag");
+
+    const git = Git.open(repo.dir);
+    const history = git.pointerHistory();
+    expect(history.map((c) => [c.path, c.oid])).toEqual(
+      expect.arrayContaining([
+        ["scene.blend", v1],
+        ["scene.blend", v2],
+        ["textures/wood.png", tex],
+      ]),
+    );
+
+    const tips = git.pointersIn(git.refTips());
+    expect([...tips.keys()].toSorted()).toEqual([v1, v2, tex].toSorted());
+    expect([...(tips.get(tex)?.paths ?? [])]).toEqual(["textures/wood.png"]);
+
+    const recent = git.commitsSince(Math.floor(Date.now() / 1000) - 30 * 86_400);
+    expect(recent).toHaveLength(1);
+    expect([...git.pointersIn(recent.map((c) => c.sha)).keys()].toSorted()).toEqual([v2, tex].toSorted());
+  });
+
+  it("reads lfs.url from git config before .lfsconfig and resolves tags", () => {
+    repo = new TempRepo();
+    repo.write(".lfsconfig", '[lfs]\n\turl = "https://committed.example.com/a/b"\n');
+    repo.commit("config");
+    repo.git("tag", "release");
+    const git = Git.open(repo.dir);
+    expect(git.lfsUrl()).toBe("https://committed.example.com/a/b");
+    repo.git("config", "lfs.url", "https://local.example.com/a/b");
+    expect(git.lfsUrl()).toBe("https://local.example.com/a/b");
+    expect(git.hasTag("release")).toBe(true);
+    expect(git.hasTag("nope")).toBe(false);
+    expect(() => git.resolveCommit("nope")).toThrow(/not a commit/);
+  });
+
+  it("ignores binary blobs that are small but not pointers", () => {
+    repo = new TempRepo();
+    writeFileSync(join(repo.dir, "icon.bin"), Buffer.from([0xff, 0xfe, 0x00, 0x0a, 0xc3, 0x28]));
+    const oid = repo.writeLfs("model.glb", "glb");
+    repo.commit("mixed");
+    expect([...Git.open(repo.dir).pointersIn(Git.open(repo.dir).refTips()).keys()]).toEqual([oid]);
+  });
+});
+
+describe("R2Bucket against an S3-compatible server", () => {
+  const objects = new Map<string, { body: string; etag: string; storageClass: string }>();
+  const requests: { method: string; url: string; headers: Record<string, string | string[] | undefined> }[] = [];
+  let server: Server;
+  let bucket: R2Bucket;
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://s3");
+      requests.push({ method: req.method ?? "", url: url.pathname + url.search, headers: req.headers });
+      if (!String(req.headers.authorization).startsWith("AWS4-HMAC-SHA256")) {
+        res.writeHead(403).end("<Error><Code>AccessDenied</Code></Error>");
+        return;
+      }
+      const key = decodeURIComponent(url.pathname.replace(/^\/bucket\/?/, ""));
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        if (req.method === "GET" && url.searchParams.get("list-type") === "2") {
+          const prefix = url.searchParams.get("prefix") ?? "";
+          const all = [...objects.keys()].filter((k) => k.startsWith(prefix)).toSorted();
+          const start = Number(url.searchParams.get("continuation-token") ?? 0);
+          const page = all.slice(start, start + 2);
+          const truncated = start + 2 < all.length;
+          const contents = page
+            .map(
+              (k) =>
+                `<Contents><Key>${k.replace(/&/g, "&amp;")}</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><Size>${objects.get(k)!.body.length}</Size><StorageClass>${objects.get(k)!.storageClass}</StorageClass></Contents>`,
+            )
+            .join("");
+          res.end(
+            `<ListBucketResult><IsTruncated>${truncated}</IsTruncated>${contents}${truncated ? `<NextContinuationToken>${start + 2}</NextContinuationToken>` : ""}</ListBucketResult>`,
+          );
+        } else if (req.method === "GET") {
+          const object = objects.get(key);
+          if (!object) res.writeHead(404).end();
+          else res.writeHead(200, { ETag: object.etag }).end(object.body);
+        } else if (req.method === "PUT" && req.headers["x-amz-copy-source"]) {
+          const source = decodeURIComponent(String(req.headers["x-amz-copy-source"]).replace(/^\/bucket\//, ""));
+          const object = objects.get(source);
+          if (!object) {
+            res.writeHead(404).end("<Error><Code>NoSuchKey</Code><Message>missing</Message></Error>");
+            return;
+          }
+          objects.set(key, { ...object, storageClass: String(req.headers["x-amz-storage-class"] ?? object.storageClass) });
+          res.end("<CopyObjectResult/>");
+        } else if (req.method === "PUT") {
+          const existing = objects.get(key);
+          if (
+            (req.headers["if-none-match"] === "*" && existing) ||
+            (req.headers["if-match"] && existing?.etag !== req.headers["if-match"])
+          ) {
+            res.writeHead(412).end("<Error><Code>PreconditionFailed</Code></Error>");
+            return;
+          }
+          objects.set(key, { body: Buffer.concat(chunks).toString(), etag: `"${Date.now()}${Math.random()}"`, storageClass: "STANDARD" });
+          res.end();
+        } else if (req.method === "DELETE") {
+          if (key.startsWith("locked/")) {
+            res.writeHead(403).end("<Error><Code>AccessDenied</Code><Message>Object is locked</Message></Error>");
+            return;
+          }
+          objects.delete(key);
+          res.writeHead(204).end();
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    bucket = new R2Bucket({
+      bucket: "bucket",
+      accountId: "acct",
+      accessKeyId: "k",
+      secretAccessKey: "s",
+      endpoint: `http://127.0.0.1:${port}`,
+    });
+  });
+
+  afterAll(() => server.close());
+
+  it("lists across pages, copies with a storage class and reports refused deletes", async () => {
+    for (const key of ["p/a", "p/b", "p/c&d", "q/x", "locked/y"]) objects.set(key, { body: key, etag: '"1"', storageClass: "STANDARD" });
+
+    expect((await bucket.list("p/")).map((o) => o.key)).toEqual(["p/a", "p/b", "p/c&d"]);
+    expect((await bucket.copy("p/a", "p/a", "STANDARD_IA")).ok).toBe(true);
+    expect(requests.at(-1)?.headers["x-amz-metadata-directive"]).toBe("REPLACE");
+    expect((await bucket.list("p/a"))[0]?.storageClass).toBe("STANDARD_IA");
+    expect(await bucket.copy("missing", "p/z")).toMatchObject({ ok: false, status: 404, message: "missing" });
+    expect(await bucket.delete("locked/y")).toMatchObject({ ok: false, status: 403, message: "Object is locked" });
+    expect((await bucket.delete("q/x")).ok).toBe(true);
+  });
+
+  it("writes conditionally on the ETag it read", async () => {
+    await bucket.put("_meta/tokens.json", "{}", { expectEtag: null });
+    await expect(bucket.put("_meta/tokens.json", "{}", { expectEtag: null })).rejects.toBeInstanceOf(ConflictError);
+    const current = await bucket.get("_meta/tokens.json");
+    await bucket.put("_meta/tokens.json", '{"v":2}', { expectEtag: current!.etag! });
+    await expect(bucket.put("_meta/tokens.json", '{"v":3}', { expectEtag: current!.etag! })).rejects.toBeInstanceOf(ConflictError);
+    expect(await (await bucket.get("_meta/tokens.json"))!.text()).toBe('{"v":2}');
+    expect(await bucket.get("_meta/none")).toBeUndefined();
+  });
+
+  it("parses storage classes and defaults them", () => {
+    const page = parseListObjects(
+      "<ListBucketResult><Contents><Key>k</Key><LastModified>2026-01-01T00:00:00Z</LastModified><Size>1</Size></Contents></ListBucketResult>",
+    );
+    expect(page.objects[0]?.storageClass).toBe("STANDARD");
+    expect(page.nextToken).toBeUndefined();
+  });
+});
+
+describe("TarWriter", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "r2-lfs-tar-"));
+  });
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  function extract(archive: string): string {
+    const target = join(dir, "x");
+    mkdirSync(target);
+    execFileSync("tar", ["-xf", archive, "-C", target]);
+    return target;
+  }
+
+  it("writes archives the system tar reads, including names longer than 100 bytes", async () => {
+    const source = join(dir, "source.bin");
+    writeFileSync(source, Buffer.alloc(1500, 7));
+    const longName = `${"nested/".repeat(20)}日本語のファイル.blend`;
+    const archive = join(dir, "out.tar");
+    const writer = new TarWriter(archive);
+    await writer.add({ name: longName, size: 1500, mode: 0o644, source: { kind: "file", path: source } });
+    await writer.add({ name: "readme.txt", size: 5, mode: 0o644, source: { kind: "buffer", data: new TextEncoder().encode("hello") } });
+    await writer.close();
+
+    const listing = execFileSync("tar", ["-tf", archive], { encoding: "utf8" }).split("\n").filter(Boolean);
+    expect(listing).toEqual([longName, "readme.txt"]);
+    expect(readFileSync(join(extract(archive), longName))).toEqual(Buffer.alloc(1500, 7));
+  });
+
+  // Extracting symlinks needs extra privileges on Windows.
+  it.skipIf(process.platform === "win32")("writes symlinks", async () => {
+    const archive = join(dir, "links.tar");
+    const writer = new TarWriter(archive);
+    await writer.add({ name: "readme.txt", size: 5, mode: 0o644, source: { kind: "buffer", data: new TextEncoder().encode("hello") } });
+    await writer.add({ name: "link", size: 0, mode: 0o777, source: { kind: "symlink", target: "readme.txt" } });
+    await writer.close();
+    expect(readFileSync(join(extract(archive), "link"), "utf8")).toBe("hello");
+  });
+});
