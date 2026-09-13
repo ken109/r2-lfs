@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "r2-lfs",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "observability": {
+    "enabled": true
+  },
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "r2-lfs"
+    }
+  ],
+  "vars": {
+    // Comma-separated GitHub users or orgs allowed to use this server. Required.
+    "ALLOWED_OWNERS": "",
+    // "github" | "token"
+    "AUTH_MODE": "github",
+    // "per-repo" | "shared"
+    "STORAGE_LAYOUT": "per-repo",
+    // "auto" | "presigned" | "proxy"
+    "TRANSFER_MODE": "auto",
+    // Request body limit of your Workers plan (Free/Pro: 100, Business: 200, Enterprise: 500).
+    "PROXY_MAX_UPLOAD_MB": "100",
+    // Presigned URLs only. R2_BUCKET_NAME must match bucket_name above.
+    "R2_ACCOUNT_ID": "",
+    "R2_BUCKET_NAME": "r2-lfs"
+  }
+}
