@@ -1,4 +1,4 @@
-import type { StoredToken, TokensFile } from "../../src/shared/contract.ts";
+import { type StoredToken, storedTokensIn, TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
 import { UsageError } from "./errors.ts";
 
 const SCOPE = /^(\*|[A-Za-z0-9-]+\/(\*|[A-Za-z0-9._-]+))$/;
@@ -8,14 +8,15 @@ export function emptyTokensFile(): TokensFile {
 }
 
 export function parseTokensFile(text: string): TokensFile {
-  let file: TokensFile;
+  let value: unknown;
   try {
-    file = JSON.parse(text) as TokensFile;
+    value = JSON.parse(text);
   } catch {
-    throw new Error("the tokens file is not valid JSON");
+    throw new UsageError(`${TOKENS_KEY} in the bucket is not valid JSON; fix or delete it`);
   }
-  if (file.version !== 1 || !Array.isArray(file.tokens)) throw new Error("the tokens file has an unexpected format");
-  return file;
+  const tokens = storedTokensIn(value);
+  if (!tokens) throw new UsageError(`${TOKENS_KEY} in the bucket has an unexpected format; fix or delete it`);
+  return { version: 1, tokens };
 }
 
 export interface NewToken {

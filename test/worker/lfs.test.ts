@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseConfig } from "../../src/domain/config.ts";
 import type { Env } from "../../src/env.ts";
@@ -139,6 +139,10 @@ beforeEach(() => {
   clearStoredTokensCache();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("routing and configuration", () => {
   it("answers the landing page without configuration", async () => {
     const res = await call(makeEnv({ ALLOWED_OWNERS: "" }), "/");
@@ -241,6 +245,31 @@ describe("stored tokens (r2-lfs token)", () => {
     expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
     expect((await batch(e, "/acme/app", "upload", [], { token })).status).toBe(403);
     expect((await batch(e, "/acme/other", "download", [], { token })).status).toBe(404);
+    await env.BUCKET.delete(TOKENS_KEY);
+  });
+
+  it("ignores a malformed tokens file instead of failing every request", async () => {
+    const e = makeEnv();
+    for (const broken of ["{", '{"version":1,"tokens":{}}', '{"version":1,"tokens":[{"sha256":1}]}']) {
+      await env.BUCKET.put(TOKENS_KEY, broken);
+      clearStoredTokensCache();
+      expect((await batch(e, "/acme/app", "download", [], { token: WRITE_TOKEN })).status).toBe(200);
+    }
+    await env.BUCKET.delete(TOKENS_KEY);
+  });
+
+  it("picks up revocations once the cached copy expires", async () => {
+    const token = "expiring-token-0123456789";
+    const e = makeEnv({ AUTH_TOKENS: "" });
+    await storeTokens([
+      { id: "t3", label: "cached", scope: "*", permission: "read", sha256: await sha256Hex(token), created: "2026-09-14" },
+    ]);
+    expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
+
+    await env.BUCKET.put(TOKENS_KEY, JSON.stringify({ version: 1, tokens: [] } satisfies TokensFile));
+    expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+    expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(401);
     await env.BUCKET.delete(TOKENS_KEY);
   });
 

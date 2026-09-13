@@ -1,7 +1,7 @@
 import type { TokenDirectory } from "../app/ports.ts";
 import type { Grant } from "../domain/access.ts";
 import type { StaticToken } from "../domain/config.ts";
-import { type StoredToken, TOKENS_KEY, type TokensFile } from "../shared/contract.ts";
+import { type StoredToken, storedTokensIn, TOKENS_KEY } from "../shared/contract.ts";
 import { secretEquals, sha256Hex } from "./crypto.ts";
 
 const TTL_MS = 30_000;
@@ -17,11 +17,10 @@ async function storedTokens(bucket: R2Bucket): Promise<StoredToken[]> {
   const object = await bucket.get(TOKENS_KEY);
   let tokens: StoredToken[] = [];
   if (object) {
-    try {
-      tokens = ((await object.json()) as TokensFile).tokens ?? [];
-    } catch {
-      console.error(`${TOKENS_KEY} is not valid JSON; ignoring stored tokens`);
-    }
+    const parsed = storedTokensIn(await object.json().catch(() => undefined));
+    // A broken file must not take down tokens from AUTH_TOKENS as well.
+    if (parsed) tokens = parsed;
+    else console.error(`${TOKENS_KEY} is not a valid tokens file; ignoring stored tokens`);
   }
   cache = { bucket, tokens, expires: Date.now() + TTL_MS };
   return tokens;

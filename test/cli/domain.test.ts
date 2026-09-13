@@ -309,9 +309,12 @@ describe("tokens", () => {
     expect(() => revokeToken(file, "nope")).toThrow(/no token/);
   });
 
-  it("rejects unexpected files", () => {
+  it("rejects unexpected files with a message rather than a stack trace", () => {
+    expect(thrown(() => parseTokensFile("{"))).toBeInstanceOf(UsageError);
     expect(() => parseTokensFile("{")).toThrow(/JSON/);
     expect(() => parseTokensFile('{"version":2}')).toThrow(/format/);
+    expect(() => parseTokensFile('{"version":1,"tokens":{}}')).toThrow(/format/);
+    expect(() => parseTokensFile('{"version":1,"tokens":[{"id":"a"}]}')).toThrow(/format/);
   });
 });
 

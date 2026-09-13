@@ -41,6 +41,20 @@ export interface TokensFile {
   tokens: StoredToken[];
 }
 
+/** The tokens of a parsed tokens file, or undefined when it does not have the expected shape. */
+export function storedTokensIn(value: unknown): StoredToken[] | undefined {
+  const file = value as Partial<TokensFile> | null;
+  if (typeof file !== "object" || file === null || file.version !== 1 || !Array.isArray(file.tokens)) return undefined;
+  const valid = file.tokens.every(
+    (t: Partial<StoredToken> | null) =>
+      typeof t === "object" &&
+      t !== null &&
+      [t.id, t.label, t.scope, t.sha256, t.created].every((field) => typeof field === "string") &&
+      (t.permission === "read" || t.permission === "write"),
+  );
+  return valid ? file.tokens : undefined;
+}
+
 export const OID_PATTERN = /^[0-9a-f]{64}$/;
 
 /** GitHub names are case-insensitive, so keys are lowercased to keep one prefix per repository. */
