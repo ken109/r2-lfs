@@ -45,6 +45,8 @@ function call(e: Env, path: string, opts: CallOptions = {}): Promise<Response> {
   const authorization = opts.authorization ?? (opts.token ? basic(opts.token) : undefined);
   if (authorization) headers.set("Authorization", authorization);
   let body = opts.body;
+  // Clients such as git-lfs send Content-Length; a Request built here would not have the header.
+  if (body instanceof Uint8Array) headers.set("Content-Length", String(body.byteLength));
   if (opts.json !== undefined) {
     body = JSON.stringify(opts.json);
     headers.set("Content-Type", "application/vnd.git-lfs+json");
@@ -313,6 +315,58 @@ describe("proxy transfers", () => {
     expect(await env.BUCKET.head(`acme/app/${object.oid}`)).toBeNull();
   });
 
+  it("requires Content-Length and applies the proxy limit to direct uploads", async () => {
+    const e = makeEnv();
+    const object = await blob();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(object.data);
+        controller.close();
+      },
+    });
+    const chunked = await handle(
+      new Request(`${ORIGIN}/acme/app/objects/${object.oid}`, {
+        method: "PUT",
+        headers: { Authorization: basic(WRITE_TOKEN) },
+        body: stream,
+      }),
+      e,
+      { fetch: unexpectedFetch },
+    );
+    expect(chunked.status).toBe(411);
+
+    // The limit is checked against the declared length before anything is read.
+    const tooLarge = await handle(
+      new Request(`${ORIGIN}/acme/app/objects/${object.oid}`, {
+        method: "PUT",
+        headers: { Authorization: basic(WRITE_TOKEN), "Content-Length": String(2 * 1024 * 1024) },
+        body: object.data,
+      }),
+      e,
+      { fetch: unexpectedFetch },
+    );
+    expect(tooLarge.status).toBe(413);
+    expect(await env.BUCKET.head(`acme/app/${object.oid}`)).toBeNull();
+  });
+
+  it("does not let a read-only token write through the transfer endpoints", async () => {
+    const e = makeEnv();
+    const object = await blob();
+    const put = await call(e, `/acme/app/objects/${object.oid}`, { method: "PUT", token: READ_TOKEN, body: object.data });
+    expect(put.status).toBe(403);
+    expect(await env.BUCKET.head(`acme/app/${object.oid}`)).toBeNull();
+    const verify = await call(e, "/acme/app/objects/verify", { token: READ_TOKEN, json: { oid: object.oid, size: object.size } });
+    expect(verify.status).toBe(403);
+  });
+
+  it("fails verify when the stored size differs from the one claimed", async () => {
+    const e = makeEnv();
+    const object = await blob();
+    await upload(e, "/acme/app", object);
+    const res = await call(e, "/acme/app/objects/verify", { token: WRITE_TOKEN, json: { oid: object.oid, size: object.size + 1 } });
+    expect(res.status).toBe(422);
+  });
+
   it("fails verify when nothing was uploaded", async () => {
     const object = await blob();
     const res = await call(makeEnv(), "/acme/app/objects/verify", {
@@ -395,10 +449,34 @@ describe("presigned transfers", () => {
     expect(actions!.verify!.href).toBe(`${ORIGIN}/acme/app/objects/verify`);
   });
 
-  it("does not cap upload size", async () => {
+  it("accepts uploads up to R2's single-request limit and refuses larger ones before any transfer", async () => {
     const object = await blob();
-    const { objects } = await batch(presignEnv(), "/acme/app", "upload", [{ oid: object.oid, size: 5 * 1024 * 1024 * 1024 }]);
+    const limit = 5 * 1024 ** 3 - 5 * 1024 ** 2;
+    const { objects } = await batch(presignEnv(), "/acme/app", "upload", [
+      { oid: object.oid, size: limit },
+      { oid: (await blob()).oid, size: limit + 1 },
+    ]);
     expect(objects[0]?.actions?.upload).toBeDefined();
+    expect(objects[1]?.error).toEqual({ code: 422, message: expect.stringContaining("the most R2 accepts in one upload") });
+  });
+
+  it("signs downloads and forced presigned mode, and verify still authenticates to the Worker", async () => {
+    const e = makeEnv({
+      TRANSFER_MODE: "presigned",
+      R2_ACCOUNT_ID: "0123456789abcdef",
+      R2_BUCKET_NAME: "lfs-bucket",
+      R2_ACCESS_KEY_ID: "AKIDEXAMPLE",
+      R2_SECRET_ACCESS_KEY: "secret",
+    });
+    const object = await blob();
+    await upload(makeEnv(), "/acme/app", object);
+    const down = await batch(e, "/acme/app", "download", [object]);
+    const href = new URL(down.objects[0]!.actions!.download!.href);
+    expect(href.pathname).toBe(`/lfs-bucket/acme/app/${object.oid}`);
+    expect(href.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+
+    const up = await batch(e, "/acme/app", "upload", [await blob()]);
+    expect(up.objects[0]!.actions!.verify!.header?.Authorization).toBe(basic(WRITE_TOKEN));
   });
 
   it("falls back to proxy in auto mode without credentials", async () => {

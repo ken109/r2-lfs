@@ -62,7 +62,7 @@ async function planObject(
 
   const decision = decideUpload(object, stored, { presigned: ctx.links.presigned, proxyMaxUploadBytes: ctx.config.proxyMaxUploadBytes });
   if (decision.kind === "exists") return object;
-  if (decision.kind === "too-large") return { ...object, error: { code: 422, message: tooLargeMessage(decision.limitBytes) } };
+  if (decision.kind === "too-large") return { ...object, error: { code: 422, message: tooLargeMessage(decision) } };
   return {
     ...object,
     authenticated: true,

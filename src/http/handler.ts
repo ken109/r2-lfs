@@ -123,7 +123,9 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
         );
       }
       if (request.method === "PUT") {
-        const length = Number(request.headers.get("Content-Length"));
+        // Number(null) would be 0 and pass the size checks, leaving R2 to fail on a stream of unknown length.
+        const header = request.headers.get("Content-Length")?.trim();
+        const length = header ? Number(header) : Number.NaN;
         return toResponse(await lfs.upload(ctx, matched.oid, request.body, length), () => new Response(null, { status: 200 }));
       }
       return lfsError(405, "Method not allowed");

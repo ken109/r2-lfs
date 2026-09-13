@@ -57,7 +57,10 @@ export function requiredPermission(operation: Operation): Permission {
   return operation === "upload" ? "write" : "read";
 }
 
-export type UploadDecision = { kind: "exists" } | { kind: "too-large"; limitBytes: number } | { kind: "upload" };
+/** R2 accepts at most 5 GiB minus 5 MiB in one request, and git-lfs's basic transfer uploads an object in one PUT. */
+export const R2_MAX_SINGLE_UPLOAD_BYTES = 5 * 1024 ** 3 - 5 * 1024 ** 2;
+
+export type UploadDecision = { kind: "exists" } | { kind: "too-large"; limitBytes: number; presigned: boolean } | { kind: "upload" };
 
 export function decideUpload(
   object: ObjectSpec,
@@ -65,13 +68,14 @@ export function decideUpload(
   transfer: { presigned: boolean; proxyMaxUploadBytes: number },
 ): UploadDecision {
   if (stored && stored.size === object.size) return { kind: "exists" };
-  if (!transfer.presigned && object.size > transfer.proxyMaxUploadBytes) {
-    return { kind: "too-large", limitBytes: transfer.proxyMaxUploadBytes };
-  }
+  const limitBytes = transfer.presigned ? R2_MAX_SINGLE_UPLOAD_BYTES : transfer.proxyMaxUploadBytes;
+  if (object.size > limitBytes) return { kind: "too-large", limitBytes, presigned: transfer.presigned };
   return { kind: "upload" };
 }
 
-export function tooLargeMessage(limitBytes: number): string {
-  const limitMb = Math.floor(limitBytes / 1024 / 1024);
-  return `Object is larger than ${limitMb} MB, the proxy upload limit. Configure presigned URLs (R2_ACCESS_KEY_ID etc.) to upload it.`;
+export function tooLargeMessage(decision: { limitBytes: number; presigned: boolean }): string {
+  const limitMb = Math.floor(decision.limitBytes / 1024 / 1024);
+  return decision.presigned
+    ? `Object is larger than ${limitMb} MB, the most R2 accepts in one upload; git-lfs uploads each object in one request.`
+    : `Object is larger than ${limitMb} MB, the proxy upload limit. Configure presigned URLs (R2_ACCESS_KEY_ID etc.) to upload it.`;
 }

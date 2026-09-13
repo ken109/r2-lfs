@@ -194,7 +194,8 @@ in the bucket, revocable within 30 seconds), plus any in the `AUTH_TOKENS` secre
 does not hash to the oid. Uploads are limited by the Workers request body size (100 MB on Free and
 Pro); larger objects fail early with a message pointing at presigned mode.
 
-**`presigned`** hands Git time-limited R2 URLs, so transfers skip the Worker and have no size limit.
+**`presigned`** hands Git time-limited R2 URLs, so transfers skip the Worker. Objects can be up to
+4.995 GiB, the most R2 accepts in one request.
 R2 does not verify SHA-256 checksums on presigned uploads, so the Worker checks only the size.
 
 ## Security
