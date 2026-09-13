@@ -83,6 +83,11 @@ in `usage`, `verify` and `why`) need an R2 API token with **Object Read & Write*
 export R2_ACCOUNT_ID=... R2_BUCKET_NAME=r2-lfs R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=...
 ```
 
+Set `R2_ENDPOINT` as well for a bucket in a jurisdiction, such as `https://<account id>.eu.r2.cloudflarestorage.com`.
+
+Commands that talk to the server use the password git's credential helpers have for it. Set
+`R2_LFS_TOKEN` to use a token instead, for example in CI.
+
 ## Cleaning up old versions
 
 `r2-lfs gc` fetches every branch and tag, reads the history of all of them, lists the bucket,
@@ -160,18 +165,18 @@ a minor release may change what gc deletes, so pin an exact tag such as `@v0.1.0
 
 These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare page, or by `setup`.
 
-| Name                   | Kind   | Default    | Meaning                                                                                                             |
-| ---------------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------- |
-| `ALLOWED_OWNERS`       | var    | (required) | Comma-separated GitHub users or orgs allowed to use the server. `*` allows anyone.                                  |
-| `AUTH_MODE`            | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                         |
-| `STORAGE_LAYOUT`       | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories. |
-| `TRANSFER_MODE`        | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).     |
-| `PROXY_MAX_UPLOAD_MB`  | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                              |
-| `R2_ACCOUNT_ID`        | var    |            | Presigned mode: your Cloudflare account ID.                                                                         |
-| `R2_BUCKET_NAME`       | var    | `r2-lfs`   | Presigned mode: the name of the bucket bound as `BUCKET`.                                                           |
-| `R2_ACCESS_KEY_ID`     | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                             |
-| `R2_SECRET_ACCESS_KEY` | secret |            | Presigned mode: its secret.                                                                                         |
-| `AUTH_TOKENS`          | secret |            | Token mode: comma-separated `<scope>:<r\|rw>:<token>` entries, in addition to tokens from `r2-lfs token`.           |
+| Name                   | Kind   | Default    | Meaning                                                                                                                                                          |
+| ---------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALLOWED_OWNERS`       | var    | (required) | Comma-separated GitHub users or orgs allowed to use the server. `*` allows anyone.                                                                               |
+| `AUTH_MODE`            | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                                                                      |
+| `STORAGE_LAYOUT`       | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                              |
+| `TRANSFER_MODE`        | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                  |
+| `PROXY_MAX_UPLOAD_MB`  | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                           |
+| `R2_ACCOUNT_ID`        | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                      |
+| `R2_BUCKET_NAME`       | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                         |
+| `R2_ACCESS_KEY_ID`     | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                          |
+| `R2_SECRET_ACCESS_KEY` | secret |            | Presigned mode: its secret.                                                                                                                                      |
+| `AUTH_TOKENS`          | secret |            | Token mode: comma- or newline-separated `<owner/repo\|owner/*\|*>:<r\|rw>:<token>` entries, tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
 
 If a setting is invalid, LFS requests fail with a message listing every problem, and `r2-lfs doctor` shows it too.
 
@@ -200,13 +205,15 @@ R2 does not verify SHA-256 checksums on presigned uploads, so the Worker checks 
 
 ## Security
 
-- Tokens from `r2-lfs token` are stored as SHA-256 hashes; comparisons are constant-time.
+- Tokens from `r2-lfs token` are stored as SHA-256 hashes; `AUTH_TOKENS` is an encrypted Worker secret. Comparisons are constant-time.
 - The Worker exposes no delete endpoint. Only holders of R2 API credentials can remove objects,
   and bucket lock rules stop even them within the retention period.
 - gc copies an object to the trash before deleting it, and removes the copy again if the delete is
   refused, so a failure never loses data.
-- In the `shared` layout, anyone who can upload to one repository can upload any object, and in
-  presigned mode content hashes are not verified. Use `per-repo` when repositories have different writers.
+- In the `shared` layout, anyone who can upload to one repository can upload any object, and anyone who
+  can read one repository can download any object whose oid they know, which also tells them whether a
+  file is stored. In presigned mode content hashes are not verified. Use `per-repo` when repositories
+  have different readers or writers.
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability.
 

@@ -10,6 +10,7 @@ Thanks for helping. Bug reports, fixes and ideas are all welcome.
 ## Development setup
 
 You need Node.js 24, pnpm (the version in `package.json` is picked up by Corepack), git and git-lfs.
+The published CLI supports Node.js 22.13 and later; `pnpm cli` runs TypeScript directly, which needs Node.js 24.
 
 ```sh
 pnpm install
@@ -20,8 +21,9 @@ pnpm format      # oxfmt, then oxlint --fix
 pnpm build       # dist/cli.js and dist/worker.js
 ```
 
-Run the CLI from source with `pnpm cli <command>`, and the Worker with `pnpm dev`
-(put settings in `.dev.vars`; see `.dev.vars.example`).
+Run the CLI from source with `pnpm cli <command>`, and the Worker with `pnpm dev`. Put settings in
+`.dev.vars`, which overrides the variables in `wrangler.jsonc`; at least `ALLOWED_OWNERS` is required,
+for example `ALLOWED_OWNERS=your-github-name`. `.dev.vars.example` lists the secrets.
 
 ## How the code is organised
 

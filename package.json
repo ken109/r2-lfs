@@ -54,13 +54,13 @@
         "description": "Comma-separated GitHub users or orgs that may use this server, e.g. `my-name,my-org`. Required. Use `*` only if you really mean anyone."
       },
       "AUTH_MODE": {
-        "description": "`github`: authenticate with a GitHub token and mirror the repository's permissions. `token`: use the static tokens in `AUTH_TOKENS`."
+        "description": "`github`: authenticate with a GitHub token and mirror the repository's permissions. `token`: accept tokens from `r2-lfs token` and `AUTH_TOKENS`."
       },
       "STORAGE_LAYOUT": {
         "description": "`per-repo`: store objects under `<owner>/<repo>/` so each repository can be cleaned up on its own. `shared`: one pool deduplicated across repositories."
       },
       "TRANSFER_MODE": {
-        "description": "`auto`: use presigned URLs when the R2 API credentials below are set, otherwise proxy through the Worker. `proxy` caps uploads at `PROXY_MAX_UPLOAD_MB`."
+        "description": "`auto`: use presigned URLs when the R2 API credentials below are set, otherwise proxy through the Worker. `presigned`: require those credentials. `proxy`: always go through the Worker, which caps uploads at `PROXY_MAX_UPLOAD_MB`."
       },
       "PROXY_MAX_UPLOAD_MB": {
         "description": "Largest upload accepted in proxy mode. Match your plan's request body limit (Free/Pro: 100)."
@@ -78,7 +78,7 @@
         "description": "Only for presigned URLs. The secret that pairs with `R2_ACCESS_KEY_ID`."
       },
       "AUTH_TOKENS": {
-        "description": "Only for `AUTH_MODE=token`. Comma-separated `<scope>:<r|rw>:<token>` entries, e.g. `my-name/*:rw:<random>`. Leave empty in github mode."
+        "description": "Only for `AUTH_MODE=token`. Comma- or newline-separated `<owner/repo|owner/*|*>:<r|rw>:<token>` entries with tokens of 16 or more characters, e.g. `my-name/*:rw:<random>`. May stay empty when you create tokens with `r2-lfs token`."
       }
     }
   },
