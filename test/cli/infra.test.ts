@@ -67,6 +67,42 @@ describe("Git adapter", () => {
     repo.commit("mixed");
     expect([...Git.open(repo.dir).pointersIn(Git.open(repo.dir).refTips()).keys()]).toEqual([oid]);
   });
+
+  it("finds recent commits behind a commit with an older date", () => {
+    repo = new TempRepo();
+    repo.writeLfs("a.blend", "recent");
+    repo.commit("recent", 5);
+    repo.writeLfs("a.blend", "skewed");
+    repo.commit("skewed clock", 400);
+    repo.writeLfs("a.blend", "tip");
+    repo.commit("tip", 1);
+    const recent = Git.open(repo.dir).commitsSince(Math.floor(Date.now() / 1000) - 90 * 86_400);
+    expect(recent).toHaveLength(2);
+  });
+
+  it("records pointers from root commits, merged branches, renames and non-ASCII paths regardless of log settings", () => {
+    repo = new TempRepo();
+    repo.git("config", "log.showRoot", "false");
+    repo.git("config", "log.showSignature", "true");
+    const root = repo.writeLfs("scene.blend", "root version");
+    repo.commit("root");
+    repo.git("switch", "-q", "-c", "side");
+    const side = repo.writeLfs("テクスチャ/木 目.png", "wood grain");
+    repo.commit("side");
+    repo.git("switch", "-q", "main");
+    repo.git("mv", "scene.blend", "renamed.blend");
+    repo.commit("rename");
+    repo.git("merge", "-q", "--no-ff", "side", "-m", "merge");
+
+    const history = Git.open(repo.dir).pointerHistory();
+    expect(history.map((c) => [c.path, c.oid])).toEqual(
+      expect.arrayContaining([
+        ["scene.blend", root],
+        ["renamed.blend", root],
+        ["テクスチャ/木 目.png", side],
+      ]),
+    );
+  });
 });
 
 describe("R2Bucket against an S3-compatible server", () => {

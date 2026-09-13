@@ -75,13 +75,16 @@ export class Git implements GitRepository {
   }
 
   commitsSince(sinceUnix: number): { sha: string; time: number }[] {
-    return this.run(["log", "--all", `--since=${sinceUnix}`, "--format=%H %ct"])
+    // Filtered here rather than with --since, which stops walking at the first older commit
+    // and so skips newer commits behind a commit with a skewed date.
+    return this.run(["log", "--all", "--no-show-signature", "--format=%H %ct"])
       .split("\n")
       .filter(Boolean)
       .map((line) => {
         const [sha, time] = line.split(" ");
         return { sha: sha!, time: Number(time) };
-      });
+      })
+      .filter((c) => c.time >= sinceUnix);
   }
 
   resolvePointers(blobs: Iterable<string>): Map<string, Pointer> {
@@ -148,6 +151,10 @@ export class Git implements GitRepository {
     const raw = this.run([
       "log",
       "--all",
+      // Explicit, so user settings such as log.showRoot=false cannot hide changes.
+      "--root",
+      "--no-show-signature",
+      "--no-color",
       "--diff-merges=first-parent",
       "--format=%x01%H %ct",
       "--raw",
