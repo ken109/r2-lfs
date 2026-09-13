@@ -36,6 +36,25 @@ describe("contract", () => {
     expect(wrangler).toContain(`"compatibility_date": "${WORKER_COMPATIBILITY_DATE}"`);
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
     expect(VERSION).toBe(pkg.version);
+
+    // setup deploys the same defaults as the Deploy to Cloudflare button, apart from what its options choose.
+    const jsonc = JSON.parse(wrangler.replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1")) as {
+      observability: unknown;
+      vars: Record<string, string>;
+    };
+    const config = workerConfig({
+      name: "r2-lfs",
+      bucket: jsonc.vars.R2_BUCKET_NAME!,
+      owners: [],
+      authMode: "github",
+      layout: "per-repo",
+      lockDays: 0,
+      trashDays: 0,
+      deploy: true,
+    });
+    expect(config.observability).toEqual(jsonc.observability);
+    const { R2_ACCOUNT_ID: _account, ...deployedVars } = jsonc.vars;
+    expect(config.vars).toEqual(deployedVars);
   });
 
   it("builds a Worker config that locks live prefixes but not the trash", () => {

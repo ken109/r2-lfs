@@ -42,7 +42,8 @@ export interface PolicyOverrides {
   minAgeDays?: string;
 }
 
-function readDays(flag: string, raw: string | undefined): number | undefined {
+/** Parses a `--<flag>` count of days. */
+export function readDays(flag: string, raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new UsageError(`--${flag} must be a non-negative integer`);

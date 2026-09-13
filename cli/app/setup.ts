@@ -128,7 +128,8 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
   files.copyFile(deps.workerBundle, join(dir, "worker.js"));
   files.writeText(join(dir, "wrangler.json"), `${JSON.stringify(workerConfig(opts), null, 2)}\n`);
   const deployed = await reporter.task(`Deploying Worker ${opts.name}`, () =>
-    wrangler.run(["deploy", "--config", join(dir, "wrangler.json")], { cwd: dir }),
+    // Relative, because npx runs through a shell on Windows and the temp dir may contain spaces.
+    wrangler.run(["deploy", "--config", "wrangler.json"], { cwd: dir }),
   );
   check(deployed, "deploying the Worker", /$^/);
   const url = /https:\/\/[\w.-]+\.workers\.dev/.exec(deployed.output)?.[0];

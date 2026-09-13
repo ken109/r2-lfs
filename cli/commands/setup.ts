@@ -1,17 +1,11 @@
 import { defineCommand } from "citty";
 
+import { readDays } from "../app/common.ts";
 import { setupServer } from "../app/setup.ts";
 import * as compose from "../composition.ts";
-import { UsageError } from "../domain/errors.ts";
 import { bold } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
 import { commaList } from "./shared.ts";
-
-function days(raw: string, flag: string): number {
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) throw new UsageError(`--${flag} must be a non-negative integer`);
-  return n;
-}
 
 export default defineCommand({
   meta: { name: "setup", description: "Create the bucket, its lock and trash rules, and deploy the server with Wrangler" },
@@ -46,8 +40,8 @@ export default defineCommand({
         owners: commaList(args.owners),
         authMode: args.auth as "github" | "token",
         layout: args.layout as "per-repo" | "shared",
-        lockDays: days(args["lock-days"], "lock-days"),
-        trashDays: days(args["trash-days"], "trash-days"),
+        lockDays: readDays("lock-days", args["lock-days"])!,
+        trashDays: readDays("trash-days", args["trash-days"])!,
         deploy: args.deploy,
       },
     );

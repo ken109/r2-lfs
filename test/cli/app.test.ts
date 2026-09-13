@@ -6,8 +6,9 @@ import { diagnose } from "../../cli/app/doctor.ts";
 import { applyGc, applyPlan, gcMode, planGc, recheckPlan, trashObject } from "../../cli/app/gc.ts";
 import { initRepository } from "../../cli/app/init.ts";
 import { migrate } from "../../cli/app/migrate.ts";
-import { BatchRequestError, type GitHubCli, type GlobalGitConfig, type LfsClient } from "../../cli/app/ports.ts";
+import { BatchRequestError, type Files, type GitHubCli, type GlobalGitConfig, type LfsClient, type Wrangler } from "../../cli/app/ports.ts";
 import { listTrash, restoreObjects, selectTrash } from "../../cli/app/restore.ts";
+import { setupServer } from "../../cli/app/setup.ts";
 import { createToken, listTokens, revoke } from "../../cli/app/token.ts";
 import { usageReport } from "../../cli/app/usage.ts";
 import { verifyObjects } from "../../cli/app/verify.ts";
@@ -471,6 +472,64 @@ describe("migrate", () => {
     cleanup.push(() => shallow.remove());
     await expect(migrate({ ...m.deps, repo: Git.open(shallow.dir) }, m.opts)).rejects.toThrow(/shallow/);
     expect(m.calls).toEqual([]);
+  });
+});
+
+function setupFakes() {
+  const runs: { args: string[]; cwd?: string }[] = [];
+  const written = new Map<string, string>();
+  const wrangler: Wrangler = {
+    whoami: () => "me@example.com",
+    run: (args, opts) => {
+      runs.push({ args, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
+      if (args[0] === "r2" && args[2] === "create") return { code: 1, output: "The bucket already exists" };
+      return { code: 0, output: args[0] === "deploy" ? "Deployed https://r2-lfs.me.workers.dev" : "" };
+    },
+  };
+  const files: Files = {
+    sizeOf: () => undefined,
+    mkdirp: () => {},
+    writeText: (path, text) => written.set(path, text),
+    copyFile: () => {},
+    sha256: async () => "",
+    writeTar: async () => {},
+    tempDir: () => "/tmp/with space/r2-lfs-setup-1",
+  };
+  return { runs, written, deps: { wrangler, files, reporter: new SilentReporter(), workerBundle: "dist/worker.js" } };
+}
+describe("setup", () => {
+  const base = {
+    name: "r2-lfs",
+    bucket: "lfs",
+    owners: ["acme"],
+    authMode: "github" as const,
+    layout: "per-repo" as const,
+    lockDays: 90,
+    trashDays: 30,
+    deploy: true,
+  };
+
+  it("keeps an existing bucket, adds the rules and deploys with a config path that survives a shell", async () => {
+    const f = setupFakes();
+    const result = await setupServer(f.deps, base);
+    expect(result).toEqual({ url: "https://r2-lfs.me.workers.dev", lockPrefixes: ["acme/"] });
+    expect(f.runs.map((r) => r.args.slice(0, 4).join(" "))).toEqual([
+      "r2 bucket create lfs",
+      "r2 bucket lifecycle add",
+      "r2 bucket lock add",
+      "deploy --config wrangler.json",
+    ]);
+    expect(f.runs.at(-1)?.cwd).toBe("/tmp/with space/r2-lfs-setup-1");
+    expect(f.written.has(join("/tmp/with space/r2-lfs-setup-1", "wrangler.json"))).toBe(true);
+  });
+
+  it("skips lock rules when any owner is allowed, since they would lock the trash too", async () => {
+    const f = setupFakes();
+    const result = await setupServer(f.deps, { ...base, owners: ["*"], deploy: false });
+    expect(result.lockPrefixes).toEqual([]);
+    expect(f.runs.some((r) => r.args.includes("lock"))).toBe(false);
+    expect(f.deps.reporter.warnings).toEqual([expect.stringContaining("skipping lock rules")]);
+    await expect(setupServer(f.deps, { ...base, owners: ["bad owner"] })).rejects.toThrow(/not a valid/);
   });
 });
 
