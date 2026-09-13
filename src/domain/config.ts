@@ -1,5 +1,7 @@
-export interface Env {
-  BUCKET: R2Bucket;
+import type { StorageLayout } from "../shared/contract.ts";
+
+/** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
+export interface ConfigVars {
   ALLOWED_OWNERS?: string;
   AUTH_MODE?: string;
   STORAGE_LAYOUT?: string;
@@ -13,10 +15,8 @@ export interface Env {
 }
 
 export type AuthMode = "github" | "token";
-export type StorageLayout = "per-repo" | "shared";
-export type Permission = "none" | "read" | "write";
 
-export interface TokenGrant {
+export interface StaticToken {
   /** `owner/repo`, `owner/*` or `*`, lowercased. */
   scope: string;
   permission: "read" | "write";
@@ -38,12 +38,15 @@ export interface Config {
   /** Set when transfers go through presigned URLs; absent means proxy. */
   presign: PresignCredentials | undefined;
   proxyMaxUploadBytes: number;
-  tokens: readonly TokenGrant[];
+  tokens: readonly StaticToken[];
 }
 
 export class ConfigError extends Error {
-  constructor(readonly problems: string[]) {
+  readonly problems: string[];
+
+  constructor(problems: string[]) {
     super(`r2-lfs is misconfigured:\n- ${problems.join("\n- ")}`);
+    this.problems = problems;
   }
 }
 
@@ -53,13 +56,7 @@ function value(raw: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function oneOf<T extends string>(
-  name: string,
-  raw: string | undefined,
-  allowed: readonly T[],
-  fallback: T,
-  problems: string[],
-): T {
+function oneOf<T extends string>(name: string, raw: string | undefined, allowed: readonly T[], fallback: T, problems: string[]): T {
   const v = value(raw);
   if (v === undefined) return fallback;
   if ((allowed as readonly string[]).includes(v)) return v as T;
@@ -67,30 +64,30 @@ function oneOf<T extends string>(
   return fallback;
 }
 
-export function parseTokens(raw: string | undefined, problems: string[]): TokenGrant[] {
-  const grants: TokenGrant[] = [];
+export function parseStaticTokens(raw: string | undefined, problems: string[]): StaticToken[] {
+  const tokens: StaticToken[] = [];
+  let index = 0;
   for (const entry of (raw ?? "").split(/[,\n]/)) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
+    index++;
     const [scope, perm, ...rest] = trimmed.split(":");
     const token = rest.join(":");
     const validScope = scope !== undefined && /^(\*|[\w.-]+\/(\*|[\w.-]+))$/.test(scope);
     if (!validScope || (perm !== "r" && perm !== "rw") || token.length < 16) {
       // Never echo the entry: it contains the token.
-      problems.push(
-        `AUTH_TOKENS entry #${grants.length + 1} must look like <owner/repo|owner/*|*>:<r|rw>:<token of 16+ chars>`,
-      );
+      problems.push(`AUTH_TOKENS entry #${index} must look like <owner/repo|owner/*|*>:<r|rw>:<token of 16+ chars>`);
       continue;
     }
-    grants.push({ scope: scope.toLowerCase(), permission: perm === "rw" ? "write" : "read", token });
+    tokens.push({ scope: scope.toLowerCase(), permission: perm === "rw" ? "write" : "read", token });
   }
-  return grants;
+  return tokens;
 }
 
-export function loadConfig(env: Env): Config {
+export function parseConfig(vars: ConfigVars): Config {
   const problems: string[] = [];
 
-  const ownersRaw = value(env.ALLOWED_OWNERS);
+  const ownersRaw = value(vars.ALLOWED_OWNERS);
   let allowedOwners: Config["allowedOwners"] = new Set();
   if (ownersRaw === undefined) {
     problems.push("ALLOWED_OWNERS is required, e.g. `my-name,my-org`");
@@ -105,52 +102,37 @@ export function loadConfig(env: Env): Config {
     );
   }
 
-  const authMode = oneOf("AUTH_MODE", env.AUTH_MODE, ["github", "token"], "github", problems);
-  const storageLayout = oneOf(
-    "STORAGE_LAYOUT",
-    env.STORAGE_LAYOUT,
-    ["per-repo", "shared"],
-    "per-repo",
-    problems,
-  );
-  const transferMode = oneOf(
-    "TRANSFER_MODE",
-    env.TRANSFER_MODE,
-    ["auto", "presigned", "proxy"],
-    "auto",
-    problems,
-  );
+  const authMode = oneOf("AUTH_MODE", vars.AUTH_MODE, ["github", "token"], "github", problems);
+  const storageLayout = oneOf("STORAGE_LAYOUT", vars.STORAGE_LAYOUT, ["per-repo", "shared"], "per-repo", problems);
+  const transferMode = oneOf("TRANSFER_MODE", vars.TRANSFER_MODE, ["auto", "presigned", "proxy"], "auto", problems);
 
-  const maxMb = Number(value(env.PROXY_MAX_UPLOAD_MB) ?? "100");
-  if (!Number.isFinite(maxMb) || maxMb <= 0) {
-    problems.push("PROXY_MAX_UPLOAD_MB must be a positive number");
-  }
+  const maxMb = Number(value(vars.PROXY_MAX_UPLOAD_MB) ?? "100");
+  if (!Number.isFinite(maxMb) || maxMb <= 0) problems.push("PROXY_MAX_UPLOAD_MB must be a positive number");
 
   const creds = {
-    accountId: value(env.R2_ACCOUNT_ID),
-    bucketName: value(env.R2_BUCKET_NAME),
-    accessKeyId: value(env.R2_ACCESS_KEY_ID),
-    secretAccessKey: value(env.R2_SECRET_ACCESS_KEY),
+    R2_ACCOUNT_ID: value(vars.R2_ACCOUNT_ID),
+    R2_BUCKET_NAME: value(vars.R2_BUCKET_NAME),
+    R2_ACCESS_KEY_ID: value(vars.R2_ACCESS_KEY_ID),
+    R2_SECRET_ACCESS_KEY: value(vars.R2_SECRET_ACCESS_KEY),
   };
-  const missing = Object.entries({
-    R2_ACCOUNT_ID: creds.accountId,
-    R2_BUCKET_NAME: creds.bucketName,
-    R2_ACCESS_KEY_ID: creds.accessKeyId,
-    R2_SECRET_ACCESS_KEY: creds.secretAccessKey,
-  })
+  const missing = Object.entries(creds)
     .filter(([, v]) => v === undefined)
     .map(([k]) => k);
-  const presignReady = missing.length === 0;
-  if (transferMode === "presigned" && !presignReady) {
+  if (transferMode === "presigned" && missing.length > 0) {
     problems.push(`TRANSFER_MODE=presigned needs ${missing.join(", ")}`);
   }
-  const presign =
-    transferMode !== "proxy" && presignReady ? (creds as PresignCredentials) : undefined;
+  const presign: PresignCredentials | undefined =
+    transferMode !== "proxy" && missing.length === 0
+      ? {
+          accountId: creds.R2_ACCOUNT_ID!,
+          bucketName: creds.R2_BUCKET_NAME!,
+          accessKeyId: creds.R2_ACCESS_KEY_ID!,
+          secretAccessKey: creds.R2_SECRET_ACCESS_KEY!,
+        }
+      : undefined;
 
-  const tokens = parseTokens(env.AUTH_TOKENS, problems);
-  if (authMode === "token" && tokens.length === 0 && !problems.some((p) => p.startsWith("AUTH_TOKENS"))) {
-    problems.push("AUTH_MODE=token needs at least one entry in AUTH_TOKENS");
-  }
+  // In token mode AUTH_TOKENS may be empty: tokens can also live in the bucket (`r2-lfs token`).
+  const tokens = parseStaticTokens(vars.AUTH_TOKENS, problems);
 
   if (problems.length > 0) throw new ConfigError(problems);
 
