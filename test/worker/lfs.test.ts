@@ -75,14 +75,14 @@ async function batch(
   operation: "upload" | "download",
   objects: { oid: string; size: number }[],
   opts: CallOptions = {},
-): Promise<{ status: number; objects: BatchObject[]; body: { message?: string } }> {
+): Promise<{ status: number; headers: Headers; objects: BatchObject[]; body: { message?: string } }> {
   const res = await call(e, `${repoPath}/objects/batch`, {
     token: WRITE_TOKEN,
     ...opts,
     json: { operation, transfers: ["basic"], objects },
   });
   const body = (await res.json()) as { objects?: BatchObject[]; message?: string };
-  return { status: res.status, objects: body.objects ?? [], body };
+  return { status: res.status, headers: res.headers, objects: body.objects ?? [], body };
 }
 
 async function upload(e: Env, repoPath: string, object: { data: Uint8Array; oid: string; size: number }) {
@@ -201,9 +201,19 @@ describe("authentication (token mode)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("limits a token to its scope", async () => {
+  it("limits a token to its scope without a 401 that would make git forget the token", async () => {
     const res = await batch(makeEnv(), "/acme/other", "download", [], { token: READ_TOKEN });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
+    expect(res.headers.get("LFS-Authenticate")).toBeNull();
+  });
+
+  it("uses the strongest grant that covers the repository, and scopes stay within their owner", async () => {
+    const token = "t".repeat(32);
+    const e = makeEnv({ ALLOWED_OWNERS: "acme,beta", AUTH_TOKENS: `acme/app:r:${token},acme/*:rw:${token},*:r:${READ_TOKEN}` });
+    expect((await batch(e, "/acme/app", "upload", [], { token })).status).toBe(200);
+    expect((await batch(e, "/beta/app", "download", [], { token })).status).toBe(404);
+    expect((await batch(e, "/beta/app", "download", [], { token: READ_TOKEN })).status).toBe(200);
+    expect((await batch(e, "/beta/app", "upload", [], { token: READ_TOKEN })).status).toBe(403);
   });
 
   it("lets a read-only token download but not upload", async () => {
@@ -228,7 +238,7 @@ describe("stored tokens (r2-lfs token)", () => {
     const e = makeEnv({ AUTH_TOKENS: "" });
     expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
     expect((await batch(e, "/acme/app", "upload", [], { token })).status).toBe(403);
-    expect((await batch(e, "/acme/other", "download", [], { token })).status).toBe(401);
+    expect((await batch(e, "/acme/other", "download", [], { token })).status).toBe(404);
     await env.BUCKET.delete(TOKENS_KEY);
   });
 
