@@ -263,6 +263,9 @@ describe("gc", () => {
     const overridden = await planGc(deps, { fetch: false, minAgeDays: "0" });
     expect(overridden.planned.find((p) => p.oid === s.youngOrphan)?.decision.kind).toBe("delete");
     await expect(planGc(deps, { fetch: false, keepDays: "-1" })).rejects.toThrow(UsageError);
+    for (const blank of ["", " ", "1.5", "7 days"]) {
+      await expect(planGc(deps, { fetch: false, minAgeDays: blank })).rejects.toThrow(/--min-age-days must be a non-negative integer/);
+    }
   });
 
   it("refuses clones with incomplete history, and stops on a failed fetch unless it only reports", async () => {
