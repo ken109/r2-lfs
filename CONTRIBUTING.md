@@ -15,6 +15,7 @@ The published CLI supports Node.js 22.13 and later; `pnpm cli` runs TypeScript d
 ```sh
 pnpm install
 pnpm test        # Worker tests run in workerd with a local R2; CLI tests use real git
+pnpm test:e2e    # In Docker: git-lfs against wrangler dev, and the global git config
 pnpm typecheck
 pnpm lint        # oxlint (including layer rules) and oxfmt --check
 pnpm format      # oxfmt, then oxlint --fix
@@ -31,6 +32,10 @@ Read [docs/architecture.md](docs/architecture.md). In short: `domain/` holds rul
 `app/` holds use cases that reach the outside world only through `ports.ts`, `infra/` implements
 those ports, and `commands/` (CLI) or `http/` (Worker) are thin entry points. The lint config
 rejects imports that break these boundaries.
+
+Tests that change the global git config, such as `init` installing a credential helper, belong in
+`test/e2e/` and run only inside `test/e2e/Dockerfile`; they refuse to start anywhere else. Tests on
+your machine must not write outside temporary directories.
 
 ## Pull requests
 

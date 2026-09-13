@@ -62,6 +62,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --project cli
 
+  e2e:
+    name: End-to-end tests (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # git-lfs against wrangler dev, with a global git config the container owns.
+      - run: docker build -f test/e2e/Dockerfile -t r2-lfs-e2e .
+      - run: docker run --rm r2-lfs-e2e
+
   package:
     name: Build and pack
     runs-on: ubuntu-latest

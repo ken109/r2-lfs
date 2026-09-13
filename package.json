@@ -43,6 +43,7 @@
     "lint": "oxlint --deny-warnings && oxfmt --check .",
     "format": "oxfmt . && oxlint --fix",
     "test": "vitest run",
+    "test:e2e": "docker build -f test/e2e/Dockerfile -t r2-lfs-e2e . && docker run --rm r2-lfs-e2e",
     "prepublishOnly": "pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build"
   },
   "cloudflare": {
