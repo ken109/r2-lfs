@@ -38,6 +38,11 @@ export async function migrate(deps: InitDeps, opts: MigrateOptions): Promise<Mig
   if (opts.importPatterns.length > 0 && !opts.rewriteHistory) {
     throw new UsageError("--import rewrites every commit that contains matching files; add --rewrite-history to confirm");
   }
+  // Objects are copied for the refs this clone has, so it needs every branch and tag of the remote.
+  const gaps = repo.historyGaps();
+  if (gaps.length > 0) throw new UsageError(`migrate copies the objects of every branch and tag, but ${gaps.join("; ")}`);
+  reporter.step("Fetching every branch and tag");
+  if (!repo.fetchAll()) throw new UsageError("git fetch failed; migrate needs every branch and tag to copy all objects");
 
   const current = repo.lfsUrl();
   const alreadyMigrated = current !== undefined && parseLfsUrl(current)?.origin === normalizeServer(opts.server);

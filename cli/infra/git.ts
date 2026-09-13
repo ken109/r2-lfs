@@ -280,8 +280,15 @@ export class Git implements GitRepository {
     return interactive("git", ["-C", this.dir, ...urlOverride, "lfs", "fetch", ...(opts.all ? ["--all"] : []), remote, ...refs]);
   }
 
-  lfsPushAll(remote: string): Promise<number> {
-    return interactive("git", ["-C", this.dir, "lfs", "push", "--all", remote]);
+  async lfsPushAll(remote: string): Promise<number> {
+    // Without refs, git lfs push --all covers only local branches and tags, not the remote-tracking branches
+    // and remote tags fetched before. Batched to stay within command-line length limits.
+    const tips = this.refTips();
+    for (let i = 0; i < tips.length; i += 100) {
+      const code = await interactive("git", ["-C", this.dir, "lfs", "push", "--all", remote, ...tips.slice(i, i + 100)]);
+      if (code !== 0) return code;
+    }
+    return 0;
   }
 
   lfsMigrateImport(patterns: string[]): Promise<number> {

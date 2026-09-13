@@ -66,6 +66,7 @@ export interface GitRepository {
   lfsObjectPath(oid: string): string;
   /** Long-running git-lfs operations attached to the terminal. Resolve to the exit code. */
   lfsFetch(remote: string, refs: string[], opts?: { all?: boolean; url?: string }): Promise<number>;
+  /** Pushes the objects of every commit reachable from any ref, remote-tracking branches included. */
   lfsPushAll(remote: string): Promise<number>;
   lfsMigrateImport(patterns: string[]): Promise<number>;
   commitFiles(paths: string[], message: string): boolean;

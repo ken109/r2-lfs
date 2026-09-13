@@ -7,7 +7,9 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import { Git } from "../../cli/infra/git.ts";
+import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
 import { ConflictError, parseListObjects, R2Bucket } from "../../cli/infra/r2-bucket.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { TempRepo } from "./helpers.ts";
@@ -292,6 +294,32 @@ describe("R2Bucket against an S3-compatible server", () => {
     );
     expect(page.objects[0]?.storageClass).toBe("STANDARD");
     expect(page.nextToken).toBeUndefined();
+  });
+});
+
+describe("HttpLfsClient", () => {
+  it("splits large batches into requests of 100 objects and keeps the order", async () => {
+    const sizes: number[] = [];
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as { objects: { oid: string; size: number }[] };
+        sizes.push(body.objects.length);
+        res.writeHead(200, { "Content-Type": "application/vnd.git-lfs+json" }).end(JSON.stringify({ objects: body.objects }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, "token");
+      const objects = Array.from({ length: 250 }, (_, i) => ({ oid: i.toString(16).padStart(64, "0"), size: i }));
+      const results = await client.batch("download", objects);
+      expect(sizes).toEqual([100, 100, 50]);
+      expect(results.map((r) => r.size)).toEqual(objects.map((o) => o.size));
+    } finally {
+      server.close();
+    }
   });
 });
 
