@@ -184,6 +184,15 @@ describe("routing and configuration", () => {
     }
   });
 
+  it("accepts owners with underscores, such as Enterprise Managed Users, but never the reserved prefixes", async () => {
+    const e = makeEnv({ ALLOWED_OWNERS: "*", AUTH_TOKENS: `*:rw:${WRITE_TOKEN}` });
+    expect((await batch(e, "/alice_acme/app", "download", [])).status).toBe(200);
+    for (const owner of ["_shared", "_trash", "_meta"]) {
+      expect((await batch(e, `/${owner}/app`, "download", [])).status).toBe(404);
+    }
+    expect(() => parseConfig(makeEnv({ AUTH_TOKENS: `_meta/*:rw:${WRITE_TOKEN}` }))).toThrow(/AUTH_TOKENS entry #1/);
+  });
+
   it("declines locking so git-lfs skips it", async () => {
     const res = await call(makeEnv(), "/acme/app/locks/verify", { token: WRITE_TOKEN, json: {} });
     expect(res.status).toBe(404);

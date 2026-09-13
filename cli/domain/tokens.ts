@@ -1,7 +1,5 @@
-import { type StoredToken, storedTokensIn, TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
+import { SCOPE_PATTERN, type StoredToken, storedTokensIn, TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
 import { UsageError } from "./errors.ts";
-
-const SCOPE = /^(\*|[A-Za-z0-9-]+\/(\*|[A-Za-z0-9._-]+))$/;
 
 export function emptyTokensFile(): TokensFile {
   return { version: 1, tokens: [] };
@@ -29,7 +27,7 @@ export interface NewToken {
 }
 
 export function addToken(file: TokensFile, input: NewToken): { file: TokensFile; entry: StoredToken } {
-  if (!SCOPE.test(input.scope)) throw new UsageError("scope must be owner/repo, owner/* or *");
+  if (!SCOPE_PATTERN.test(input.scope)) throw new UsageError("scope must be owner/repo, owner/* or *");
   if (!input.label.trim()) throw new UsageError("label must not be empty");
   if (file.tokens.some((t) => t.label === input.label)) throw new UsageError(`a token labelled ${input.label} already exists`);
   const entry: StoredToken = {

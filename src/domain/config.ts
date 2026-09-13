@@ -1,4 +1,4 @@
-import type { StorageLayout } from "../shared/contract.ts";
+import { SCOPE_PATTERN, type StorageLayout } from "../shared/contract.ts";
 
 /** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
 export interface ConfigVars {
@@ -73,7 +73,7 @@ export function parseStaticTokens(raw: string | undefined, problems: string[]): 
     index++;
     const [scope, perm, ...rest] = trimmed.split(":");
     const token = rest.join(":");
-    const validScope = scope !== undefined && /^(\*|[\w.-]+\/(\*|[\w.-]+))$/.test(scope);
+    const validScope = scope !== undefined && SCOPE_PATTERN.test(scope);
     if (!validScope || (perm !== "r" && perm !== "rw") || token.length < 16) {
       // Never echo the entry: it contains the token.
       problems.push(`AUTH_TOKENS entry #${index} must look like <owner/repo|owner/*|*>:<r|rw>:<token of 16+ chars>`);

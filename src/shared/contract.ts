@@ -57,6 +57,15 @@ export function storedTokensIn(value: unknown): StoredToken[] | undefined {
 
 export const OID_PATTERN = /^[0-9a-f]{64}$/;
 
+/**
+ * A GitHub user or organization; Enterprise Managed Users end in `_shortcode`. Names never start with `_`,
+ * which keeps SHARED_PREFIX, TRASH_PREFIX and TOKENS_KEY apart from every owner's prefix.
+ */
+export const OWNER_NAME = "[A-Za-z0-9][A-Za-z0-9_-]*";
+export const REPO_NAME = "[A-Za-z0-9._-]+";
+/** A token scope: `owner/repo`, `owner/*` or `*`. */
+export const SCOPE_PATTERN = new RegExp(`^(\\*|${OWNER_NAME}/(\\*|${REPO_NAME}))$`);
+
 /** GitHub names are case-insensitive, so keys are lowercased to keep one prefix per repository. */
 export function repoPrefix(layout: StorageLayout, owner: string, repo: string): string {
   return layout === "shared" ? SHARED_PREFIX : `${owner.toLowerCase()}/${repo.toLowerCase()}/`;

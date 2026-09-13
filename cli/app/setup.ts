@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { SHARED_PREFIX, type StorageLayout, TRASH_PREFIX, WORKER_COMPATIBILITY_DATE } from "../../src/shared/contract.ts";
+import { OWNER_NAME, SHARED_PREFIX, type StorageLayout, TRASH_PREFIX, WORKER_COMPATIBILITY_DATE } from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
 import type { Files, Reporter, Wrangler } from "./ports.ts";
 
@@ -30,7 +30,7 @@ export interface SetupResult {
   lockPrefixes: string[];
 }
 
-const OWNER = /^[A-Za-z0-9-]+$/;
+const OWNER = new RegExp(`^${OWNER_NAME}$`);
 
 /** Lock rules cover the live prefixes only, so gc can still empty `_trash/`. */
 export function lockPrefixes(layout: StorageLayout, owners: string[]): string[] {

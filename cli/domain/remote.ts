@@ -1,3 +1,5 @@
+import { OWNER_NAME, REPO_NAME } from "../../src/shared/contract.ts";
+
 export interface LfsLocation {
   /** The full `lfs.url`, e.g. `https://lfs.example.com/owner/repo`. */
   url: string;
@@ -7,6 +9,8 @@ export interface LfsLocation {
   repo: string;
 }
 
+const LFS_PATH = new RegExp(`^/(${OWNER_NAME})/(${REPO_NAME}?)(?:\\.git)?(?:/info/lfs)?/?$`);
+
 export function parseLfsUrl(raw: string): LfsLocation | undefined {
   let url: URL;
   try {
@@ -14,7 +18,7 @@ export function parseLfsUrl(raw: string): LfsLocation | undefined {
   } catch {
     return undefined;
   }
-  const match = /^\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:\/info\/lfs)?\/?$/.exec(url.pathname);
+  const match = LFS_PATH.exec(url.pathname);
   if (!match) return undefined;
   return { url: raw.replace(/\/+$/, ""), origin: url.origin, host: url.host, owner: match[1]!, repo: match[2]! };
 }

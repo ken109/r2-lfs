@@ -1,4 +1,4 @@
-import { INFO_PATH } from "../shared/contract.ts";
+import { INFO_PATH, OWNER_NAME, REPO_NAME } from "../shared/contract.ts";
 
 export type Route =
   | { kind: "landing" }
@@ -10,8 +10,9 @@ export type Route =
   | { kind: "not-found" };
 
 // `/<owner>/<repo>[.git][/info/lfs]/<endpoint>`; the optional parts let either URL style work.
-const LFS_ROUTE =
-  /^\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:\/info\/lfs)?\/(objects\/batch|objects\/verify|objects\/([0-9a-f]{64})|locks(?:\/.*)?)$/;
+const LFS_ROUTE = new RegExp(
+  `^/(${OWNER_NAME})/(${REPO_NAME}?)(?:\\.git)?(?:/info/lfs)?/(objects/batch|objects/verify|objects/([0-9a-f]{64})|locks(?:/.*)?)$`,
+);
 
 export function route(pathname: string): Route {
   if (pathname === "/") return { kind: "landing" };

@@ -76,6 +76,8 @@ describe("remote parsing", () => {
       repo: "assets",
     });
     expect(parseLfsUrl("https://lfs.example.com/acme/assets.git/info/lfs")).toMatchObject({ repo: "assets" });
+    expect(parseLfsUrl("https://lfs.example.com/alice_acme/assets")).toMatchObject({ owner: "alice_acme" });
+    expect(parseLfsUrl("https://lfs.example.com/_shared/assets")).toBeUndefined();
     expect(parseLfsUrl("https://lfs.example.com/acme")).toBeUndefined();
     expect(parseLfsUrl("not a url")).toBeUndefined();
   });
@@ -305,6 +307,8 @@ describe("tokens", () => {
     expect(entry).toMatchObject({ scope: "acme/*", permission: "read" });
     expect(() => addToken(file, input)).toThrow(/already exists/);
     expect(() => addToken(file, { ...input, label: "x", scope: "acme" })).toThrow(/scope/);
+    expect(() => addToken(file, { ...input, label: "x", scope: "_meta/*" })).toThrow(/scope/);
+    expect(addToken(file, { ...input, label: "emu", scope: "alice_acme/*" }).entry.scope).toBe("alice_acme/*");
     expect(revokeToken(file, "ci").file.tokens).toEqual([]);
     expect(() => revokeToken(file, "nope")).toThrow(/no token/);
   });
