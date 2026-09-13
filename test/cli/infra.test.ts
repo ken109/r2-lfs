@@ -206,9 +206,10 @@ describe("TarWriter", () => {
     await writer.add({ name: "readme.txt", size: 5, mode: 0o644, source: { kind: "buffer", data: new TextEncoder().encode("hello") } });
     await writer.close();
 
-    const listing = execFileSync("tar", ["-tf", archive], { encoding: "utf8" }).split("\n").filter(Boolean);
-    expect(listing).toEqual([longName, "readme.txt"]);
-    expect(readFileSync(join(extract(archive), longName))).toEqual(Buffer.alloc(1500, 7));
+    // Compare extracted files, not `tar -t` output: Windows consoles re-encode non-ASCII names.
+    const out = extract(archive);
+    expect(readFileSync(join(out, "readme.txt"), "utf8")).toBe("hello");
+    expect(readFileSync(join(out, longName))).toEqual(Buffer.alloc(1500, 7));
   });
 
   // Extracting symlinks needs extra privileges on Windows.
