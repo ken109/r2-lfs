@@ -1,6 +1,6 @@
-import { permissionFromGrants } from "../domain/access.ts";
+import { ownerAllowed, permissionFromGrants } from "../domain/access.ts";
 import type { Config } from "../domain/config.ts";
-import type { Repo } from "../domain/repo.ts";
+import { isSafeRepoName, type Repo } from "../domain/repo.ts";
 import type { GithubPermissions, Lookup, TokenDirectory } from "./ports.ts";
 
 export interface AuthorizeDeps {
@@ -8,7 +8,11 @@ export interface AuthorizeDeps {
   github: GithubPermissions;
 }
 
+/** Decides what the request may do with the repository: owner allowed, then credentials. */
 export async function authorize(config: Config, repo: Repo, token: string | undefined, deps: AuthorizeDeps): Promise<Lookup> {
+  if (!isSafeRepoName(repo.name)) return { ok: false, status: 404, message: "Not found" };
+  // Before credentials, so the GitHub API is not asked about repositories this server does not serve.
+  if (!ownerAllowed(config, repo.owner)) return { ok: false, status: 403, message: `${repo.owner} is not allowed on this server` };
   if (!token) return { ok: false, status: 401, message: "Credentials required" };
   if (config.authMode === "github") return deps.github.lookup(repo, token);
 

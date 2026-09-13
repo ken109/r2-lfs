@@ -1,8 +1,7 @@
 import { authorize } from "../app/authorize.ts";
 import * as lfs from "../app/lfs.ts";
-import { ownerAllowed } from "../domain/access.ts";
 import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
-import { isSafeRepoName, type Repo } from "../domain/repo.ts";
+import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
 import { type Fetcher, GithubApiPermissions } from "../infra/github-permissions.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
@@ -78,7 +77,6 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
   }
 
   const repo: Repo = { owner: matched.owner, name: matched.name };
-  if (!isSafeRepoName(repo.name)) return lfsError(404, "Not found");
 
   let config: Config;
   try {
@@ -88,8 +86,6 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
     console.error(err.message);
     return lfsError(500, err.message);
   }
-
-  if (!ownerAllowed(config, repo.owner)) return lfsError(403, `${repo.owner} is not allowed on this server`);
 
   const authorization = request.headers.get("Authorization") ?? "";
   const auth = await authorize(config, repo, extractToken(authorization), {
