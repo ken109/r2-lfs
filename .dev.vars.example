@@ -1,0 +1,5 @@
+# Presigned URLs only. Leave empty to proxy transfers through the Worker.
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+# AUTH_MODE=token only. Comma-separated <scope>:<r|rw>:<token>
+AUTH_TOKENS=
