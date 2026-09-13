@@ -299,11 +299,18 @@ describe("stored tokens (r2-lfs token)", () => {
 
   it("ignores a malformed tokens file instead of failing every request", async () => {
     const e = makeEnv();
-    for (const broken of ["{", '{"version":1,"tokens":{}}', '{"version":1,"tokens":[{"sha256":1}]}']) {
-      await env.BUCKET.put(TOKENS_KEY, broken);
+    const entry = { id: "t", label: "l", scope: "*", sha256: await sha256Hex(WRITE_TOKEN), created: "2026-09-14" };
+    const broken = ["{", '{"version":1,"tokens":{}}', '{"version":1,"tokens":[{"sha256":1}]}', '{"version":1,"tokens":[null]}'];
+    for (const file of broken) {
+      await env.BUCKET.put(TOKENS_KEY, file);
       clearStoredTokensCache();
       expect((await batch(e, "/acme/app", "download", [], { token: WRITE_TOKEN })).status).toBe(200);
     }
+
+    // An entry with an unknown permission makes the whole file invalid, so it grants nothing.
+    await env.BUCKET.put(TOKENS_KEY, JSON.stringify({ version: 1, tokens: [{ ...entry, permission: "admin" }] }));
+    clearStoredTokensCache();
+    expect((await batch(makeEnv({ AUTH_TOKENS: "" }), "/acme/app", "download", [], { token: WRITE_TOKEN })).status).toBe(401);
     await env.BUCKET.delete(TOKENS_KEY);
   });
 
@@ -607,6 +614,13 @@ describe("authentication (github mode)", () => {
     await batch(e, "/acme/app", "download", [], { token: GH_TOKEN, fetcher: gh.fetcher });
     await batch(e, "/acme/app", "download", [], { token: GH_TOKEN, fetcher: gh.fetcher });
     expect(gh.calls).toHaveLength(1);
+  });
+
+  it("refuses owners outside ALLOWED_OWNERS before asking GitHub or for credentials", async () => {
+    const withToken = await batch(githubEnv(), "/other/app", "download", [], { token: GH_TOKEN });
+    expect(withToken.status).toBe(403);
+    const withoutToken = await call(githubEnv(), "/other/app/objects/batch", { json: { operation: "download", objects: [] } });
+    expect(withoutToken.status).toBe(403);
   });
 
   it("does not follow GitHub's redirect for a renamed or transferred repository", async () => {
