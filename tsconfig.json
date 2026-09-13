@@ -10,7 +10,8 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test/worker"]
 }
