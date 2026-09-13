@@ -4,13 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "r2-lfs"
-    }
+      "bucket_name": "r2-lfs",
+    },
   ],
   "vars": {
     // Comma-separated GitHub users or orgs allowed to use this server. Required.
@@ -25,6 +25,6 @@
     "PROXY_MAX_UPLOAD_MB": "100",
     // Presigned URLs only. R2_BUCKET_NAME must match bucket_name above.
     "R2_ACCOUNT_ID": "",
-    "R2_BUCKET_NAME": "r2-lfs"
-  }
+    "R2_BUCKET_NAME": "r2-lfs",
+  },
 }

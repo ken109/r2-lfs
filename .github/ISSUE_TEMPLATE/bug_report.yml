@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead. Include error messages.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `npx r2-lfs doctor`
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: r2-lfs, git-lfs, Node.js and OS
+      placeholder: r2-lfs 0.1.0, git-lfs 3.8.0, Node 24.19, macOS 26
+    validations:
+      required: true
+  - type: dropdown
+    id: settings
+    attributes:
+      label: Server settings
+      multiple: true
+      options:
+        - AUTH_MODE=github
+        - AUTH_MODE=token
+        - STORAGE_LAYOUT=per-repo
+        - STORAGE_LAYOUT=shared
+        - proxy transfers
+        - presigned transfers

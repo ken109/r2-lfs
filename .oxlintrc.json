@@ -1,0 +1,190 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "env": { "es2024": true },
+  "ignorePatterns": ["dist/**", ".wrangler/**", "node_modules/**"],
+  "rules": {
+    "no-console": ["error", { "allow": ["error"] }],
+    "typescript/consistent-type-imports": "error",
+    "typescript/parameter-properties": ["error", { "prefer": "class-property" }],
+    "typescript/no-explicit-any": "error",
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "unicorn/no-array-for-each": "error",
+    "eqeqeq": "error",
+    "prefer-template": "error",
+    // Loops that await are sequential on purpose: paginated listings, ordered progress output,
+    // and not hammering the GitHub, R2 or LFS APIs with parallel requests.
+    "no-await-in-loop": "off",
+    // Spreading small result objects in map() reads better, and none of these paths are hot.
+    "oxc/no-map-spread": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/shared/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "regex": "^\\.\\.?/", "message": "src/shared is the contract between the Worker and the CLI; it imports nothing." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/**"],
+      "excludeFiles": ["src/shared/**", "src/domain/**", "src/app/**", "src/infra/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "regex": "(^|/)cli/", "message": "The Worker must not depend on the CLI." },
+              { "regex": "^node:", "message": "The Worker runs on workerd, not Node.js." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/domain/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\./(app|infra|http)/|^\\.\\./(env|index)\\.ts$",
+                "message": "domain holds rules only; it depends on nothing but shared."
+              },
+              { "regex": "^(aws4fetch|node:.*)$", "message": "domain must not do I/O." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/app/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\./(infra|http)/|^\\.\\./(env|index)\\.ts$",
+                "message": "app reaches the outside world only through ports.ts."
+              },
+              { "regex": "^(aws4fetch|node:.*)$", "message": "app must not do I/O directly; add a port." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/infra/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          { "patterns": [{ "regex": "^\\.\\./http/|^\\.\\./index\\.ts$", "message": "infra must not depend on the HTTP layer." }] }
+        ]
+      }
+    },
+    {
+      "files": ["cli/domain/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\./(app|infra|ui|commands)/|^\\.\\./(composition|main)\\.ts$",
+                "message": "domain holds rules only; it depends on nothing but src/shared."
+              },
+              { "regex": "^(citty|@clack/prompts|aws4fetch|node:.*)$", "message": "domain must not do I/O or talk to the terminal." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["cli/app/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\./(infra|ui|commands)/|^\\.\\./(composition|main)\\.ts$",
+                "message": "app reaches the outside world only through ports.ts."
+              },
+              { "regex": "^(citty|@clack/prompts|aws4fetch)$", "message": "app must not talk to the terminal or the network directly." },
+              {
+                "regex": "^node:(fs|fs/promises|child_process|os|net|http|https|process|readline)$",
+                "message": "app must not do I/O directly; add a port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["cli/infra/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\./(ui|commands)/|^\\.\\./(composition|main)\\.ts$",
+                "message": "infra implements ports; it must not depend on presentation."
+              },
+              { "regex": "^(citty|@clack/prompts)$", "message": "infra must not talk to the terminal." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["cli/ui/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\.\\./(infra|commands)/|^\\.\\./(composition|main)\\.ts$",
+                "message": "ui renders; it must not reach infrastructure."
+              },
+              { "regex": "^citty$", "message": "Argument parsing belongs to commands." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["cli/commands/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "regex": "^\\.\\./infra/(?!global-git-config\\.ts$)", "message": "commands get adapters from composition.ts." },
+              { "regex": "^(aws4fetch|node:(fs|fs/promises|child_process))$", "message": "commands must not do I/O; call a use case." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["scripts/**"],
+      "rules": { "no-console": "off" }
+    }
+  ]
+}
