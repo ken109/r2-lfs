@@ -38,6 +38,8 @@ export class MemoryBucket implements Bucket {
   readonly objects = new Map<string, { body: string; size: number; lastModified: Date; storageClass: string; etag: string }>();
   /** Keys under these prefixes refuse deletion, like a bucket lock rule. */
   readonly locked: string[] = [];
+  /** Keys whose deletion goes through but reports an error, like a response lost to a timeout. */
+  readonly deletesThatTimeOut = new Set<string>();
   private etagCounter = 0;
 
   seed(key: string, opts: { size?: number; ageDays?: number; body?: string; storageClass?: string } = {}): void {
@@ -69,9 +71,14 @@ export class MemoryBucket implements Bucket {
     this.seed(key, { body });
   }
 
+  async exists(key: string): Promise<boolean> {
+    return this.objects.has(key);
+  }
+
   async delete(key: string): Promise<WriteResult> {
     if (this.locked.some((prefix) => key.startsWith(prefix))) return { ok: false, status: 403, message: "locked" };
     this.objects.delete(key);
+    if (this.deletesThatTimeOut.has(key)) return { ok: false, status: 504, message: "timeout" };
     return { ok: true, status: 204, message: "" };
   }
 

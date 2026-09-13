@@ -108,6 +108,8 @@ export interface Bucket {
   get(key: string): Promise<BucketObject | undefined>;
   /** `expectEtag: null` writes only if the key does not exist; a string, only if it still has that ETag. */
   put(key: string, body: string, opts?: { expectEtag?: string | null }): Promise<void>;
+  /** Throws when the bucket cannot say. */
+  exists(key: string): Promise<boolean>;
   delete(key: string): Promise<WriteResult>;
   copy(source: string, target: string, storageClass?: "STANDARD" | "STANDARD_IA"): Promise<WriteResult>;
 }

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { diagnose } from "../../cli/app/doctor.ts";
-import { applyGc, planGc } from "../../cli/app/gc.ts";
+import { applyGc, applyPlan, gcMode, planGc, recheckPlan, trashObject } from "../../cli/app/gc.ts";
 import { initRepository } from "../../cli/app/init.ts";
 import { BatchRequestError, type GitHubCli, type GlobalGitConfig, type LfsClient } from "../../cli/app/ports.ts";
 import { listTrash, restoreObjects, selectTrash } from "../../cli/app/restore.ts";
@@ -70,6 +70,8 @@ function scenario() {
   return { repo, git: Git.open(repo.dir), bucket, client, oldOid, newOid, texOid, orphan, youngOrphan, prefix };
 }
 
+const object = (key: string) => ({ key, size: 1, lastModified: new Date(), storageClass: "STANDARD" });
+
 let cleanup: (() => void)[] = [];
 afterEach(() => {
   for (const fn of cleanup) fn();
@@ -77,6 +79,33 @@ afterEach(() => {
 });
 
 describe("gc", () => {
+  it("turns the flags into a mode, so -i and --apply enable the checks a dry run skips", () => {
+    expect(gcMode({})).toBe("dry-run");
+    expect(gcMode({ apply: false, interactive: false })).toBe("dry-run");
+    expect(gcMode({ apply: true })).toBe("apply");
+    expect(gcMode({ interactive: true })).toBe("interactive");
+    expect(gcMode({ apply: true, interactive: true })).toBe("interactive");
+  });
+
+  it("applies a plan only after checking the refs again", async () => {
+    const s = scenario();
+    const clone = new TempRepo(s.repo);
+    cleanup.push(
+      () => s.repo.remove(),
+      () => clone.remove(),
+    );
+    const reporter = new SilentReporter();
+    const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, bucket: s.bucket, reporter };
+    const opts = { fetch: true, mode: gcMode({ apply: true }) };
+    const plan = await planGc(deps, opts);
+
+    s.repo.writeLfs("hero.blend", "hero v1");
+    s.repo.commit("revert");
+    const outcomes = await applyPlan(deps, plan, plan.candidates, { ...opts, trash: true });
+    expect(outcomes.map((o) => o.key)).toEqual([`${s.prefix}${s.orphan}`]);
+    expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
+  });
+
   it("plans from history and moves candidates to the trash", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
@@ -108,6 +137,77 @@ describe("gc", () => {
     expect(outcomes.every((o) => !o.ok)).toBe(true);
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
     expect([...s.bucket.objects.keys()].some((k) => k.startsWith("_trash/"))).toBe(false);
+  });
+
+  it("deletes without the trash, tiers, and reports what a lock refuses", async () => {
+    const s = scenario();
+    cleanup.push(() => s.repo.remove());
+    s.repo.write(".r2-lfs.toml", '[[rule]]\npath = "*.blend"\nold_versions = "infrequent-access"\n');
+    s.repo.commit("policy");
+    const reporter = new SilentReporter();
+    const plan = await planGc({ repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter }, { fetch: false });
+    expect(plan.candidates.map((p) => [p.oid, p.decision.kind])).toEqual([
+      [s.oldOid, "tier"],
+      [s.orphan, "delete"],
+    ]);
+
+    s.bucket.locked.push(`${s.prefix}${s.orphan}`);
+    const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: false });
+    expect(outcomes).toEqual([
+      { key: `${s.prefix}${s.oldOid}`, action: "tiered", ok: true },
+      { key: `${s.prefix}${s.orphan}`, action: "delete", ok: false, message: "403 locked" },
+    ]);
+    expect(s.bucket.objects.get(`${s.prefix}${s.oldOid}`)?.storageClass).toBe("STANDARD_IA");
+
+    s.bucket.locked.length = 0;
+    const deleted = await applyGc({ bucket: s.bucket, reporter }, plan.candidates.slice(1), { trash: false });
+    expect(deleted).toEqual([{ key: `${s.prefix}${s.orphan}`, action: "deleted", ok: true }]);
+    expect([...s.bucket.objects.keys()].some((k) => k.startsWith("_trash/"))).toBe(false);
+  });
+
+  it("never loses the only copy when copying or deleting goes wrong", async () => {
+    const bucket = new MemoryBucket();
+
+    expect(await trashObject(bucket, object("acme/assets/missing"))).toMatchObject({ ok: false, message: "copy failed: 404 NoSuchKey" });
+
+    bucket.seed("acme/assets/timeout");
+    bucket.deletesThatTimeOut.add("acme/assets/timeout");
+    expect(await trashObject(bucket, object("acme/assets/timeout"))).toMatchObject({ ok: true, action: "trashed" });
+    expect(bucket.objects.has("_trash/acme/assets/timeout")).toBe(true);
+
+    bucket.seed("acme/assets/unknown");
+    bucket.locked.push("acme/assets/unknown");
+    bucket.exists = async () => {
+      throw new Error("network down");
+    };
+    expect(await trashObject(bucket, object("acme/assets/unknown"))).toMatchObject({
+      ok: false,
+      message: expect.stringContaining("kept the trash copy"),
+    });
+    expect(bucket.objects.has("acme/assets/unknown")).toBe(true);
+    expect(bucket.objects.has("_trash/acme/assets/unknown")).toBe(true);
+  });
+
+  it("drops candidates that commits pushed after planning need", async () => {
+    const s = scenario();
+    const clone = new TempRepo(s.repo);
+    cleanup.push(
+      () => s.repo.remove(),
+      () => clone.remove(),
+    );
+    const reporter = new SilentReporter();
+    const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, bucket: s.bucket, reporter };
+    const opts = { fetch: true, mode: "apply" as const };
+    const plan = await planGc(deps, opts);
+    expect(plan.candidates.map((p) => p.oid)).toEqual([s.oldOid, s.orphan]);
+    expect(await recheckPlan(deps, plan, plan.candidates, opts)).toEqual(plan.candidates);
+
+    // Someone reverts to the old version; git-lfs does not upload it again, so its upload date stays old.
+    s.repo.writeLfs("hero.blend", "hero v1");
+    s.repo.commit("revert");
+    const rechecked = await recheckPlan(deps, plan, plan.candidates, opts);
+    expect(rechecked.map((p) => p.oid)).toEqual([s.orphan]);
+    expect(reporter.warnings).toEqual([expect.stringContaining("1 object(s) are needed by commits pushed")]);
   });
 
   it("honours .r2-lfs.toml and command-line overrides", async () => {

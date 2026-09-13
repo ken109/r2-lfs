@@ -92,9 +92,13 @@ removing a remote, delete its refs with `git for-each-ref --format='delete %(ref
 
 - **keep** it if it is in the tree of any branch or tag tip, used by a commit from the last
   `keep_days` days, one of a file's newest `keep_versions` versions, or under a path marked `keep = "all"`
-- **leave it alone** if it was uploaded less than `min_age_days` ago, so pushes from other machines
-  you have not fetched yet are safe
+- **leave it alone** if it was uploaded less than `min_age_days` ago, so objects whose commits have
+  not been pushed yet are safe
 - otherwise **move it to the trash**, or to R2 Infrequent Access storage if a rule says so
+
+Right before applying, gc fetches again and leaves alone anything that commits pushed in the meantime
+need. Pushing content the bucket already has, such as a revert to an old version, does not upload it
+again and so does not reset its age; if such a push races with gc, `r2-lfs restore` brings the object back.
 
 It is a dry run unless you pass `--apply`. It refuses shallow and single-branch clones, whose missing
 commits would make objects look unreferenced, and it stops if `git fetch` fails while applying. Tune it with a `.r2-lfs.toml` at the repository root:

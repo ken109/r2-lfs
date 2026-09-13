@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { applyGc, planGc } from "../app/gc.ts";
+import { applyPlan, gcMode, type GcPlanOptions, planGc } from "../app/gc.ts";
 import * as compose from "../composition.ts";
 import type { Planned } from "../domain/plan.ts";
 import { dim, formatBytes, formatDate, red, shortOid, table } from "../ui/format.ts";
@@ -25,28 +25,28 @@ export default defineCommand({
   },
   async run({ args }) {
     const term = new Terminal({ quiet: args.json });
-    const acting = Boolean(args.apply || args.interactive);
+    const mode = gcMode(args);
+    const acting = mode !== "dry-run";
     const bucket = compose.bucket();
     term.intro(acting ? "r2-lfs gc" : "r2-lfs gc (dry run)");
 
     const repo = compose.openRepo();
-    const plan = await planGc(
-      {
-        repo,
-        otherRepos: commaList(args.repos).map((dir) => compose.openRepo(dir)),
-        client: compose.clientFor(repo),
-        bucket,
-        reporter: term,
-      },
-      {
-        fetch: args.fetch,
-        mode: args.interactive ? "interactive" : args.apply ? "apply" : "dry-run",
-        ...(args.layout ? { layout: args.layout } : {}),
-        ...(args["keep-days"] ? { keepDays: args["keep-days"] } : {}),
-        ...(args["keep-versions"] ? { keepVersions: args["keep-versions"] } : {}),
-        ...(args["min-age-days"] ? { minAgeDays: args["min-age-days"] } : {}),
-      },
-    );
+    const deps = {
+      repo,
+      otherRepos: commaList(args.repos).map((dir) => compose.openRepo(dir)),
+      client: compose.clientFor(repo),
+      bucket,
+      reporter: term,
+    };
+    const opts: GcPlanOptions = {
+      fetch: args.fetch,
+      mode,
+      ...(args.layout ? { layout: args.layout } : {}),
+      ...(args["keep-days"] ? { keepDays: args["keep-days"] } : {}),
+      ...(args["keep-versions"] ? { keepVersions: args["keep-versions"] } : {}),
+      ...(args["min-age-days"] ? { minAgeDays: args["min-age-days"] } : {}),
+    };
+    const plan = await planGc(deps, opts);
 
     if (plan.sharedWithoutRepos) {
       term.warn(
@@ -108,7 +108,7 @@ export default defineCommand({
       return;
     }
 
-    const outcomes = await applyGc({ bucket, reporter: term }, chosen, { trash: args.trash });
+    const outcomes = await applyPlan(deps, plan, chosen, { ...opts, trash: args.trash });
     if (args.json) report(outcomes);
     const failed = outcomes.filter((o) => !o.ok);
     if (failed.length > 0) {

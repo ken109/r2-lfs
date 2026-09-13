@@ -15,10 +15,18 @@ export interface GcDeps {
   reporter: Reporter;
 }
 
+export type GcMode = "dry-run" | "apply" | "interactive";
+
+/** What the gc flags ask for. Anything but a dry run turns on the checks that protect the bucket. */
+export function gcMode(flags: { apply?: boolean; interactive?: boolean }): GcMode {
+  if (flags.interactive) return "interactive";
+  return flags.apply ? "apply" : "dry-run";
+}
+
 export interface GcPlanOptions extends PolicyOverrides {
   fetch: boolean;
   /** Whether the plan will be applied; changing the bucket needs refs that are known to be current. */
-  mode?: "dry-run" | "apply" | "interactive";
+  mode?: GcMode;
   layout?: string;
   now?: Date;
 }
@@ -32,7 +40,11 @@ export interface GcPlan {
   candidates: Planned[];
   /** Set when the plan cannot be trusted enough to apply without picking by hand. */
   sharedWithoutRepos: boolean;
+  /** The ref tips the plan was made from, to notice pushes that land before it is applied. */
+  refs: string;
 }
+
+const refsOf = (repos: readonly GitRepository[]) => repos.map((r) => r.refTips().toSorted().join(",")).join("|");
 
 export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan> {
   const { client, bucket, reporter } = deps;
@@ -64,9 +76,9 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
           reporter.warn(`git fetch failed in ${r.dir}; judging from the refs you already have`);
         }
       }
-      return views.map((v) => collectFacts(v.repo, v.policy, now));
+      return { refs: refsOf(repos), all: views.map((v) => collectFacts(v.repo, v.policy, now)) };
     },
-    (all) => {
+    ({ all }) => {
       const known = new Set(all.flatMap((f) => [...f.paths.keys()]));
       const tips = new Set(all.flatMap((f) => [...f.tips]));
       return `${known.size} objects known to history, ${tips.size} in branch and tag tips`;
@@ -79,14 +91,36 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
     () => bucket.list(prefix),
     (s) => `${s.length} objects in ${bucket.name}/${prefix}`,
   );
-  const planned = combinePlans(views.map((v, i) => planObjects(stored, facts[i]!, v.policy, now)));
+  const planned = combinePlans(views.map((v, i) => planObjects(stored, facts.all[i]!, v.policy, now)));
   return {
     prefix,
     policy: views[0]!.policy,
     planned,
     candidates: planned.filter((p) => p.decision.kind === "delete" || p.decision.kind === "tier"),
     sharedWithoutRepos,
+    refs: facts.refs,
   };
+}
+
+/**
+ * Fetches again right before applying. If refs moved since the plan was made, for example because someone
+ * pushed a revert to an old version while candidates were being picked, drops what the new refs need.
+ */
+export async function recheckPlan(deps: GcDeps, plan: GcPlan, chosen: Planned[], opts: GcPlanOptions): Promise<Planned[]> {
+  if (!opts.fetch || chosen.length === 0) return chosen;
+  const repos = [deps.repo, ...deps.otherRepos];
+  for (const r of repos) {
+    if (!r.fetchAll()) throw new UsageError(`git fetch failed in ${r.dir}; nothing was changed`);
+  }
+  if (refsOf(repos) === plan.refs) return chosen;
+
+  const fresh = await planGc(deps, { ...opts, fetch: false });
+  const still = new Set(fresh.candidates.map((p) => `${p.object.key} ${p.decision.kind}`));
+  const kept = chosen.filter((p) => still.has(`${p.object.key} ${p.decision.kind}`));
+  if (kept.length < chosen.length) {
+    deps.reporter.warn(`${chosen.length - kept.length} object(s) are needed by commits pushed since the plan was made; leaving them alone`);
+  }
+  return kept;
 }
 
 export type Outcome =
@@ -95,15 +129,35 @@ export type Outcome =
 
 /** Copies to the trash before deleting, so a refused delete never loses data. */
 export async function trashObject(bucket: Bucket, object: StoredObject): Promise<Outcome> {
-  const target = `${TRASH_PREFIX}${object.key}`;
-  const copied = await bucket.copy(object.key, target);
-  if (!copied.ok) return { key: object.key, action: "trash", ok: false, message: `copy failed: ${copied.status} ${copied.message}` };
-  const deleted = await bucket.delete(object.key);
-  if (!deleted.ok) {
-    await bucket.delete(target);
-    return { key: object.key, action: "trash", ok: false, message: `delete refused: ${deleted.status} ${deleted.message}` };
+  const key = object.key;
+  const target = `${TRASH_PREFIX}${key}`;
+  const copied = await bucket.copy(key, target);
+  if (!copied.ok) return { key, action: "trash", ok: false, message: `copy failed: ${copied.status} ${copied.message}` };
+  const deleted = await bucket.delete(key);
+  if (deleted.ok) return { key, action: "trashed", ok: true };
+
+  // An error response does not prove nothing was deleted, as with a timeout, so drop the copy only when the object is still there.
+  const refused = `delete refused: ${deleted.status} ${deleted.message}`;
+  let stillThere: boolean;
+  try {
+    stillThere = await bucket.exists(key);
+  } catch {
+    return { key, action: "trash", ok: false, message: `${refused}; kept the trash copy because the object could not be checked` };
   }
-  return { key: object.key, action: "trashed", ok: true };
+  if (!stillThere) return { key, action: "trashed", ok: true };
+  await bucket.delete(target);
+  return { key, action: "trash", ok: false, message: refused };
+}
+
+/** Checks the refs once more, then applies what is still a candidate. The only way the gc command changes the bucket. */
+export async function applyPlan(
+  deps: GcDeps,
+  plan: GcPlan,
+  chosen: Planned[],
+  opts: GcPlanOptions & { trash: boolean },
+): Promise<Outcome[]> {
+  const current = await recheckPlan(deps, plan, chosen, opts);
+  return applyGc(deps, current, { trash: opts.trash });
 }
 
 export async function applyGc(

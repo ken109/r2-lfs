@@ -77,7 +77,8 @@ Deleting needs R2 API credentials, which only the CLI uses, and bucket lock rule
 gc instead keeps what branch and tag tips, recent commits and the policy reference.
 
 **Copy, then delete.** R2 has no object versioning. gc copies an object to `_trash/` before deleting
-it and removes the copy if the delete is refused, so a lock rule or a network failure never loses data.
+it. If the delete fails, it removes the copy only after checking that the object is still there, so a
+lock rule or a lost response never leaves the object in neither place.
 Lock rules created by `setup` cover live prefixes only, so the trash can still expire.
 
 **Tokens in the bucket.** Worker secrets are write-only, so a CLI cannot add one token to a list it

@@ -52,9 +52,23 @@ export class R2Bucket implements Bucket {
   private readonly client: AwsClient;
   private readonly endpoint: string;
 
-  constructor(opts: { bucket: string; accountId: string; accessKeyId: string; secretAccessKey: string; endpoint?: string }) {
+  constructor(opts: {
+    bucket: string;
+    accountId: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    endpoint?: string;
+    /** How often aws4fetch retries a 5xx response with backoff; its default is 10. */
+    retries?: number;
+  }) {
     this.name = opts.bucket;
-    this.client = new AwsClient({ accessKeyId: opts.accessKeyId, secretAccessKey: opts.secretAccessKey, service: "s3", region: "auto" });
+    this.client = new AwsClient({
+      accessKeyId: opts.accessKeyId,
+      secretAccessKey: opts.secretAccessKey,
+      service: "s3",
+      region: "auto",
+      ...(opts.retries === undefined ? {} : { retries: opts.retries }),
+    });
     const base = (opts.endpoint ?? `https://${opts.accountId}.r2.cloudflarestorage.com`).replace(/\/+$/, "");
     this.endpoint = `${base}/${opts.bucket}`;
   }
@@ -116,6 +130,13 @@ export class R2Bucket implements Bucket {
     const result = await this.result(await this.client.fetch(`${this.endpoint}/${encodeKey(key)}`, { method: "PUT", body, headers }));
     if (result.status === 412) throw new ConflictError(`${key} changed while this command ran; try again`);
     if (!result.ok) throw new Error(`writing ${key} failed: ${result.status} ${result.message}`);
+  }
+
+  async exists(key: string): Promise<boolean> {
+    const res = await this.client.fetch(`${this.endpoint}/${encodeKey(key)}`, { method: "HEAD" });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new Error(`checking ${key} failed: ${res.status}`);
+    return true;
   }
 
   async delete(key: string): Promise<WriteResult> {

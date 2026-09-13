@@ -200,6 +200,8 @@ describe("R2Bucket against an S3-compatible server", () => {
           res.end(
             `<ListBucketResult><IsTruncated>${truncated}</IsTruncated>${contents}${truncated ? `<NextContinuationToken>${start + 2}</NextContinuationToken>` : ""}</ListBucketResult>`,
           );
+        } else if (req.method === "HEAD") {
+          res.writeHead(key.startsWith("unavailable/") ? 503 : objects.has(key) ? 200 : 404).end();
         } else if (req.method === "GET") {
           const object = objects.get(key);
           if (!object) res.writeHead(404).end();
@@ -207,6 +209,11 @@ describe("R2Bucket against an S3-compatible server", () => {
         } else if (req.method === "PUT" && req.headers["x-amz-copy-source"]) {
           const source = decodeURIComponent(String(req.headers["x-amz-copy-source"]).replace(/^\/bucket\//, ""));
           const object = objects.get(source);
+          if (source.startsWith("broken/")) {
+            // S3 can start a 200 response and still fail the copy.
+            res.end("<Error><Code>InternalError</Code><Message>copy failed midway</Message></Error>");
+            return;
+          }
           if (!object) {
             res.writeHead(404).end("<Error><Code>NoSuchKey</Code><Message>missing</Message></Error>");
             return;
@@ -242,6 +249,8 @@ describe("R2Bucket against an S3-compatible server", () => {
       accessKeyId: "k",
       secretAccessKey: "s",
       endpoint: `http://127.0.0.1:${port}`,
+      // The fake answers 503 on purpose; retrying with backoff would outlast the test timeout.
+      retries: 0,
     });
   });
 
@@ -257,6 +266,14 @@ describe("R2Bucket against an S3-compatible server", () => {
     expect(await bucket.copy("missing", "p/z")).toMatchObject({ ok: false, status: 404, message: "missing" });
     expect(await bucket.delete("locked/y")).toMatchObject({ ok: false, status: 403, message: "Object is locked" });
     expect((await bucket.delete("q/x")).ok).toBe(true);
+  });
+
+  it("treats an error inside a 200 copy response as a failure and checks whether keys exist", async () => {
+    objects.set("broken/a", { body: "a", etag: '"1"', storageClass: "STANDARD" });
+    expect(await bucket.copy("broken/a", "_trash/broken/a")).toMatchObject({ ok: false, status: 200, message: "copy failed midway" });
+    expect(await bucket.exists("broken/a")).toBe(true);
+    expect(await bucket.exists("broken/none")).toBe(false);
+    await expect(bucket.exists("unavailable/a")).rejects.toThrow(/503/);
   });
 
   it("writes conditionally on the ETag it read", async () => {
