@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  id-token: write # npm trusted publishing and provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check that the tag matches package.json
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          test "v${version}" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} does not match package.json ${version}"; exit 1; }
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # Trusted publishing: configure this repository and workflow on npmjs.com; no token is stored here.
+      - run: npm publish --provenance --access public
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$(awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} /^## / {on=0} on' CHANGELOG.md)"
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "${notes:-See CHANGELOG.md}"
+
+      # Workflows can pin `uses: ken109/r2-lfs@v0` and follow compatible releases.
+      - name: Move the major version tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "${major}"
+          git push -f origin "refs/tags/${major}"
