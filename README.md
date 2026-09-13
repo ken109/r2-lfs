@@ -148,9 +148,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: ken109/r2-lfs@v0
+      - uses: ken109/r2-lfs@v0.1.0 # x-release-please-version
         with:
           apply: true
+          version: 0.1.0 # x-release-please-version
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: r2-lfs
@@ -159,7 +160,7 @@ jobs:
 ```
 
 The action runs the CLI version it was released with. `@v0` follows every 0.x release, and before 1.0
-a minor release may change what gc deletes, so pin an exact tag such as `@v0.1.0` when applying.
+a minor release may change what gc deletes, so pin an exact tag, as above, when applying.
 
 ## Server configuration
 
