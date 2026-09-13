@@ -100,6 +100,7 @@ export function parseConfig(vars: ConfigVars): Config {
         .map((o) => o.trim().toLowerCase())
         .filter(Boolean),
     );
+    if (allowedOwners.size === 0) problems.push("ALLOWED_OWNERS lists no owner, e.g. `my-name,my-org`");
   }
 
   const authMode = oneOf("AUTH_MODE", vars.AUTH_MODE, ["github", "token"], "github", problems);

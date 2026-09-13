@@ -167,6 +167,22 @@ describe("routing and configuration", () => {
     expect(error).not.toContain("supersecretvalue1234");
   });
 
+  it("parses owners, limits and transfer modes", () => {
+    expect(() => parseConfig(makeEnv({ ALLOWED_OWNERS: " , ," }))).toThrow(/ALLOWED_OWNERS lists no owner/);
+    expect(parseConfig(makeEnv({ ALLOWED_OWNERS: " Acme , Beta " })).allowedOwners).toEqual(new Set(["acme", "beta"]));
+    expect(parseConfig(makeEnv({ ALLOWED_OWNERS: "*" })).allowedOwners).toBe("*");
+    expect(() => parseConfig(makeEnv({ PROXY_MAX_UPLOAD_MB: "lots" }))).toThrow(/PROXY_MAX_UPLOAD_MB/);
+    expect(() => parseConfig(makeEnv({ AUTH_TOKENS: "acme/*:rw:short" }))).toThrow(/AUTH_TOKENS entry #1/);
+    const credentials = { R2_ACCOUNT_ID: "a", R2_BUCKET_NAME: "b", R2_ACCESS_KEY_ID: "c", R2_SECRET_ACCESS_KEY: "d" };
+    expect(parseConfig(makeEnv({ TRANSFER_MODE: "proxy", ...credentials })).presign).toBeUndefined();
+    expect(parseConfig(makeEnv({ TRANSFER_MODE: "presigned", ...credentials })).presign).toMatchObject({ bucketName: "b" });
+    const tokens = parseConfig(makeEnv({ AUTH_TOKENS: `Acme/App:r:${READ_TOKEN}\n acme/*:rw:with:colons:${WRITE_TOKEN}` })).tokens;
+    expect(tokens).toEqual([
+      { scope: "acme/app", permission: "read", token: READ_TOKEN },
+      { scope: "acme/*", permission: "write", token: `with:colons:${WRITE_TOKEN}` },
+    ]);
+  });
+
   it("requires credentials for presigned mode when forced", () => {
     expect(() => parseConfig(makeEnv({ TRANSFER_MODE: "presigned" }))).toThrow(/R2_ACCOUNT_ID/);
   });
