@@ -121,11 +121,13 @@ async function storeTokens(tokens: TokensFile["tokens"]) {
   clearStoredTokensCache();
 }
 
-function github(status: number, permissions?: { push: boolean; pull: boolean }) {
+function github(status: number, permissions?: { push: boolean; pull: boolean }, headers: Record<string, string> = {}) {
   const calls: Request[] = [];
   const fetcher: Fetcher = async (input, init) => {
     calls.push(new Request(input, init));
-    return Response.json(permissions ? { permissions } : { message: "x" }, { status });
+    if (status >= 300 && status < 400)
+      return new Response(null, { status, headers: { Location: "https://api.github.com/repositories/1", ...headers } });
+    return Response.json(permissions ? { permissions } : { message: "x" }, { status, headers });
   };
   return { calls, fetcher };
 }
@@ -439,6 +441,49 @@ describe("authentication (github mode)", () => {
     await batch(e, "/acme/app", "download", [], { token: GH_TOKEN, fetcher: gh.fetcher });
     await batch(e, "/acme/app", "download", [], { token: GH_TOKEN, fetcher: gh.fetcher });
     expect(gh.calls).toHaveLength(1);
+  });
+
+  it("does not follow GitHub's redirect for a renamed or transferred repository", async () => {
+    const gh = github(301);
+    const res = await batch(githubEnv(), "/acme/moved", "upload", [], { token: GH_TOKEN, fetcher: gh.fetcher });
+    expect(res.status).toBe(404);
+    expect(res.body.message).toContain("renamed or transferred");
+    expect(gh.calls[0]?.redirect).toBe("manual");
+  });
+
+  it("tells rate limits, SSO and unreachable GitHub apart from a missing repository, and does not cache them", async () => {
+    const e = githubEnv();
+    const lookup = (fetcher: Fetcher) => batch(e, "/acme/app", "download", [], { token: GH_TOKEN, fetcher });
+    expect((await lookup(github(403, undefined, { "x-ratelimit-remaining": "0" }).fetcher)).status).toBe(503);
+    expect((await lookup(github(429).fetcher)).status).toBe(503);
+    expect(
+      (await lookup(github(403, undefined, { "x-github-sso": "required; url=https://github.com/orgs/acme/sso" }).fetcher)).status,
+    ).toBe(403);
+    expect((await lookup(github(403).fetcher)).status).toBe(404);
+    expect((await lookup(github(500).fetcher)).status).toBe(502);
+    const unreachable = await lookup(() => Promise.reject(new TypeError("network")));
+    expect(unreachable.status).toBe(502);
+
+    const later = github(200, { push: false, pull: true });
+    expect((await lookup(later.fetcher)).status).toBe(200);
+    expect(later.calls).toHaveLength(1);
+  });
+
+  it("denies downloads when GitHub grants neither pull nor push", async () => {
+    const res = await batch(githubEnv(), "/acme/app", "download", [], {
+      token: GH_TOKEN,
+      fetcher: github(200, { push: false, pull: false }).fetcher,
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("does not reuse a cached permission for another repository", async () => {
+    const e = githubEnv();
+    await batch(e, "/acme/app", "upload", [], { token: GH_TOKEN, fetcher: github(200, { push: true, pull: true }).fetcher });
+    const other = github(404);
+    const res = await batch(e, "/acme/other", "upload", [], { token: GH_TOKEN, fetcher: other.fetcher });
+    expect(other.calls).toHaveLength(1);
+    expect(res.status).toBe(404);
   });
 
   it("does not share cached permissions between tokens", async () => {

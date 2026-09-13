@@ -27,15 +27,31 @@ export class GithubApiPermissions implements GithubPermissions {
     const hit = cache.get(key);
     if (hit && hit.expires > Date.now()) return hit.lookup;
 
-    const res = await this.fetcher(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "r2-lfs",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
+    let res: Response;
+    try {
+      res = await this.fetcher(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "User-Agent": "r2-lfs",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        // A renamed or transferred repository redirects to its new owner, whom ALLOWED_OWNERS may not allow.
+        redirect: "manual",
+      });
+    } catch {
+      return { ok: false, status: 502, message: "Could not reach the GitHub API" };
+    }
+    if (res.status >= 300 && res.status < 400) {
+      return { ok: false, status: 404, message: "Repository not found; if it was renamed or transferred, update lfs.url" };
+    }
     if (res.status === 401) return { ok: false, status: 401, message: "GitHub rejected the token" };
+    if (res.status === 429 || (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0")) {
+      return { ok: false, status: 503, message: "GitHub API rate limit reached; try again later" };
+    }
+    if (res.status === 403 && res.headers.has("x-github-sso")) {
+      return { ok: false, status: 403, message: "Authorize this token for the organization's SAML single sign-on" };
+    }
     // GitHub hides private repositories the token cannot see behind 404.
     if (res.status === 403 || res.status === 404) {
       return { ok: false, status: 404, message: "Repository not found or not accessible with this token" };

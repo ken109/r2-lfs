@@ -180,7 +180,8 @@ If a setting is invalid, LFS requests fail with a message listing every problem,
 **`github`.** Git sends a GitHub token as the password. The Worker asks the GitHub API what that
 account can do on the repository with the same owner and name: reading allows downloads, pushing
 allows uploads. Answers are cached for 60 seconds. GitHub reports the **account's** role, not the
-token's scopes, so a read-only token that belongs to a collaborator can still upload.
+token's scopes, so a read-only token that belongs to a collaborator can still upload. GitHub's redirects
+for renamed or transferred repositories are not followed, so update `lfs.url` after moving a repository.
 
 **`token`.** Tokens created with `r2-lfs token create --scope owner/* --label laptop` (stored hashed
 in the bucket, revocable within 30 seconds), plus any in the `AUTH_TOKENS` secret.

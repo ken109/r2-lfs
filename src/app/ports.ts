@@ -28,7 +28,7 @@ export interface TokenDirectory {
   grantsFor(token: string): Promise<Grant[]>;
 }
 
-export type Lookup = { ok: true; permission: Permission } | { ok: false; status: 401 | 404 | 502; message: string };
+export type Lookup = { ok: true; permission: Permission } | { ok: false; status: 401 | 403 | 404 | 502 | 503; message: string };
 
 export interface GithubPermissions {
   lookup(repo: Repo, token: string): Promise<Lookup>;
