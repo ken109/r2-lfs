@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import { diagnose } from "../../cli/app/doctor.ts";
@@ -121,6 +123,22 @@ describe("gc", () => {
     const overridden = await planGc(deps, { fetch: false, minAgeDays: "0" });
     expect(overridden.planned.find((p) => p.oid === s.youngOrphan)?.decision.kind).toBe("delete");
     await expect(planGc(deps, { fetch: false, keepDays: "-1" })).rejects.toThrow(UsageError);
+  });
+
+  it("refuses clones with incomplete history, and stops on a failed fetch unless it only reports", async () => {
+    const s = scenario();
+    cleanup.push(() => s.repo.remove());
+    const reporter = new SilentReporter();
+    const shallow = new TempRepo(s.repo, "--depth", "1");
+    cleanup.push(() => shallow.remove());
+    const deps = (repo: Git) => ({ repo, otherRepos: [], client: s.client, bucket: s.bucket, reporter });
+    await expect(planGc(deps(Git.open(shallow.dir)), { fetch: false })).rejects.toThrow(/full history/);
+
+    s.repo.git("remote", "add", "origin", join(s.repo.dir, "does-not-exist"));
+    await expect(planGc(deps(s.git), { fetch: true, mode: "apply" })).rejects.toThrow(/git fetch failed/);
+    await expect(planGc(deps(s.git), { fetch: true, mode: "interactive" })).rejects.toThrow(/git fetch failed/);
+    await planGc(deps(s.git), { fetch: true });
+    expect(reporter.warnings).toEqual([expect.stringContaining("git fetch failed")]);
   });
 
   it("flags the shared layout without other repositories", async () => {

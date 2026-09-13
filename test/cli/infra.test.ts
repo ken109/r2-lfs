@@ -103,6 +103,68 @@ describe("Git adapter", () => {
       ]),
     );
   });
+
+  it("fetches tags left behind by deleted branches and counts remote branches and lightweight tags as tips", () => {
+    repo = new TempRepo();
+    repo.commit("base");
+    const clone = new TempRepo(repo);
+    try {
+      repo.git("switch", "-q", "-c", "release");
+      const released = repo.commit("release");
+      repo.git("tag", "-a", "v1", "-m", "v1");
+      repo.git("switch", "-q", "-c", "feature", "main");
+      const feature = repo.commit("feature");
+      repo.git("switch", "-q", "main");
+      repo.git("branch", "-D", "release");
+      const detached = repo.commit("detached");
+      repo.git("tag", "light", detached);
+      repo.git("reset", "-q", "--hard", "HEAD~1");
+      clone.git("tag", "local-only");
+      // A tag the clone already has, moved on the remote afterwards.
+      const localBase = clone.git("rev-parse", "HEAD").trim();
+      clone.git("tag", "moving");
+      repo.git("tag", "moving", feature);
+
+      // Settings that make a plain fetch fail on the moved tag or prune local-only, and a push mirror that is unreachable.
+      clone.git("config", "fetch.pruneTags", "true");
+      clone.git("config", "remote.origin.tagOpt", "--tags");
+      clone.git("config", "--add", "remote.origin.fetch", "refs/tags/*:refs/tags/*");
+      clone.git("remote", "add", "--mirror=push", "backup", join(clone.dir, "missing.git"));
+
+      const git = Git.open(clone.dir);
+      expect(git.fetchAll()).toBe(true);
+      expect(git.refTips()).toEqual(expect.arrayContaining([released, feature, detached]));
+      expect(clone.git("tag", "--list", "local-only").trim()).toBe("local-only");
+      expect(clone.git("rev-parse", "moving^{commit}").trim()).toBe(localBase);
+    } finally {
+      clone.remove();
+    }
+  });
+
+  it("reports shallow, single-branch and branch-excluding clones as gaps in history, but not push-only remotes", () => {
+    repo = new TempRepo();
+    repo.commit("one");
+    repo.commit("two");
+    const full = new TempRepo(repo);
+    const shallow = new TempRepo(repo, "--depth", "1", "--no-single-branch");
+    const single = new TempRepo(repo, "--single-branch");
+    try {
+      full.git("remote", "add", "--mirror=push", "backup", join(full.dir, "backup.git"));
+      full.git("remote", "add", "--mirror=push", "spare", join(full.dir, "spare.git"));
+      full.git("config", "remote.spare.mirror", "yes");
+      expect(Git.open(full.dir).historyGaps()).toEqual([]);
+      full.git("remote", "add", "bare", join(full.dir, "bare.git"));
+      full.git("config", "--unset-all", "remote.bare.fetch");
+      expect(Git.open(full.dir).historyGaps()).toEqual([expect.stringContaining("remote bare fetches only some branches")]);
+      full.git("remote", "remove", "bare");
+      full.git("config", "--add", "remote.origin.fetch", "^refs/heads/big");
+      expect(Git.open(full.dir).historyGaps()).toEqual([expect.stringContaining("only some branches")]);
+      expect(Git.open(shallow.dir).historyGaps()).toEqual([expect.stringContaining("shallow")]);
+      expect(Git.open(single.dir).historyGaps()).toEqual([expect.stringContaining("only some branches")]);
+    } finally {
+      for (const r of [full, shallow, single]) r.remove();
+    }
+  });
 });
 
 describe("R2Bucket against an S3-compatible server", () => {

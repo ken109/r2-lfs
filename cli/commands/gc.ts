@@ -41,6 +41,7 @@ export default defineCommand({
       },
       {
         fetch: args.fetch,
+        mode: args.interactive ? "interactive" : args.apply ? "apply" : "dry-run",
         ...(args.layout ? { layout: args.layout } : {}),
         ...(args["keep-days"] ? { keepDays: args["keep-days"] } : {}),
         ...(args["keep-versions"] ? { keepVersions: args["keep-versions"] } : {}),

@@ -55,8 +55,10 @@ export interface GitRepository {
   treeEntries(commit: string): TreeEntry[];
   readBlob(object: string): Uint8Array;
   readFile(relativePath: string): string | undefined;
-  /** Fetches every remote; false if that failed. */
+  /** Fetches every branch and tag of every remote; false if that failed. */
   fetchAll(): boolean;
+  /** Reasons the local history may lack commits the remote has, such as a shallow or single-branch clone. */
+  historyGaps(): string[];
   setLfsConfig(key: string, value: string): void;
   lfsTrack(patterns: string[]): void;
   lfsInstalled(): boolean;

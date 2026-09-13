@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import type { BatchObject, Bucket, BucketObject, InfoResult, LfsClient, Progress, Reporter, WriteResult } from "../../cli/app/ports.ts";
 import type { ObjectRef, StoredObject } from "../../cli/domain/objects.ts";
@@ -127,9 +128,11 @@ export class FakeLfsClient implements LfsClient {
 export class TempRepo {
   readonly dir: string;
 
-  constructor() {
+  /** A new repository, or a clone of `source` made with `cloneArgs` such as `--depth 1`. */
+  constructor(source?: TempRepo, ...cloneArgs: string[]) {
     this.dir = mkdtempSync(join(tmpdir(), "r2-lfs-test-"));
-    this.git("init", "-q", "-b", "main");
+    if (source) execFileSync("git", ["clone", "-q", ...cloneArgs, pathToFileURL(source.dir).href, this.dir]);
+    else this.git("init", "-q", "-b", "main");
     this.git("config", "user.name", "Test");
     this.git("config", "user.email", "test@example.com");
     this.git("config", "commit.gpgsign", "false");

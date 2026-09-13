@@ -17,6 +17,8 @@ export interface GcDeps {
 
 export interface GcPlanOptions extends PolicyOverrides {
   fetch: boolean;
+  /** Whether the plan will be applied; changing the bucket needs refs that are known to be current. */
+  mode?: "dry-run" | "apply" | "interactive";
   layout?: string;
   now?: Date;
 }
@@ -36,14 +38,25 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
   const layout = await resolveLayout(client, opts.layout);
   if (layout === "per-repo" && deps.otherRepos.length > 0) throw new UsageError("--repos only applies to the shared layout");
 
+  const repos = [repo, ...deps.otherRepos];
+  for (const r of repos) {
+    const gaps = r.historyGaps();
+    // Objects only the missing commits use would look unreferenced.
+    if (gaps.length > 0) throw new UsageError(`gc needs the full history of ${r.dir}, but ${gaps.join("; ")}`);
+  }
+
   const policy = loadPolicy(repo, opts);
   const now = opts.now ?? new Date();
+  const acting = (opts.mode ?? "dry-run") !== "dry-run";
   const facts = await reporter.task(
     "Reading git history",
     () => {
-      const repos = [repo, ...deps.otherRepos];
       if (opts.fetch) {
-        for (const r of repos) if (!r.fetchAll()) reporter.warn(`git fetch failed in ${r.dir}; judging from the refs you already have`);
+        for (const r of repos) {
+          if (r.fetchAll()) continue;
+          if (acting) throw new UsageError(`git fetch failed in ${r.dir}; fix it, or pass --no-fetch to judge from the refs you have`);
+          reporter.warn(`git fetch failed in ${r.dir}; judging from the refs you already have`);
+        }
       }
       const merged = collectFacts(repo, policy, now);
       for (const other of deps.otherRepos) mergeFacts(merged, collectFacts(other, policy, now));

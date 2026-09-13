@@ -213,9 +213,44 @@ export class Git implements GitRepository {
     return existsSync(file) ? readFileSync(file, "utf8") : undefined;
   }
 
+  /** The fetch refspecs of every remote, except push mirrors, which are never fetched from. */
+  private fetchRefspecs(): Map<string, string[]> {
+    const remotes = new Map<string, string[]>();
+    for (const remote of (this.tryRun(["remote"]) ?? "").split("\n").filter(Boolean)) {
+      const specs = (this.tryRun(["config", "--get-all", `remote.${remote}.fetch`]) ?? "").split("\n").filter(Boolean);
+      const mirror = this.tryRun(["config", "--type=bool", "--get", `remote.${remote}.mirror`])?.trim() === "true";
+      if (specs.length === 0 && mirror) continue;
+      remotes.set(remote, specs);
+    }
+    return remotes;
+  }
+
   fetchAll(): boolean {
-    if (!this.tryRun(["remote"])?.trim()) return true;
-    return this.tryRun(["fetch", "--all", "--prune", "--quiet"]) !== undefined;
+    for (const [remote, specs] of this.fetchRefspecs()) {
+      // Tags are left to the second fetch, whatever tagOpt or tag refspecs the user configured: those would fail
+      // on a tag moved on the remote, or prune local tags gc must still see. The empty --refmap stops configured
+      // refspecs from also updating refs/tags on the side; git ignores pruneTags when refspecs are given.
+      const noTags = ["fetch", "--prune", "--no-tags", "--refmap=", "--quiet", remote];
+      const branches = specs.filter((spec) => !spec.includes(":refs/tags/"));
+      if (branches.length > 0 && this.tryRun([...noTags, ...branches]) === undefined) return false;
+      // Every tag, including those whose commits no branch contains, in a namespace of its own.
+      if (this.tryRun([...noTags, `+refs/tags/*:refs/r2-lfs/tags/${remote}/*`]) === undefined) return false;
+    }
+    return true;
+  }
+
+  historyGaps(): string[] {
+    const gaps: string[] = [];
+    if (this.tryRun(["rev-parse", "--is-shallow-repository"])?.trim() === "true") {
+      gaps.push("it is a shallow clone; run `git fetch --unshallow`");
+    }
+    for (const [remote, specs] of this.fetchRefspecs()) {
+      const everyBranch = specs.some((spec) => /^\+?refs\/heads\/\*:/.test(spec)) && !specs.some((spec) => spec.startsWith("^"));
+      if (!everyBranch) {
+        gaps.push(`remote ${remote} fetches only some branches; run \`git remote set-branches ${remote} '*'\` and fetch`);
+      }
+    }
+    return gaps;
   }
 
   setLfsConfig(key: string, value: string): void {

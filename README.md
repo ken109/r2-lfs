@@ -85,8 +85,10 @@ export R2_ACCOUNT_ID=... R2_BUCKET_NAME=r2-lfs R2_ACCESS_KEY_ID=... R2_SECRET_AC
 
 ## Cleaning up old versions
 
-`r2-lfs gc` reads the history of every local and remote-tracking branch and tag, lists the bucket,
-and decides for each object:
+`r2-lfs gc` fetches every branch and tag, reads the history of all of them, lists the bucket,
+and decides for each object. Remote tags are fetched to `refs/r2-lfs/tags/<remote>/`, so they never
+overwrite or prune your own tags; `migrate` does the same. Objects those refs use are kept, so after
+removing a remote, delete its refs with `git for-each-ref --format='delete %(refname)' refs/r2-lfs/tags/<remote>/ | git update-ref --stdin`.
 
 - **keep** it if it is in the tree of any branch or tag tip, used by a commit from the last
   `keep_days` days, one of a file's newest `keep_versions` versions, or under a path marked `keep = "all"`
@@ -94,7 +96,8 @@ and decides for each object:
   you have not fetched yet are safe
 - otherwise **move it to the trash**, or to R2 Infrequent Access storage if a rule says so
 
-It is a dry run unless you pass `--apply`. Tune it with a `.r2-lfs.toml` at the repository root:
+It is a dry run unless you pass `--apply`. It refuses shallow and single-branch clones, whose missing
+commits would make objects look unreferenced, and it stops if `git fetch` fails while applying. Tune it with a `.r2-lfs.toml` at the repository root:
 
 ```toml
 keep_days = 90          # keep objects used by commits from the last 90 days
