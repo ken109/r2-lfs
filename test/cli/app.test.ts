@@ -83,6 +83,7 @@ function scenario() {
   return { repo, git: Git.open(repo.dir), bucket, client, oldOid, newOid, texOid, orphan, youngOrphan, prefix };
 }
 
+const at = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000);
 const object = (key: string) => ({ key, size: 1, lastModified: new Date(), storageClass: "STANDARD" });
 
 let cleanup: (() => void)[] = [];
@@ -346,6 +347,28 @@ describe("restore", () => {
     expect(outcomes).toEqual([{ oid: s.oldOid, ok: true }]);
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
     expect(s.bucket.objects.has(`_trash/${s.prefix}${s.oldOid}`)).toBe(false);
+  });
+
+  it("selects by date and rejects ambiguous prefixes, and says when a restore is incomplete", async () => {
+    const bucket = new MemoryBucket();
+    const reporter = new SilentReporter();
+    const trashed = (oid: string, daysAgo: number) => ({
+      object: { ...object(`_trash/acme/assets/${oid}`), lastModified: at(daysAgo) },
+      oid,
+      paths: [],
+    });
+    const trash = [trashed(`ab${"1".repeat(62)}`, 10), trashed(`ab${"2".repeat(62)}`, 1)];
+    expect(selectTrash(trash, { kind: "since", date: at(5) }).map((t) => t.oid)).toEqual([trash[1]!.oid]);
+    expect(() => selectTrash(trash, { kind: "oids", prefixes: ["ab"] })).toThrow(/ambiguous/);
+
+    const [missing, locked] = trash;
+    bucket.seed(locked!.object.key);
+    bucket.locked.push("_trash/");
+    expect(await restoreObjects({ bucket, reporter }, [missing!, locked!])).toEqual([
+      { oid: missing!.oid, ok: false, message: "copy failed: 404 NoSuchKey" },
+      { oid: locked!.oid, ok: true, message: expect.stringContaining("trash copy could not be removed") },
+    ]);
+    expect(bucket.objects.has(`acme/assets/${locked!.oid}`)).toBe(true);
   });
 });
 
@@ -653,6 +676,35 @@ describe("init and doctor", () => {
     expect(git.config("lfs.locksverify", ".lfsconfig")).toBe("false");
     expect(git.readFile(".gitattributes")).toContain("*.blend filter=lfs");
     expect(gitConfig.get("r2-lfs.server")).toBe("https://lfs.example.com");
+  });
+
+  it("validates its inputs, keeps a remembered server and reports when access cannot be checked", async () => {
+    const repo = new TempRepo();
+    cleanup.push(() => repo.remove());
+    repo.git("config", "filter.lfs.process", "git-lfs filter-process");
+    const git = Git.open(repo.dir);
+    const gitConfig = new FakeGitConfig();
+    gitConfig.values.set("r2-lfs.server", "https://first.example.com");
+    gitConfig.token = undefined;
+    const client = new FakeLfsClient();
+    client.hasCredentials = false;
+    client.serverInfo.authMode = "token";
+    const reporter = new SilentReporter();
+    const deps = { repo: git, gitConfig, gh: noGh, reporter, connect: () => client };
+    const base = { server: "https://lfs.example.com", track: [] };
+
+    await expect(initRepository(deps, base)).rejects.toThrow(/--repo owner\/name/);
+    await expect(initRepository(deps, { ...base, repo: "acme" })).rejects.toThrow(/owner\/name/);
+    await expect(initRepository(deps, { ...base, repo: "acme/assets/extra" })).rejects.toThrow(/owner\/name/);
+    await expect(initRepository(deps, { ...base, server: "https://lfs.example.com/acme/assets", repo: "acme/assets" })).rejects.toThrow(
+      /just an origin/,
+    );
+    await expect(initRepository(deps, { ...base, repo: "acme/assets", credential: "gh" })).rejects.toThrow(/gh auth login/);
+    expect(reporter.warnings).toEqual([expect.stringContaining("token auth")]);
+
+    const result = await initRepository(deps, { ...base, repo: "acme/assets" });
+    expect(result).toMatchObject({ credential: "none", access: "unknown" });
+    expect(gitConfig.get("r2-lfs.server")).toBe("https://first.example.com");
   });
 
   it("stops at the first check later ones depend on and explains access problems", async () => {

@@ -295,6 +295,8 @@ describe("usage", () => {
       [{ key: `_trash/p/${A}`, size: 100, lastModified: date, storageClass: "STANDARD" }],
     );
     expect(usage).toMatchObject({ storedBytes: 357, infrequentAccessBytes: 50, orphanedBytes: 7, trashBytes: 100 });
+    // The trash is billed until it expires, at the standard rate.
+    expect(usage.monthlyUsd).toBeCloseTo(monthlyCost(300 + 7 + 100, 50), 12);
     expect(monthlyCost(1024 ** 3, 1024 ** 3)).toBeCloseTo(0.025);
   });
 });
