@@ -56,7 +56,7 @@ jobs:
       # Trusted publishing: register this repository and workflow file on npmjs.com; no token is stored here.
       - run: npm publish --provenance --access public
 
-      # Workflows can pin `uses: ken109/r2-lfs@v0` and follow compatible releases.
+      # `uses: ken109/r2-lfs@v0` follows every 0.x release; README asks gc users to pin an exact tag.
       - name: Move the major version tag
         env:
           MAJOR_TAG: v${{ needs.release-please.outputs.major }}

@@ -13,8 +13,8 @@ inputs:
     description: Extra arguments for `r2-lfs gc`, e.g. `--keep-days 60 --no-trash`.
     default: ""
   version:
-    description: r2-lfs version to run from npm.
-    default: "0"
+    description: r2-lfs version to run from npm. Defaults to the version of this action, so pinning the action pins the CLI.
+    default: ""
   working-directory:
     description: The repository checkout to scan.
     default: "."
@@ -38,8 +38,10 @@ runs:
           echo "::error::gc needs full history; use actions/checkout with fetch-depth: 0"
           exit 1
         fi
+        # GITHUB_ACTION_PATH, unlike github.action_path, is right inside container jobs too.
+        version="${R2_LFS_VERSION:-$(node -p 'require(process.env.GITHUB_ACTION_PATH + "/package.json").version')}"
         apply=""
         if [ "${R2_LFS_APPLY}" = "true" ]; then apply="--apply"; fi
         # Word splitting of R2_LFS_ARGS is intended.
         # shellcheck disable=SC2086
-        npx --yes "r2-lfs@${R2_LFS_VERSION}" gc ${apply} ${R2_LFS_ARGS}
+        npx --yes "r2-lfs@${version}" gc ${apply} ${R2_LFS_ARGS}

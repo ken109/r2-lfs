@@ -153,6 +153,9 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 ```
 
+The action runs the CLI version it was released with. `@v0` follows every 0.x release, and before 1.0
+a minor release may change what gc deletes, so pin an exact tag such as `@v0.1.0` when applying.
+
 ## Server configuration
 
 These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare page, or by `setup`.
