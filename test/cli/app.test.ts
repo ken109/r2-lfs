@@ -222,6 +222,11 @@ describe("gc", () => {
     const rechecked = await recheckPlan(deps, plan, plan.candidates, opts);
     expect(rechecked.map((p) => p.oid)).toEqual([s.orphan]);
     expect(reporter.warnings).toEqual([expect.stringContaining("1 object(s) are needed by commits pushed")]);
+
+    // With --no-fetch there is nothing to compare against; when fetching fails, nothing is applied.
+    expect(await recheckPlan(deps, plan, plan.candidates, { ...opts, fetch: false })).toEqual(plan.candidates);
+    clone.git("remote", "set-url", "origin", join(clone.dir, "gone"));
+    await expect(recheckPlan(deps, plan, plan.candidates, opts)).rejects.toThrow(/nothing was changed/);
   });
 
   it("keeps objects of older commits inside the keep_days window of the rule for their path", async () => {
@@ -323,6 +328,12 @@ describe("gc", () => {
       [finalNew]: "keep",
       [s.orphan]: "delete",
     });
+
+    const shallow = new TempRepo(other, "--depth", "1");
+    cleanup.push(() => shallow.remove());
+    await expect(planGc({ ...deps, otherRepos: [Git.open(shallow.dir)] }, { fetch: false })).rejects.toThrow(
+      /full history of .*r2-lfs-test-/,
+    );
 
     const perRepo = { ...deps, client: new FakeLfsClient() };
     await expect(planGc(perRepo, { fetch: false })).rejects.toThrow(/only applies to the shared layout/);

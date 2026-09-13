@@ -257,6 +257,14 @@ describe("planObjects", () => {
     expect(combined.map((p) => p.decision.kind)).toEqual(["keep", "keep", "tier", "tier"]);
     expect(combined[0]?.paths).toEqual(["a.png", "b/a.png"]);
     expect(combinePlans([first]).map((p) => p.decision.kind)).toEqual(["delete", "delete", "delete", "delete"]);
+
+    // A repository with a longer min_age_days spares what another would delete, and keeping beats tiering.
+    const young = planObjects(objects, facts(), { ...policy, minAgeDays: 500 }, now);
+    expect(combinePlans([first, young]).map((p) => p.decision.kind)).toEqual(["young", "young", "young", "young"]);
+    expect(combinePlans([second, first]).map((p) => p.decision.kind)).toEqual(["keep", "keep", "tier", "tier"]);
+    expect(combinePlans([second, young]).map((p) => p.decision.kind)).toEqual(["keep", "keep", "young", "young"]);
+    const keepAll = planObjects(objects, facts({ tips: new Set([C]) }), policy, now);
+    expect(combinePlans([second, keepAll])[2]?.decision.kind).toBe("keep");
   });
 });
 
