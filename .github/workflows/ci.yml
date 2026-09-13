@@ -49,8 +49,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: [24]
         include:
+          # The oldest version package.json allows.
           - os: ubuntu-latest
-            node: 22
+            node: 22.13.0
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
