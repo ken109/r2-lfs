@@ -29,7 +29,9 @@ export interface BatchRequest {
 }
 
 export function parseBatchRequest(body: unknown): Parsed<BatchRequest> {
-  if (typeof body !== "object" || body === null) return { ok: false, status: 400, message: "Request body must be a JSON object" };
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, status: 400, message: "Request body must be a JSON object" };
+  }
   const { operation, objects, hash_algo } = body as Record<string, unknown>;
   if (operation !== "upload" && operation !== "download") {
     return { ok: false, status: 422, message: "operation must be upload or download" };

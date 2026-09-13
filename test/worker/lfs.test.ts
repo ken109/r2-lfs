@@ -202,6 +202,37 @@ describe("routing and configuration", () => {
     expect(() => parseConfig(makeEnv({ AUTH_TOKENS: `_meta/*:rw:${WRITE_TOKEN}` }))).toThrow(/AUTH_TOKENS entry #1/);
   });
 
+  it("validates batch requests and methods", async () => {
+    const e = makeEnv();
+    const post = (path: string, body: BodyInit) => call(e, path, { token: WRITE_TOKEN, body, method: "POST" });
+    expect((await post("/acme/app/objects/batch", "[]")).status).toBe(400);
+    expect((await post("/acme/app/objects/batch", "not json")).status).toBe(400);
+    expect((await call(e, "/acme/app/objects/batch", { token: WRITE_TOKEN, json: { operation: "delete", objects: [] } })).status).toBe(422);
+    const tooMany = Array.from({ length: 1001 }, () => ({ oid: "a".repeat(64), size: 1 }));
+    expect(
+      (await call(e, "/acme/app/objects/batch", { token: WRITE_TOKEN, json: { operation: "download", objects: tooMany } })).status,
+    ).toBe(422);
+
+    expect((await call(e, "/acme/app/objects/batch", { token: WRITE_TOKEN })).status).toBe(405);
+    expect((await call(e, "/acme/app/objects/verify", { token: WRITE_TOKEN })).status).toBe(405);
+    expect((await call(e, `/acme/app/objects/${"a".repeat(64)}`, { token: WRITE_TOKEN, method: "DELETE" })).status).toBe(405);
+    expect((await call(e, "/_r2-lfs/info", { method: "POST", body: "{}" })).status).toBe(405);
+    expect((await call(e, "/", { method: "POST", body: "{}" })).status).toBe(405);
+    expect((await call(e, "/acme/app/unknown")).status).toBe(404);
+  });
+
+  it("reads the token from Basic or Bearer credentials and treats malformed ones as missing", async () => {
+    const e = makeEnv();
+    const status = async (authorization: string) => (await batch(e, "/acme/app", "download", [], { authorization })).status;
+    expect(await status(`Bearer ${WRITE_TOKEN}`)).toBe(200);
+    expect(await status(`bearer ${WRITE_TOKEN}`)).toBe(200);
+    expect(await status(`Basic ${btoa(WRITE_TOKEN)}`)).toBe(200);
+    expect(await status("Basic %%%not-base64")).toBe(401);
+    expect(await status(`Basic ${btoa("git:")}`)).toBe(401);
+    expect(await status(`Token ${WRITE_TOKEN}`)).toBe(401);
+    expect(await status("Basic")).toBe(401);
+  });
+
   it("declines locking so git-lfs skips it", async () => {
     const res = await call(makeEnv(), "/acme/app/locks/verify", { token: WRITE_TOKEN, json: {} });
     expect(res.status).toBe(404);
