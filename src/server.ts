@@ -13,7 +13,7 @@ const isAdmin = (pathname: string) => pathname === ADMIN_PATH || pathname.starts
 export default {
   async fetch(request, env) {
     if (!isAdmin(new URL(request.url).pathname)) return worker.fetch(request, env);
-    const denied = await gateAdmin(request, env, { fetch: (input, init) => fetch(input, init) });
-    return denied ?? startHandler.fetch(request);
+    const gate = await gateAdmin(request, env, { fetch: (input, init) => fetch(input, init) });
+    return gate.ok ? startHandler.fetch(request) : gate.response;
   },
 } satisfies ExportedHandler<Env>;

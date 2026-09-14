@@ -37,9 +37,12 @@ const claims = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-async function gate(e: Env, fetcher: Fetcher, token?: string) {
-  const headers = token ? { "Cf-Access-Jwt-Assertion": token } : undefined;
-  return gateAdmin(new Request("https://lfs.example.com/_admin", { headers }), e, { fetch: fetcher });
+/** The response that stops the request, or undefined when it goes on to the UI. */
+async function gate(e: Env, fetcher: Fetcher, token?: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Cf-Access-Jwt-Assertion", token);
+  const result = await gateAdmin(new Request("https://lfs.example.com/_admin", { ...init, headers }), e, { fetch: fetcher });
+  return result.ok ? undefined : result.response;
 }
 
 beforeEach(() => clearJwtKeysCache());
@@ -70,6 +73,25 @@ describe("admin gate", () => {
       expect((await gate(makeEnv(), fetcher, token))?.status).toBe(403);
     }
     expect((await gate(makeEnv(), fetcher))?.status).toBe(403);
+  });
+
+  it("passes on who signed in, and accepts changes only from the admin UI's own origin", async () => {
+    const key = await signingKey("k1");
+    const { fetcher } = certs(key.jwk);
+    const token = await key.sign(claims());
+    const result = await gateAdmin(
+      new Request("https://lfs.example.com/_admin", { headers: { "Cf-Access-Jwt-Assertion": token } }),
+      makeEnv(),
+      {
+        fetch: fetcher,
+      },
+    );
+    expect(result).toMatchObject({ ok: true, email: "me@example.com", config: { access: { aud: AUD } } });
+
+    const post = (origin?: string) => gate(makeEnv(), fetcher, token, { method: "POST", headers: origin ? { Origin: origin } : {} });
+    expect(await post("https://lfs.example.com")).toBeUndefined();
+    expect((await post("https://evil.example"))?.status).toBe(403);
+    expect((await post())?.status).toBe(403);
   });
 
   it("refuses tokens signed with another key and fetches the keys again when an unknown key id appears", async () => {
