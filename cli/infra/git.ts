@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { GitRepository, PointerAt, TreeEntry } from "../app/ports.ts";
 import { UsageError } from "../domain/errors.ts";
@@ -267,6 +267,11 @@ export class Git implements GitRepository {
 
   lfsHooksInstalled(): boolean {
     return this.config("filter.lfs.process") !== undefined;
+  }
+
+  /** Shared by every worktree of the clone. */
+  commonGitDir(): string {
+    return resolve(this.dir, this.run(["rev-parse", "--git-common-dir"]).trim());
   }
 
   lfsObjectPath(oid: string): string {

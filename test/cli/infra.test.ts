@@ -7,11 +7,12 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { ConflictError } from "../../cli/app/ports.ts";
+import { ConflictError, TransferError } from "../../cli/app/ports.ts";
 import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import { GithubActionsIdTokens } from "../../cli/infra/actions-id-token.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
+import { FileUploadStates, HttpMultipartUploads, readFileRange } from "../../cli/infra/multipart-uploads.ts";
 import { parseListObjects, R2Bucket, ssecHeaders } from "../../cli/infra/r2-bucket.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { TempRepo } from "./helpers.ts";
@@ -368,6 +369,78 @@ describe("HttpLfsClient", () => {
       expect(results.map((r) => r.size)).toEqual(objects.map((o) => o.size));
     } finally {
       server.close();
+    }
+  });
+});
+
+describe("transfer agent adapters", () => {
+  it("calls the multipart endpoints under the action's href with its headers", async () => {
+    const seen: { method: string; url: string; auth: string | undefined; body: string }[] = [];
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        seen.push({
+          method: req.method ?? "",
+          url: req.url ?? "",
+          auth: req.headers.authorization,
+          body: Buffer.concat(chunks).toString(),
+        });
+        const json = (status: number, body: unknown) =>
+          res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+        if (req.url === "/o/multipart") return json(200, { uploadId: "id/+=", partSize: 5 });
+        if (req.url === "/o/multipart/id%2F%2B%3D/1") return json(200, { partNumber: 1, etag: "e1" });
+        if (req.url === "/o/multipart/id%2F%2B%3D/2") return json(404, { message: "No such upload" });
+        if (req.url === "/o/multipart/id%2F%2B%3D/3") return json(503, { message: "busy" });
+        return json(422, { message: "does not match" });
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const action = { href: `http://127.0.0.1:${port}/o/multipart`, header: { Authorization: "Basic abc" } };
+      const uploads = new HttpMultipartUploads();
+      expect(await uploads.start(action, 12)).toEqual({ uploadId: "id/+=", partSize: 5 });
+      expect(await uploads.uploadPart(action, "id/+=", 1, new TextEncoder().encode("hello"))).toEqual({ partNumber: 1, etag: "e1" });
+      expect(await uploads.uploadPart(action, "id/+=", 2, new Uint8Array(1))).toBeUndefined();
+      await expect(uploads.uploadPart(action, "id/+=", 3, new Uint8Array(1))).rejects.toMatchObject({ status: 503, message: "busy" });
+      const refused = await uploads.complete(action, "id/+=", 12, [{ partNumber: 1, etag: "e1" }]).catch((err: unknown) => err);
+      expect(refused).toBeInstanceOf(TransferError);
+      expect(refused).toMatchObject({ status: 422, message: "does not match" });
+
+      expect(seen[0]).toEqual({ method: "POST", url: "/o/multipart", auth: "Basic abc", body: '{"size":12}' });
+      expect(seen[1]).toMatchObject({ method: "PUT", body: "hello" });
+      expect(seen.at(-1)).toMatchObject({ method: "POST", url: "/o/multipart/id%2F%2B%3D/complete" });
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+    // Nothing listening any more: a TransferError without a status, which the agent retries.
+    await new Promise((resolve) => server.once("close", resolve));
+    await expect(new HttpMultipartUploads().start({ href: `http://127.0.0.1:${port}/gone` }, 1)).rejects.toMatchObject({
+      status: undefined,
+    });
+  });
+
+  it("remembers uploads per object and reads exact byte ranges", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "r2-lfs-states-"));
+    try {
+      const states = FileUploadStates.inGitDir(dir);
+      const state = { href: "https://x/o/multipart", size: 10, uploadId: "u", partSize: 5, parts: [{ partNumber: 1, etag: "e" }] };
+      expect(states.load("a".repeat(64))).toBeUndefined();
+      states.save("a".repeat(64), state);
+      expect(states.load("a".repeat(64))).toEqual(state);
+      expect(readFileSync(join(dir, "lfs", "r2-lfs", "uploads", `${"a".repeat(64)}.json`), "utf8")).toContain('"uploadId":"u"');
+      states.remove("a".repeat(64));
+      states.remove("a".repeat(64));
+      expect(states.load("a".repeat(64))).toBeUndefined();
+
+      const file = join(dir, "data.bin");
+      writeFileSync(file, "0123456789");
+      expect(new TextDecoder().decode(await readFileRange(file, 5, 5))).toBe("56789");
+      await expect(readFileRange(file, 8, 5)).rejects.toThrow(/ended before/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

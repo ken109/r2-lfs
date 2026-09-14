@@ -74,6 +74,7 @@ Install it globally with `npm i -g r2-lfs`, or run any command with `npx r2-lfs`
 | `restore`         | List the trash and bring objects back by oid, path, date or all at once.                                                                                         |
 | `archive <tag>`   | Pack a tag, LFS files included, into tar parts and publish them as a GitHub release.                                                                             |
 | `token`           | Create, list and revoke tokens for servers using token authentication.                                                                                           |
+| `transfer-agent`  | Upload in resumable parts through the Worker, past its request limit; `--install` registers it.                                                                  |
 
 Every command accepts `--help`. Read-only commands accept `--json`.
 
@@ -227,13 +228,23 @@ or the repository name but never crosses the `/`: `my-org/*` is every repository
 
 **`proxy`** needs no extra setup. The Worker streams uploads into R2 and R2 rejects content that
 does not hash to the oid. Uploads are limited by the Workers request body size (100 MB on Free and
-Pro); larger objects fail early with a message pointing at presigned mode.
+Pro); larger objects fail early with a message pointing at presigned mode or multipart uploads.
 
 **`presigned`** hands Git time-limited R2 URLs, so transfers skip the Worker. Objects can be up to
 4.995 GiB, the most R2 accepts in one request. R2 does not check SHA-256 on presigned uploads, so they
 land under `_incoming/` and the Worker hashes each one when git-lfs verifies it, then copies it into
 place inside R2. Hashing a large file takes Worker CPU time beyond the Free plan's limit; set
 `VERIFY_UPLOADS=off` there, which makes the Worker check only the size.
+
+**Multipart uploads** lift both limits. Register the CLI as a git-lfs transfer agent with
+`r2-lfs init --transfer-agent` (or `r2-lfs transfer-agent --install`), from a global install rather
+than `npx`, since git config keeps its path. git-lfs then offers it to servers, and r2-lfs uses it in
+proxy mode, or in presigned mode for objects over 4.995 GiB. The agent sends each object in parts of
+`PROXY_MAX_UPLOAD_MB` (at least 5 MiB) through the Worker, and an interrupted push continues from the
+last part it finished. When the parts are complete, the Worker checks the size and SHA-256 before
+moving the object into place. Objects over 4.995 GiB are copied inside the Worker in 32 MB parts, which
+takes more CPU time and subrequests than the Free plan allows. Downloads keep git-lfs's own transfer,
+which resumes with a range request.
 
 ### Upgrading a shared-layout server
 
@@ -310,7 +321,8 @@ See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Limitations
 
-- Only the `basic` transfer adapter and SHA-256 oids are supported, which is what git-lfs uses by default.
+- Only SHA-256 oids are supported, which is what git-lfs uses. Transfers use git-lfs's `basic` adapter, or
+  the `r2-lfs-multipart` agent for uploads when it is installed.
 
 ## Contributing
 

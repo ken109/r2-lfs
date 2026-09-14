@@ -18,6 +18,11 @@ export default defineCommand({
     repo: { type: "string", description: "owner/name to store objects under (default: from the origin remote)", valueHint: "owner/name" },
     track: { type: "string", description: `Presets (${Object.keys(PRESETS).join(", ")}) or patterns to track, comma-separated` },
     lockable: { type: "boolean", description: "Track them as lockable: read-only in checkouts until locked with git lfs lock" },
+    "transfer-agent": {
+      type: "boolean",
+      description:
+        "Upload through `r2-lfs transfer-agent`: resumable, and past the Worker's request limit (needs r2-lfs installed, not run with npx)",
+    },
     credential: {
       type: "enum",
       options: ["gh", "none"],
@@ -65,6 +70,7 @@ export default defineCommand({
         track,
         ...(args.lockable ? { lockable: true } : {}),
         ...(args.credential ? { credential: args.credential as "gh" | "none" } : {}),
+        ...(args["transfer-agent"] ? { transferAgent: compose.transferAgentCommand() } : {}),
       },
     );
 

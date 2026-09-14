@@ -145,10 +145,23 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
       ),
     );
   }
-  // Presigned uploads that git-lfs never verified.
+  // Presigned uploads that git-lfs never verified, and multipart uploads abandoned for longer than a resume would wait.
   await reporter.task(`Expiring ${INCOMING_PREFIX} after 1 day`, () =>
     check(
-      wrangler.run(["r2", "bucket", "lifecycle", "add", opts.bucket, "r2-lfs-incoming", INCOMING_PREFIX, "--expire-days", "1", "--force"]),
+      wrangler.run([
+        "r2",
+        "bucket",
+        "lifecycle",
+        "add",
+        opts.bucket,
+        "r2-lfs-incoming",
+        INCOMING_PREFIX,
+        "--expire-days",
+        "1",
+        "--abort-multipart-days",
+        "7",
+        "--force",
+      ]),
       "adding the incoming uploads lifecycle rule",
     ),
   );

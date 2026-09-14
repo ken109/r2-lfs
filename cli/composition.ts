@@ -11,6 +11,7 @@ import { GhCli } from "./infra/github-cli.ts";
 import { GH_CREDENTIAL_HELPER, UserGitConfig } from "./infra/global-git-config.ts";
 import { HttpLfsClient } from "./infra/lfs-client.ts";
 import { LocalFiles } from "./infra/local-files.ts";
+import { FileUploadStates, HttpMultipartUploads, readFileRange, stdinLines } from "./infra/multipart-uploads.ts";
 import { R2Bucket, r2Configured } from "./infra/r2-bucket.ts";
 import { NpxWrangler } from "./infra/wrangler-cli.ts";
 
@@ -51,6 +52,22 @@ export function actionsIdTokens(): ActionsIdTokens {
 export function credentialHelperCommand(): string {
   return `!"${process.execPath}" "${process.argv[1] ?? ""}" credential`;
 }
+
+/** How git-lfs runs `r2-lfs transfer-agent`: git-lfs splits the args itself, without a shell. */
+export function transferAgentCommand(): { path: string; args: string } {
+  return { path: process.execPath, args: `"${process.argv[1] ?? ""}" transfer-agent` };
+}
+
+export function multipartUploads(): HttpMultipartUploads {
+  return new HttpMultipartUploads();
+}
+
+/** Interrupted uploads, remembered in the clone's git directory. */
+export function uploadStates(): FileUploadStates {
+  return FileUploadStates.inGitDir(Git.open().commonGitDir());
+}
+
+export { readFileRange, stdinLines };
 
 export function bucket(): Bucket {
   return R2Bucket.fromEnv();

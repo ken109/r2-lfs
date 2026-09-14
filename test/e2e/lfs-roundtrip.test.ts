@@ -1,6 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -37,7 +37,10 @@ describe("git-lfs through a local r2-lfs server", () => {
 
     work = mkdtempSync(join(tmpdir(), "r2-lfs-e2e-"));
     const envFile = join(work, "worker.env");
-    writeFileSync(envFile, `ALLOWED_REPOS=acme/*\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nAUTH_TOKENS=acme/*:rw:${TOKEN}\n`);
+    writeFileSync(
+      envFile,
+      `ALLOWED_REPOS=acme/*\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nPROXY_MAX_UPLOAD_MB=5\nAUTH_TOKENS=acme/*:rw:${TOKEN}\n`,
+    );
     // The Worker as the npm package ships it and `r2-lfs setup` deploys it.
     const site = join(work, "site");
     cpSync(join(process.cwd(), "dist", "worker"), join(site, "worker"), { recursive: true });
@@ -137,6 +140,29 @@ describe("git-lfs through a local r2-lfs server", () => {
     const checks = JSON.parse(cli(repo, "doctor", "--json")) as { name: string; status: string }[];
     expect(checks.filter((c) => c.status === "fail")).toEqual([]);
     expect(checks.find((c) => c.name === "access")?.status).toBe("ok");
+  });
+
+  it("uploads objects past the proxy request limit through the transfer agent", () => {
+    const origin = join(work, "big-origin.git");
+    git(work, "init", "-q", "--bare", origin);
+    const repo = join(work, "big");
+    mkdirSync(repo);
+    git(repo, "init", "-q");
+    git(repo, "remote", "add", "origin", origin);
+    cli(repo, "init", "--server", SERVER, "--repo", "acme/big", "--track", "blender", "--credential", "none", "--transfer-agent");
+    expect(git(repo, "config", "--global", "--get", "lfs.customtransfer.r2-lfs-multipart.args")).toContain("transfer-agent");
+
+    // PROXY_MAX_UPLOAD_MB is 5, so basic transfers would refuse this; the agent sends it in three parts.
+    const scene = randomBytes(12 * 1024 * 1024);
+    writeFileSync(join(repo, "big.blend"), scene);
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "big");
+    git(repo, "push", "-q", "origin", "main");
+    expect(readdirSync(join(repo, ".git", "lfs", "r2-lfs", "uploads"))).toEqual([]);
+
+    const clone = join(work, "big-clone");
+    git(work, "clone", "-q", origin, clone);
+    expect(readFileSync(join(clone, "big.blend")).equals(scene)).toBe(true);
   });
 
   it("migrates the objects of every branch, including branches this clone has not checked out", async () => {

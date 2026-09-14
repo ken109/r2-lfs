@@ -21,6 +21,7 @@ const main = defineCommand({
     token: () => import("./commands/token.ts").then((m) => m.default),
     setup: () => import("./commands/setup.ts").then((m) => m.default),
     credential: () => import("./commands/credential.ts").then((m) => m.default),
+    "transfer-agent": () => import("./commands/transfer-agent.ts").then((m) => m.default),
   },
 });
 

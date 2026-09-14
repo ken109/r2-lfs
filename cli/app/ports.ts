@@ -1,6 +1,6 @@
 // Interfaces the use cases depend on. Implementations live in ../infra; tests supply fakes.
 
-import type { BatchObjectResult, ServerInfo } from "../../src/shared/contract.ts";
+import type { BatchObjectResult, LfsAction, MultipartStart, ServerInfo } from "../../src/shared/contract.ts";
 import type { PointerChange } from "../domain/history.ts";
 import type { ObjectRef, StoredObject } from "../domain/objects.ts";
 import type { Pointer } from "../domain/pointer.ts";
@@ -177,4 +177,42 @@ export interface Files {
 export interface Wrangler {
   run(args: string[], opts?: { input?: string; cwd?: string }): { code: number; output: string };
   whoami(): string | undefined;
+}
+
+export interface UploadedPart {
+  partNumber: number;
+  etag: string;
+}
+
+/** A failed request to the server; `status` is undefined when it never answered. */
+export class TransferError extends Error {
+  readonly status: number | undefined;
+  constructor(status: number | undefined, message: string) {
+    super(message);
+    this.name = "TransferError";
+    this.status = status;
+  }
+}
+
+/** The Worker's multipart endpoints, addressed through the action a batch response hands out. */
+export interface MultipartUploads {
+  start(action: LfsAction, size: number): Promise<MultipartStart>;
+  /** Undefined when the upload no longer exists, so it has to start over. */
+  uploadPart(action: LfsAction, uploadId: string, partNumber: number, data: Uint8Array): Promise<UploadedPart | undefined>;
+  complete(action: LfsAction, uploadId: string, size: number, parts: UploadedPart[]): Promise<void>;
+}
+
+/** Where an interrupted upload is remembered, so the next push continues it. */
+export interface SavedUpload {
+  href: string;
+  size: number;
+  uploadId: string;
+  partSize: number;
+  parts: UploadedPart[];
+}
+
+export interface UploadStates {
+  load(oid: string): SavedUpload | undefined;
+  save(oid: string, state: SavedUpload): void;
+  remove(oid: string): void;
 }
