@@ -75,11 +75,27 @@ function info(env: Env): Response {
   }
 }
 
+/** Bodies up to this size are read to the end when a request is answered without them. */
+const DRAIN_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * Reads what is left of a small request body that the answer did not need, such as git-lfs's lock check that
+ * is refused with 401 before the Worker looks at it. Unread bytes left on a kept-alive connection broke the
+ * next request on it under wrangler dev ("Network connection lost").
+ */
+async function drainUnread(request: Request): Promise<void> {
+  if (!request.body || request.bodyUsed) return;
+  const length = Number(request.headers.get("Content-Length"));
+  if (!Number.isFinite(length) || length > DRAIN_LIMIT_BYTES) return;
+  await request.arrayBuffer().catch(() => undefined);
+}
+
 export async function handle(request: Request, env: Env, deps: Deps): Promise<Response> {
   const url = new URL(request.url);
   const matched = route(url.pathname);
   if (matched.kind !== "landing" && matched.kind !== "info" && matched.kind !== "not-found") {
     const response = await handleRepository(request, env, deps, url, matched);
+    await drainUnread(request);
     // Bytes that crossed the Worker: proxied downloads and uploads.
     const length =
       matched.kind === "object" || matched.kind === "multipart"

@@ -34,25 +34,6 @@ async function serverFetch(path: string, init?: RequestInit): Promise<Response> 
   }
 }
 
-/**
- * Starts a repository's lock Durable Object before git-lfs needs it. Under wrangler dev, the first request to a
- * new Durable Object sometimes fails inside wrangler's own proxy ("Error inside ProxyWorker ... Network connection
- * lost") before it reaches the Worker, and git-lfs treats a failed lock check as fatal. Deployed Workers have no
- * such proxy.
- */
-async function startLocks(repo: string): Promise<void> {
-  for (let attempt = 1; ; attempt++) {
-    const res = await serverFetch(`/${repo}/locks/verify`, {
-      method: "POST",
-      headers: { Authorization: `Basic ${btoa(`e2e:${TOKEN}`)}`, "Content-Type": "application/vnd.git-lfs+json" },
-      body: "{}",
-    }).catch(() => undefined);
-    if (res?.ok) return;
-    if (attempt === 5) throw new Error(`the lock object of ${repo} did not start: ${res?.status}`);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-}
-
 describe("git-lfs through a local r2-lfs server", () => {
   let work: string;
   let server: ChildProcess;
@@ -154,8 +135,6 @@ describe("git-lfs through a local r2-lfs server", () => {
     git(repo, "remote", "add", "origin", origin);
 
     cli(repo, "init", "--server", SERVER, "--repo", "acme/assets", "--track", "blender", "--credential", "none");
-
-    await startLocks("acme/assets");
     expect(git(repo, "config", "--global", "--get", "r2-lfs.server").trim()).toBe(SERVER);
 
     const scene = randomBytes(256 * 1024);
@@ -194,7 +173,6 @@ describe("git-lfs through a local r2-lfs server", () => {
     git(repo, "init", "-q");
     git(repo, "remote", "add", "origin", origin);
     cli(repo, "init", "--server", SERVER, "--repo", "acme/big", "--track", "blender", "--credential", "none", "--transfer-agent");
-    await startLocks("acme/big");
     expect(git(repo, "config", "--global", "--get", "lfs.customtransfer.r2-lfs-multipart.args")).toContain("transfer-agent");
 
     // PROXY_MAX_UPLOAD_MB is 5, so basic transfers would refuse this; the agent sends it in three parts.
@@ -218,7 +196,6 @@ describe("git-lfs through a local r2-lfs server", () => {
     git(author, "init", "-q");
     git(author, "remote", "add", "origin", origin);
     cli(author, "init", "--server", SERVER, "--repo", "acme/old", "--track", "blender", "--credential", "none");
-    await startLocks("acme/old");
     writeFileSync(join(author, "main.blend"), randomBytes(64 * 1024));
     git(author, "add", "-A");
     git(author, "commit", "-q", "-m", "main");
@@ -233,7 +210,6 @@ describe("git-lfs through a local r2-lfs server", () => {
     // A fresh clone has only main locally; feature exists as a remote-tracking branch.
     const clone = join(work, "migrate-clone");
     git(work, "clone", "-q", origin, clone);
-    await startLocks("acme/new");
     cli(clone, "migrate", "--server", SERVER, "--repo", "acme/new", "--from", `${SERVER}/acme/old`, "--credential", "none");
 
     const oid = createHash("sha256").update(feature).digest("hex");

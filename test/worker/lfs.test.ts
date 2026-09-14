@@ -275,6 +275,24 @@ describe("authentication (token mode)", () => {
     expect(res.headers.get("LFS-Authenticate")).toBe('Basic realm="r2-lfs"');
   });
 
+  it("reads a small body it refuses unread, so the connection stays usable, but not an upload", async () => {
+    const lockCheck = new Request(`${ORIGIN}/acme/app/locks/verify`, {
+      method: "POST",
+      headers: { "Content-Length": "2" },
+      body: "{}",
+    });
+    expect((await handle(lockCheck, makeEnv(), { fetch: unexpectedFetch })).status).toBe(401);
+    expect(lockCheck.bodyUsed).toBe(true);
+
+    const refusedUpload = new Request(`${ORIGIN}/acme/app/objects/${"a".repeat(64)}`, {
+      method: "PUT",
+      headers: { "Content-Length": String(2 * 1024 * 1024) },
+      body: new Uint8Array(2 * 1024 * 1024),
+    });
+    expect((await handle(refusedUpload, makeEnv(), { fetch: unexpectedFetch })).status).toBe(401);
+    expect(refusedUpload.bodyUsed).toBe(false);
+  });
+
   it("rejects an unknown token", async () => {
     const res = await batch(makeEnv(), "/acme/app", "download", [], { token: "x".repeat(32) });
     expect(res.status).toBe(401);
