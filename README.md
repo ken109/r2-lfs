@@ -254,6 +254,31 @@ From 0.2.0, a repository in the `shared` layout reads only objects it has upload
 push every version once from each repository, for example with `git lfs push --all origin`; objects
 the server already stores are checked rather than uploaded again.
 
+## Updating
+
+**If you deployed with the button**, Cloudflare copied r2-lfs into a new repository in your account (a
+copy without r2-lfs's history, not a fork) and Workers Builds deploys every push to it. The copy
+includes a workflow, `.github/workflows/upgrade.yml`, that opens a pull request with the latest release
+once a week, or when you run it from the Actions tab. It applies the changes since the version in your
+`package.json` and keeps your own edits, such as the names in `wrangler.jsonc`. Merge the pull request to
+deploy the new version.
+
+- Turn on _Settings > Actions > General > Allow GitHub Actions to create and approve pull requests_ so it
+  can open the pull request. Without it, the workflow pushes the branch and opens an issue that links to it.
+- Where a line changed both in your copy and in r2-lfs, the pull request is a draft and the file keeps
+  conflict markers to resolve on its branch.
+- GitHub does not let a workflow change files under `.github/workflows`, so the pull request lists those
+  for you to copy by hand.
+- A copy made before this workflow existed needs `.github/workflows/upgrade.yml` and
+  `scripts/upgrade-from-upstream.sh` copied from r2-lfs once.
+
+**If you deployed with `setup`**, run `npx r2-lfs@latest setup` again with the same options. It keeps the
+bucket, applies the rules again and deploys the Worker from the new package. Options you leave out go back
+to their defaults.
+
+Either way, keep settings in `wrangler.jsonc` or the `setup` options rather than only in the dashboard:
+every deploy sets the Worker's variables from them. Secrets are kept.
+
 ## GitHub Actions
 
 Workflows can fetch and push LFS files without a stored secret. Set `ACTIONS_OIDC` to `read` (or

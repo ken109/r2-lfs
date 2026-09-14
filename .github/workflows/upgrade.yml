@@ -1,0 +1,85 @@
+name: Upgrade r2-lfs
+
+# For repositories made by the Deploy to Cloudflare button: once a week, opens a pull request with the
+# latest r2-lfs release. Merging it deploys the new version through Workers Builds.
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    name: Open an upgrade pull request
+    # r2-lfs itself has nothing to catch up with.
+    if: github.repository != 'ken109/r2-lfs'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for an open upgrade
+        id: open
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr list --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("r2-lfs-upgrade/"))] | length')
+          echo "count=$count" >>"$GITHUB_OUTPUT"
+
+      - name: Apply the latest release
+        id: upgrade
+        if: steps.open.outputs.count == '0'
+        run: bash scripts/upgrade-from-upstream.sh
+
+      - name: Open the pull request
+        if: steps.upgrade.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.upgrade.outputs.version }}
+          BRANCH: ${{ steps.upgrade.outputs.branch }}
+          CONFLICTS: ${{ steps.upgrade.outputs.conflicts }}
+          WORKFLOWS: ${{ steps.upgrade.outputs.workflows }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # A branch left from earlier means this release was already offered; a closed pull request stays closed.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            echo "$BRANCH already exists; not offering $VERSION again"
+            exit 0
+          fi
+          git push --quiet origin "$BRANCH"
+          {
+            echo "Brings r2-lfs $VERSION into this repository: [release notes](https://github.com/ken109/r2-lfs/releases/tag/$VERSION)."
+            echo
+            echo "Merging deploys it through Workers Builds. Check \`wrangler.jsonc\` keeps your names and settings."
+            if [ -n "$CONFLICTS" ]; then
+              echo
+              echo "**Conflicts.** These files changed here and in r2-lfs, and have conflict markers to resolve on this branch:"
+              echo
+              for file in $CONFLICTS; do echo "- \`$file\`"; done
+            fi
+            if [ -n "$WORKFLOWS" ]; then
+              echo
+              echo "**Workflows.** GitHub does not let this workflow change files under \`.github/workflows\`. Copy these from r2-lfs $VERSION yourself:"
+              echo
+              for file in $WORKFLOWS; do echo "- [\`$file\`](https://github.com/ken109/r2-lfs/blob/$VERSION/$file)"; done
+            fi
+          } >body.md
+          draft=()
+          if [ -n "$CONFLICTS" ]; then draft=(--draft); fi
+          if ! gh pr create "${draft[@]}" --head "$BRANCH" --title "Upgrade r2-lfs to $VERSION" --body-file body.md; then
+            # Repositories do not allow GITHUB_TOKEN to open pull requests unless
+            # Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" is on.
+            {
+              echo
+              echo "This workflow could not open a pull request. Open one from [\`$BRANCH\`](https://github.com/$REPOSITORY/compare/$BRANCH?expand=1),"
+              echo "or allow GitHub Actions to create pull requests in Settings > Actions > General."
+            } >>body.md
+            gh issue create --title "Upgrade r2-lfs to $VERSION" --body-file body.md
+          fi
