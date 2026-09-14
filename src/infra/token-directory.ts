@@ -44,6 +44,12 @@ export class CombinedTokenDirectory implements TokenDirectory {
     ];
     // Every candidate is compared, so timing does not reveal how many tokens exist or which matched.
     const results = await Promise.all(candidates.map((c) => c.matches));
-    return candidates.filter((_, i) => results[i]).map(({ grant }) => ({ scope: grant.scope, permission: grant.permission }));
+    return candidates
+      .filter((_, i) => results[i])
+      .map(({ grant }) => ({
+        scope: grant.scope,
+        permission: grant.permission,
+        holder: "holder" in grant ? grant.holder : grant.label,
+      }));
   }
 }

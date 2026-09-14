@@ -21,8 +21,10 @@ export interface ConfigVars {
 export interface StaticToken {
   /** A REPO_PATTERN, lowercased. */
   scope: string;
-  permission: "read" | "write";
+  permission: "read" | "write" | "admin";
   token: string;
+  /** How file locks name the holder: `AUTH_TOKENS #<n>`. */
+  holder: string;
 }
 
 export interface PresignCredentials {
@@ -96,12 +98,13 @@ export function parseStaticTokens(raw: string | undefined, problems: string[]): 
     const [scope, perm, ...rest] = trimmed.split(":");
     const token = rest.join(":");
     const validScope = scope !== undefined && REPO_PATTERN.test(scope);
-    if (!validScope || (perm !== "r" && perm !== "rw") || token.length < 16) {
+    if (!validScope || (perm !== "r" && perm !== "rw" && perm !== "admin") || token.length < 16) {
       // Never echo the entry: it contains the token.
-      problems.push(`AUTH_TOKENS entry #${index} must look like <owner/repo, * allowed within names>:<r|rw>:<token of 16+ chars>`);
+      problems.push(`AUTH_TOKENS entry #${index} must look like <owner/repo, * allowed within names>:<r|rw|admin>:<token of 16+ chars>`);
       continue;
     }
-    tokens.push({ scope: scope.toLowerCase(), permission: perm === "rw" ? "write" : "read", token });
+    const permission = perm === "admin" ? "admin" : perm === "rw" ? "write" : "read";
+    tokens.push({ scope: scope.toLowerCase(), permission, token, holder: `AUTH_TOKENS #${index}` });
   }
   return tokens;
 }

@@ -61,6 +61,8 @@ describe("contract", () => {
     const jsonc = JSON.parse(wrangler.replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1")) as {
       observability: unknown;
       compatibility_flags: string[];
+      durable_objects: unknown;
+      migrations: unknown;
       assets: { run_worker_first: string[] };
       vars: Record<string, string>;
     };
@@ -76,6 +78,8 @@ describe("contract", () => {
     });
     expect(config.observability).toEqual(jsonc.observability);
     expect(config.compatibility_flags).toEqual(jsonc.compatibility_flags);
+    expect(config.durable_objects).toEqual(jsonc.durable_objects);
+    expect(config.migrations).toEqual(jsonc.migrations);
     expect((config.assets as { run_worker_first: string[] }).run_worker_first).toEqual(jsonc.assets.run_worker_first);
     const { R2_ACCOUNT_ID: _account, ...deployedVars } = jsonc.vars;
     expect(config.vars).toEqual(deployedVars);

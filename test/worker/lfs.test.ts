@@ -15,6 +15,7 @@ const READ_TOKEN = "r".repeat(32);
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     BUCKET: env.BUCKET,
+    LOCKS: env.LOCKS,
     ALLOWED_REPOS: "acme/*",
     AUTH_MODE: "token",
     STORAGE_LAYOUT: "per-repo",
@@ -155,7 +156,7 @@ describe("routing and configuration", () => {
   });
 
   it("does not echo tokens from malformed AUTH_TOKENS entries", () => {
-    const error = String(thrown(() => parseConfig(makeEnv({ AUTH_TOKENS: "acme/*:admin:supersecretvalue1234" }))));
+    const error = String(thrown(() => parseConfig(makeEnv({ AUTH_TOKENS: "acme/*:superuser:supersecretvalue1234" }))));
     expect(error).toMatch(/AUTH_TOKENS entry #1/);
     expect(error).not.toContain("supersecretvalue1234");
   });
@@ -176,8 +177,8 @@ describe("routing and configuration", () => {
     expect(parseConfig(makeEnv({ TRANSFER_MODE: "presigned", ...credentials })).presign).toMatchObject({ bucketName: "b" });
     const tokens = parseConfig(makeEnv({ AUTH_TOKENS: `Acme/App:r:${READ_TOKEN}\n acme/*:rw:with:colons:${WRITE_TOKEN}` })).tokens;
     expect(tokens).toEqual([
-      { scope: "acme/app", permission: "read", token: READ_TOKEN },
-      { scope: "acme/*", permission: "write", token: `with:colons:${WRITE_TOKEN}` },
+      { scope: "acme/app", permission: "read", token: READ_TOKEN, holder: "AUTH_TOKENS #1" },
+      { scope: "acme/*", permission: "write", token: `with:colons:${WRITE_TOKEN}`, holder: "AUTH_TOKENS #2" },
     ]);
   });
 
@@ -236,11 +237,6 @@ describe("routing and configuration", () => {
     expect(await status(`Basic ${btoa("git:")}`)).toBe(401);
     expect(await status(`Token ${WRITE_TOKEN}`)).toBe(401);
     expect(await status("Basic")).toBe(401);
-  });
-
-  it("declines locking so git-lfs skips it", async () => {
-    const res = await call(makeEnv(), "/acme/app/locks/verify", { token: WRITE_TOKEN, json: {} });
-    expect(res.status).toBe(404);
   });
 });
 
@@ -345,7 +341,7 @@ describe("stored tokens (r2-lfs token)", () => {
     }
 
     // An entry with an unknown permission makes the whole file invalid, so it grants nothing.
-    await env.BUCKET.put(TOKENS_KEY, JSON.stringify({ version: 1, tokens: [{ ...entry, permission: "admin" }] }));
+    await env.BUCKET.put(TOKENS_KEY, JSON.stringify({ version: 1, tokens: [{ ...entry, permission: "superuser" }] }));
     clearStoredTokensCache();
     expect((await batch(makeEnv({ AUTH_TOKENS: "" }), "/acme/app", "download", [], { token: WRITE_TOKEN })).status).toBe(401);
     await env.BUCKET.delete(TOKENS_KEY);

@@ -122,6 +122,16 @@ describe("git-lfs through a local r2-lfs server", () => {
     git(work, "clone", "-q", origin, clone);
     expect(readFileSync(join(clone, "scene.blend")).equals(scene)).toBe(true);
 
+    // File locks through git-lfs itself: lock, see the holder, push while holding it, unlock.
+    git(repo, "lfs", "lock", "scene.blend");
+    const locks = JSON.parse(git(repo, "lfs", "locks", "--json")) as { path: string; owner: { name: string } }[];
+    expect(locks).toEqual([expect.objectContaining({ path: "scene.blend", owner: { name: "AUTH_TOKENS #1" } })]);
+    writeFileSync(join(repo, "scene.blend"), randomBytes(1024));
+    git(repo, "commit", "-q", "-am", "edit while locked");
+    git(repo, "push", "-q", "origin", "main");
+    git(repo, "lfs", "unlock", "scene.blend");
+    expect(JSON.parse(git(repo, "lfs", "locks", "--json"))).toEqual([]);
+
     const verified = JSON.parse(cli(repo, "verify", "--json")) as { checked: number; missing: unknown[] };
     expect(verified).toMatchObject({ checked: 1, missing: [] });
     const checks = JSON.parse(cli(repo, "doctor", "--json")) as { name: string; status: string }[];

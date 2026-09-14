@@ -9,10 +9,19 @@ const TTL_MS = 60_000;
 const MAX_ENTRIES = 1_000;
 // Per isolate. A batch call and the transfers that follow it usually land on the same isolate.
 const cache = new Map<string, { lookup: Lookup & { ok: true }; expires: number }>();
+const logins = new Map<string, { login: string; expires: number }>();
 
 export function clearGithubCache(): void {
   cache.clear();
+  logins.clear();
 }
+
+const headersFor = (token: string) => ({
+  Accept: "application/vnd.github+json",
+  Authorization: `Bearer ${token}`,
+  "User-Agent": "r2-lfs",
+  "X-GitHub-Api-Version": "2022-11-28",
+});
 
 /** Mirrors a repository's GitHub permissions for the account that owns the token. */
 export class GithubApiPermissions implements GithubPermissions {
@@ -30,12 +39,7 @@ export class GithubApiPermissions implements GithubPermissions {
     let res: Response;
     try {
       res = await this.fetcher(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token}`,
-          "User-Agent": "r2-lfs",
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers: headersFor(token),
         // A renamed or transferred repository redirects to its new owner, which ALLOWED_REPOS may not allow.
         redirect: "manual",
       });
@@ -58,10 +62,23 @@ export class GithubApiPermissions implements GithubPermissions {
     }
     if (!res.ok) return { ok: false, status: 502, message: `GitHub API returned ${res.status}` };
 
-    const body = (await res.json()) as { permissions?: { push?: boolean; pull?: boolean } };
+    const body = (await res.json()) as { permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; pull?: boolean } };
     const lookup = { ok: true as const, permission: permissionFromGithub(body.permissions) };
     if (cache.size >= MAX_ENTRIES) cache.clear();
     cache.set(key, { lookup, expires: Date.now() + TTL_MS });
     return lookup;
+  }
+
+  async login(token: string): Promise<string | undefined> {
+    const key = await sha256Hex(token);
+    const hit = logins.get(key);
+    if (hit && hit.expires > Date.now()) return hit.login;
+    const res = await this.fetcher("https://api.github.com/user", { headers: headersFor(token) }).catch(() => undefined);
+    if (!res?.ok) return undefined;
+    const login = ((await res.json()) as { login?: unknown }).login;
+    if (typeof login !== "string") return undefined;
+    if (logins.size >= MAX_ENTRIES) logins.clear();
+    logins.set(key, { login, expires: Date.now() + TTL_MS });
+    return login;
   }
 }

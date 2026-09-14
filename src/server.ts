@@ -5,6 +5,8 @@ import { gateAdmin } from "./http/admin-gate.ts";
 import worker from "./index.ts";
 import { ADMIN_PATH } from "./shared/contract.ts";
 
+export { RepoLocks } from "./infra/repo-locks.ts";
+
 const isAdmin = (pathname: string) => pathname === ADMIN_PATH || pathname.startsWith(`${ADMIN_PATH}/`);
 
 /** The deployed Worker: the admin UI under /_admin, behind Cloudflare Access, and the Git LFS API for everything else. */

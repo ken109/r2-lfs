@@ -1,10 +1,12 @@
 import { authorize } from "../app/authorize.ts";
 import * as lfs from "../app/lfs.ts";
+import { createLock, listLocks, type LockResponse, type LocksContext, unlock, verifyLocks } from "../app/locks.ts";
 import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
 import { type Fetcher, GithubApiPermissions } from "../infra/github-permissions.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
+import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
 import { PresignedLinks, ProxyLinks } from "../infra/transfer-links.ts";
 import { type MisconfiguredInfo, type ServerInfo, VERSION } from "../shared/contract.ts";
@@ -26,6 +28,8 @@ Point a repository at it with a .lfsconfig like:
 
 https://github.com/ken109/r2-lfs
 `;
+
+const lockResponse = ({ status, body }: LockResponse) => lfsJson(status, body);
 
 function toResponse<T>(result: lfs.Result<T>, onOk: (value: T) => Response): Response {
   return result.ok ? onOk(result.value) : lfsError(result.status, result.message);
@@ -73,9 +77,6 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
         : lfsError(405, "Method not allowed");
     case "info":
       return request.method === "GET" ? info(env) : lfsError(405, "Method not allowed");
-    case "locks":
-      // File locking is not implemented; 404 tells git-lfs to skip it.
-      return lfsError(404, "Locking is not supported");
     case "not-found":
       return lfsError(404, "Not found");
   }
@@ -107,7 +108,23 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
     links: config.presign ? new PresignedLinks(config.presign, baseUrl, authorization) : new ProxyLinks(baseUrl, authorization),
   };
 
+  const locks: LocksContext = {
+    permission: auth.permission,
+    identify: auth.identify,
+    locks: new DurableObjectLockStore(env.LOCKS, repo),
+  };
+
   switch (matched.kind) {
+    case "locks":
+      if (request.method === "GET") return lockResponse(await listLocks(locks, url.searchParams));
+      if (request.method === "POST") return lockResponse(await createLock(locks, await readJson(request)));
+      return lfsError(405, "Method not allowed");
+    case "locks-verify":
+      if (request.method !== "POST") return lfsError(405, "Method not allowed");
+      return lockResponse(await verifyLocks(locks, await readJson(request)));
+    case "unlock":
+      if (request.method !== "POST") return lfsError(405, "Method not allowed");
+      return lockResponse(await unlock(locks, matched.id, await readJson(request)));
     case "batch":
       if (request.method !== "POST") return lfsError(405, "Method not allowed");
       return toResponse(await lfs.batch(ctx, await readJson(request)), (body) => lfsJson(200, body));

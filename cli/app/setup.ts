@@ -77,6 +77,8 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
     compatibility_flags: ["nodejs_compat"],
     assets: { directory: "public", run_worker_first: ["/_admin/*"] },
     observability: { enabled: true },
+    durable_objects: { bindings: [{ name: "LOCKS", class_name: "RepoLocks" }] },
+    migrations: [{ tag: "v1", new_sqlite_classes: ["RepoLocks"] }],
     r2_buckets: [{ binding: "BUCKET", bucket_name: opts.bucket }],
     vars: {
       ALLOWED_REPOS: opts.repos.join(","),

@@ -41,6 +41,7 @@ function certs(...keys: JsonWebKey[]) {
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
   BUCKET: env.BUCKET,
+  LOCKS: env.LOCKS,
   ALLOWED_REPOS: "acme/*",
   ACCESS_TEAM_DOMAIN: TEAM,
   ACCESS_AUD: AUD,

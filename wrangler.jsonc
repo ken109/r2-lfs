@@ -12,6 +12,11 @@
   "observability": {
     "enabled": true,
   },
+  "durable_objects": {
+    // File locks, one object per repository.
+    "bindings": [{ "name": "LOCKS", "class_name": "RepoLocks" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RepoLocks"] }],
   "r2_buckets": [
     {
       "binding": "BUCKET",

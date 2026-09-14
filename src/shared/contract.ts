@@ -53,6 +53,14 @@ export interface BatchResponse {
   hash_algo: "sha256";
 }
 
+/** A file lock, as the Git LFS locking API describes it. */
+export interface LfsLock {
+  id: string;
+  path: string;
+  locked_at: string;
+  owner: { name: string };
+}
+
 /** What `INFO_PATH` answers with status 500 when the settings are invalid. */
 export interface MisconfiguredInfo {
   name: "r2-lfs";
@@ -65,7 +73,8 @@ export interface StoredToken {
   label: string;
   /** A REPO_PATTERN, lowercased. */
   scope: string;
-  permission: "read" | "write";
+  /** `admin` can also unlock other people's file locks. */
+  permission: "read" | "write" | "admin";
   /** Hex SHA-256 of the token; the token itself is never stored. */
   sha256: string;
   created: string;
@@ -85,7 +94,7 @@ export function storedTokensIn(value: unknown): StoredToken[] | undefined {
       typeof t === "object" &&
       t !== null &&
       [t.id, t.label, t.scope, t.sha256, t.created].every((field) => typeof field === "string") &&
-      (t.permission === "read" || t.permission === "write"),
+      (t.permission === "read" || t.permission === "write" || t.permission === "admin"),
   );
   return valid ? file.tokens : undefined;
 }
