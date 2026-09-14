@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
 import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
+import { DurableObjectLockStore, type RepoLocks } from "../../src/infra/repo-locks.ts";
 import { clearStoredTokensCache } from "../../src/infra/token-directory.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
 
@@ -170,5 +171,56 @@ describe("file locking (github mode)", () => {
   it("refuses to lock when GitHub cannot say who the token belongs to", async () => {
     const res = await call(githubEnv(), `${freshRepo()}/locks`, { token: "gho_app", json: { path: "a.blend" }, fetcher: anonymousApp });
     expect(res.status).toBe(403);
+  });
+});
+
+/** A namespace whose stubs fail with `error` for the first `failures` calls, then use the real object. */
+function flaky(failures: number, error: Error & { retryable?: boolean; overloaded?: boolean }) {
+  let stubs = 0;
+  const namespace = {
+    getByName(name: string) {
+      stubs++;
+      const real = env.LOCKS.getByName(name);
+      return new Proxy(real, {
+        get(target, prop) {
+          if (failures > 0 && typeof prop === "string" && ["create", "list", "find", "remove"].includes(prop)) {
+            failures--;
+            return () => Promise.reject(error);
+          }
+          return Reflect.get(target, prop);
+        },
+      });
+    },
+  } as unknown as DurableObjectNamespace<RepoLocks>;
+  return { namespace, stubs: () => stubs };
+}
+
+const retryable = () => Object.assign(new Error("Network connection lost."), { retryable: true });
+
+describe("Durable Object lock store", () => {
+  it("retries retryable errors on a fresh stub, and reports a lock an earlier attempt made as created", async () => {
+    const repo = { owner: "acme", name: `retry-${Date.now()}` };
+    const { namespace, stubs } = flaky(1, retryable());
+    const store = new DurableObjectLockStore(namespace, repo);
+    expect((await store.list({ limit: 10 })).locks).toEqual([]);
+    expect(stubs()).toBe(2);
+
+    // The first attempt locks the file, then its answer is lost.
+    await new DurableObjectLockStore(env.LOCKS, repo).create("scene.blend", "alice");
+    const lostAnswer = flaky(1, retryable());
+    const created = await new DurableObjectLockStore(lostAnswer.namespace, repo).create("scene.blend", "alice");
+    expect(created).toMatchObject({ created: true, lock: { path: "scene.blend", owner: { name: "alice" } } });
+    const bob = await new DurableObjectLockStore(flaky(1, retryable()).namespace, repo).create("scene.blend", "bob");
+    expect(bob.created).toBe(false);
+  });
+
+  it("gives up on errors that are not retryable, on overload, and after three attempts", async () => {
+    const repo = { owner: "acme", name: `noretry-${Date.now()}` };
+    await expect(new DurableObjectLockStore(flaky(1, new Error("boom")).namespace, repo).find("x")).rejects.toThrow("boom");
+    const overloaded = Object.assign(retryable(), { overloaded: true });
+    await expect(new DurableObjectLockStore(flaky(1, overloaded).namespace, repo).find("x")).rejects.toThrow("Network");
+    const { namespace, stubs } = flaky(5, retryable());
+    await expect(new DurableObjectLockStore(namespace, repo).find("x")).rejects.toThrow("Network");
+    expect(stubs()).toBe(3);
   });
 });

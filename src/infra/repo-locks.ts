@@ -65,27 +65,52 @@ export class RepoLocks extends DurableObject {
   }
 }
 
+const ATTEMPTS = 3;
+
+/** Cloudflare marks Durable Object errors worth another try, such as a lost connection while the object restarts. */
+function retryable(err: unknown): boolean {
+  const flags = err as { retryable?: boolean; overloaded?: boolean } | null;
+  return flags?.retryable === true && flags.overloaded !== true;
+}
+
 /** Locks live per repository, in every storage layout: a lock names a path in one repository. */
 export class DurableObjectLockStore implements LockStore {
-  private readonly stub: DurableObjectStub<RepoLocks>;
+  private readonly namespace: DurableObjectNamespace<RepoLocks>;
+  private readonly name: string;
 
   constructor(namespace: DurableObjectNamespace<RepoLocks>, repo: Repo) {
-    this.stub = namespace.getByName(`${repo.owner}/${repo.name}`.toLowerCase());
+    this.namespace = namespace;
+    this.name = `${repo.owner}/${repo.name}`.toLowerCase();
+  }
+
+  /** Runs `call` on a fresh stub each attempt, since a stub that threw may stay broken. */
+  private async withStub<T>(call: (stub: DurableObjectStub<RepoLocks>, attempt: number) => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await call(this.namespace.getByName(this.name), attempt);
+      } catch (err) {
+        if (attempt >= ATTEMPTS || !retryable(err)) throw err;
+      }
+    }
   }
 
   create(path: string, owner: string) {
-    return this.stub.create(path, owner);
+    return this.withStub(async (stub, attempt) => {
+      const result = await stub.create(path, owner);
+      // An earlier attempt may have made the lock before its answer was lost.
+      return attempt > 1 && !result.created && result.lock.owner.name === owner ? { ...result, created: true } : result;
+    });
   }
 
   list(filter: { path?: string; id?: string; cursor?: string; limit: number }) {
-    return this.stub.list(filter);
+    return this.withStub((stub) => stub.list(filter));
   }
 
   find(id: string) {
-    return this.stub.find(id);
+    return this.withStub((stub) => stub.find(id));
   }
 
   remove(id: string) {
-    return this.stub.remove(id);
+    return this.withStub((stub) => stub.remove(id));
   }
 }
