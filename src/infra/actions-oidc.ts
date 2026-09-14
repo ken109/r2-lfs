@@ -21,6 +21,7 @@ export class GithubActionsOidc implements ActionsTokenVerifier {
     if (typeof claims?.repository !== "string") return undefined;
     return {
       repository: claims.repository,
+      repositoryId: typeof claims.repository_id === "string" ? claims.repository_id : undefined,
       actor: typeof claims.actor === "string" ? claims.actor : "unknown",
       workflow: typeof claims.workflow === "string" ? claims.workflow : undefined,
     };

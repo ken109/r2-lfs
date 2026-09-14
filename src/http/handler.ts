@@ -11,6 +11,7 @@ import { type Fetcher, RemoteHostPermissions } from "../infra/host-permissions.t
 import { looksLikeJwt } from "../infra/jwt.ts";
 import { R2MultipartStore } from "../infra/r2-multipart-store.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
+import { R2RepositoryIdentities } from "../infra/r2-repository-identities.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 import { S3Copier } from "../infra/s3-copier.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
@@ -142,6 +143,7 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
     tokens: new CombinedTokenDirectory(config.tokens, env.BUCKET),
     host: new RemoteHostPermissions(deps.fetch, config.host),
     actions: new GithubActionsOidc(deps.fetch),
+    identities: new R2RepositoryIdentities(env.BUCKET),
     isJwt: looksLikeJwt,
   });
   if (!auth.ok) return lfsError(auth.status, auth.message);

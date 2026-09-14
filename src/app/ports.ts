@@ -73,7 +73,14 @@ export interface TokenDirectory {
   grantsFor(token: string): Promise<Grant[]>;
 }
 
-export type Lookup = { ok: true; permission: Permission } | { ok: false; status: 401 | 403 | 404 | 502 | 503; message: string };
+export type Lookup =
+  | {
+      ok: true;
+      permission: Permission;
+      /** The host's immutable id of the repository, when its API reports one. */
+      repositoryId?: string;
+    }
+  | { ok: false; status: 401 | 403 | 404 | 502 | 503; message: string };
 
 /** What the request may do, and a way to learn who is asking, which only file locks need. */
 export type Authorization =
@@ -93,6 +100,8 @@ export interface LockStore {
 export interface ActionsClaims {
   /** `owner/repo` of the workflow's repository. */
   repository: string;
+  /** GitHub's immutable id of that repository. */
+  repositoryId: string | undefined;
   actor: string;
   workflow: string | undefined;
 }
@@ -112,6 +121,12 @@ export interface AccessVerifier {
 export interface Credentials {
   username?: string;
   password: string;
+}
+
+/** Which repository each name belongs to, recorded the first time the name is used. */
+export interface RepositoryIdentities {
+  /** Records `id` for the name if none is recorded; false when a different repository already holds the name. */
+  claim(repo: Repo, id: string): Promise<boolean>;
 }
 
 /** The Git host whose repository permissions the server mirrors. */

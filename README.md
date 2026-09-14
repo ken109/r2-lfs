@@ -223,6 +223,13 @@ other people's files. Answers are cached for 60 seconds. Hosts report the **acco
 token's scopes, so a read-only token that belongs to a collaborator can still upload. Redirects for renamed
 or transferred repositories are not followed, so update `lfs.url` after moving a repository.
 
+The first time a repository is used, the Worker records the host's id for it in `_repos/<owner>/<repo>`.
+Objects are stored under the repository's name, so if that name is later reused, by a new repository
+after the original was deleted, renamed or transferred, or by someone who took over a renamed account's
+login, the Worker refuses the newcomer instead of handing it the original's objects. If you replaced the
+repository yourself, delete that record (`npx wrangler r2 object delete <bucket>/_repos/<owner>/<repo> --remote`).
+GitHub Actions tokens are checked against the same record.
+
 For GitHub Enterprise Server, a self-managed GitLab, Gitea or Forgejo, set `AUTH_HOST` to its address.
 Repositories must be `owner/repo`; GitLab projects in subgroups cannot be addressed.
 
@@ -367,6 +374,7 @@ admin UI's own `Origin`.
   before the key was set stay readable and unencrypted.
 - Stored content always hashes to its oid: R2 checks proxy uploads and the Worker checks presigned ones,
   unless `VERIFY_UPLOADS=off`.
+- Access follows the repository, not just its name: a repository that reuses a recorded name is refused.
 - In the `shared` layout an object is stored once, but a repository can read it only after uploading its
   content itself, so knowing an oid is not enough. With `VERIFY_UPLOADS=off` in presigned mode, a
   writer can claim an object by its oid and size; use `per-repo` if that matters.

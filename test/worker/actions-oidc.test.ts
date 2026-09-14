@@ -5,6 +5,7 @@ import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
 import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
 import { clearJwtKeysCache } from "../../src/infra/jwt.ts";
+import { clearRepositoryIdentitiesCache } from "../../src/infra/r2-repository-identities.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
 import { signingKey } from "./jwt-helpers.ts";
 
@@ -115,6 +116,18 @@ describe("GitHub Actions OIDC", () => {
     const locked = await request(lockEnv, `/acme/${repo}/locks`, lockToken, { path: "build.zip" });
     expect(locked.status).toBe(201);
     expect(((await locked.json()) as { lock: LfsLock }).lock.owner.name).toBe("octocat (GitHub Actions)");
+  });
+
+  it("refuses a workflow of a different repository that reuses a recorded name", async () => {
+    const { key, request } = await setup();
+    const repo = `reused-${repoCounter++}-${Date.now()}`;
+    const first = await key.sign(claims({ repository: `acme/${repo}`, repository_id: "9001" }));
+    expect((await request(makeEnv(), `/acme/${repo}/objects/batch`, first, { operation: "download", objects: [] })).status).toBe(200);
+    clearRepositoryIdentitiesCache();
+    const second = await key.sign(claims({ repository: `acme/${repo}`, repository_id: "9002" }));
+    const refused = await request(makeEnv(), `/acme/${repo}/objects/batch`, second, { operation: "download", objects: [] });
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toContain("reused");
   });
 
   it("reports the audience in server info", async () => {

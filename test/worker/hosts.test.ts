@@ -5,6 +5,7 @@ import { parseConfig } from "../../src/domain/config.ts";
 import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
 import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
+import { clearRepositoryIdentitiesCache } from "../../src/infra/r2-repository-identities.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
 
 const makeEnv = (over: Partial<Env>): Env => ({
@@ -43,7 +44,10 @@ async function lfs(e: Env, fetcher: Fetcher, operation: "upload" | "download", a
 
 const basic = (user: string, password: string) => `Basic ${btoa(`${user}:${password}`)}`;
 
-beforeEach(() => clearHostCache());
+beforeEach(() => {
+  clearHostCache();
+  clearRepositoryIdentitiesCache();
+});
 
 describe("GitLab", () => {
   it("maps access levels and public visibility, on gitlab.com or a self-managed host", async () => {
@@ -120,6 +124,53 @@ describe("Bitbucket Cloud", () => {
     clearHostCache();
     const closed = host({ [repoUrl]: { is_private: true }, [permissionsUrl]: { values: [] } });
     expect(await lfs(e, closed.fetcher, "download", "Bearer access-token")).toBe(403);
+  });
+});
+
+describe("repository identity", () => {
+  it("refuses a repository that reuses the name of the one whose objects the server keeps", async () => {
+    const url = "https://api.github.com/repos/acme/reused";
+    const e = makeEnv({ AUTH_MODE: "github" });
+    const original = host({ [url]: { id: 101, permissions: { push: true, pull: true } } });
+    expect(await lfs(e, original.fetcher, "upload", basic("x", "ghp_original"), "/acme/reused")).toBe(200);
+    expect(await (await env.BUCKET.get("_repos/acme/reused"))?.text()).toBe("101");
+
+    // The original was deleted or renamed, and someone else created a repository with its name.
+    clearHostCache();
+    clearRepositoryIdentitiesCache();
+    const impostor = host({ [url]: { id: 202, permissions: { admin: true, push: true, pull: true } } });
+    const refused = await handle(
+      new Request("https://lfs.example.com/acme/reused/objects/batch", {
+        method: "POST",
+        headers: { Authorization: basic("x", "ghp_impostor") },
+        body: JSON.stringify({ operation: "download", objects: [] }),
+      }),
+      e,
+      { fetch: impostor.fetcher },
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toContain("_repos/acme/reused");
+
+    // The record is per name whatever its case, and the original still works.
+    const upper = host({ "https://api.github.com/repos/ACME/Reused": { id: 202, permissions: { pull: true } } });
+    expect(await lfs(e, upper.fetcher, "download", basic("x", "ghp_impostor"), "/ACME/Reused")).toBe(403);
+    expect(await lfs(e, original.fetcher, "download", basic("x", "ghp_original"), "/acme/reused")).toBe(200);
+
+    // Deleting the record hands the name to whichever repository uses it next.
+    await env.BUCKET.delete("_repos/acme/reused");
+    clearRepositoryIdentitiesCache();
+    clearHostCache();
+    expect(await lfs(e, impostor.fetcher, "download", basic("x", "ghp_impostor"), "/acme/reused")).toBe(200);
+  });
+
+  it("records nothing for hosts that report no id and for accounts that cannot see the repository", async () => {
+    const url = "https://api.github.com/repos/acme/unseen";
+    const e = makeEnv({ AUTH_MODE: "github" });
+    expect(
+      await lfs(e, host({ [url]: () => new Response("{}", { status: 404 }) }).fetcher, "download", basic("x", "a"), "/acme/unseen"),
+    ).toBe(404);
+    expect(await lfs(e, host({ [url]: { permissions: { pull: true } } }).fetcher, "download", basic("x", "b"), "/acme/unseen")).toBe(200);
+    expect(await env.BUCKET.head("_repos/acme/unseen")).toBeNull();
   });
 });
 

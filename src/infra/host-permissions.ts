@@ -31,10 +31,16 @@ interface HostApi {
   permission(body: unknown, repo: Repo, credentials: Credentials): Promise<Permission | undefined>;
   userUrl: string;
   login(body: unknown): string | undefined;
+  /** The repository's immutable id in a successful repository response. */
+  id(body: unknown): string | undefined;
 }
 
 const path = (repo: Repo) => `${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
 const str = (value: unknown) => (typeof value === "string" ? value : undefined);
+const numericId = (body: unknown) => {
+  const id = (body as { id?: unknown }).id;
+  return typeof id === "number" || typeof id === "string" ? String(id) : undefined;
+};
 
 function githubApi(apiBase: string): HostApi {
   return {
@@ -48,6 +54,7 @@ function githubApi(apiBase: string): HostApi {
     permission: async (body) => permissionFromGithub((body as { permissions?: Parameters<typeof permissionFromGithub>[0] }).permissions),
     userUrl: `${apiBase}/user`,
     login: (body) => str((body as { login?: unknown }).login),
+    id: numericId,
   };
 }
 
@@ -60,6 +67,7 @@ function giteaApi(host: string): HostApi {
     permission: async (body) => permissionFromGithub((body as { permissions?: Parameters<typeof permissionFromGithub>[0] }).permissions),
     userUrl: `${host}/api/v1/user`,
     login: (body) => str((body as { login?: unknown }).login),
+    id: numericId,
   };
 }
 
@@ -71,6 +79,7 @@ function gitlabApi(host: string): HostApi {
     permission: async (body) => permissionFromGitlab(body as Parameters<typeof permissionFromGitlab>[0]),
     userUrl: `${host}/api/v4/user`,
     login: (body) => str((body as { username?: unknown }).username),
+    id: numericId,
   };
 }
 
@@ -99,6 +108,7 @@ function bitbucketApi(fetcher: Fetcher): HostApi {
     },
     userUrl: `${base}/user`,
     login: (body) => str((body as { username?: unknown }).username) ?? str((body as { nickname?: unknown }).nickname),
+    id: (body) => str((body as { uuid?: unknown }).uuid),
   };
 }
 
@@ -157,8 +167,10 @@ export class RemoteHostPermissions implements HostPermissions {
     }
     if (!res.ok) return { ok: false, status: 502, message: `${name} API returned ${res.status}` };
 
-    const permission = (await this.api.permission(await res.json(), repo, credentials)) ?? "none";
-    const lookup = { ok: true as const, permission };
+    const body: unknown = await res.json();
+    const permission = (await this.api.permission(body, repo, credentials)) ?? "none";
+    const repositoryId = this.api.id(body);
+    const lookup = { ok: true as const, permission, ...(repositoryId === undefined ? {} : { repositoryId }) };
     remember(lookups, key, { lookup });
     return lookup;
   }

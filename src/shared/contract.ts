@@ -13,6 +13,11 @@ export const INCOMING_PREFIX = "_incoming/";
 export const MEMBERS_PREFIX = "_members/";
 /** `r2-lfs gc` moves objects here; a lifecycle rule expires them. */
 export const TRASH_PREFIX = "_trash/";
+/**
+ * `_repos/<owner>/<repo>` holds the Git host's id of the repository that first used the name, so a new repository that
+ * reuses the name of a deleted, renamed or transferred one cannot reach its objects.
+ */
+export const REPOS_PREFIX = "_repos/";
 /** Tokens managed by `r2-lfs token`. */
 export const TOKENS_KEY = "_meta/tokens.json";
 
@@ -182,6 +187,11 @@ export function repoPrefix(layout: StorageLayout, owner: string, repo: string): 
 /** Where a presigned upload waits for its hash check. */
 export function incomingKey(owner: string, repo: string, oid: string): string {
   return `${INCOMING_PREFIX}${owner.toLowerCase()}/${repo.toLowerCase()}/${oid}`;
+}
+
+/** Where the id of the repository that owns a name is recorded. */
+export function repositoryIdKey(owner: string, repo: string): string {
+  return `${REPOS_PREFIX}${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
 
 /** The marker that lets a repository read a shared object. */
