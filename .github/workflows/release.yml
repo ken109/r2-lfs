@@ -10,6 +10,8 @@ permissions:
 jobs:
   release-please:
     name: Release PR
+    # Copies made by the Deploy to Cloudflare button carry this workflow too; only r2-lfs itself releases.
+    if: github.repository == 'ken109/r2-lfs'
     runs-on: ubuntu-latest
     permissions:
       contents: write
