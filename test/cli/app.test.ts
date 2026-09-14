@@ -83,6 +83,7 @@ function scenario() {
   return { repo, git: Git.open(repo.dir), bucket, client, oldOid, newOid, texOid, orphan, youngOrphan, prefix };
 }
 
+const pointer = (oid: string) => `version https://git-lfs.github.com/spec/v1\noid sha256:${oid}\nsize 5\n`;
 const at = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000);
 const object = (key: string) => ({ key, size: 1, lastModified: new Date(), storageClass: "STANDARD" });
 
@@ -460,6 +461,46 @@ describe("verify, usage and why", () => {
       [s.oldOid, "delete"],
     ]);
     await expect(explain({ repo: s.git, client: s.client, reporter: new SilentReporter() }, "nothing.txt")).rejects.toThrow(UsageError);
+  });
+
+  it("explains an object by oid prefix, and without bucket access judges it as if uploaded long ago", async () => {
+    const repo = new TempRepo();
+    cleanup.push(() => repo.remove());
+    const first = `abcdef${"1".repeat(58)}`;
+    const second = `abcdef${"2".repeat(58)}`;
+    repo.write("one.bin", pointer(first));
+    repo.write("two.bin", pointer(second));
+    repo.commit("objects", 200);
+    repo.write("one.bin", pointer("c".repeat(64)));
+    repo.write("two.bin", pointer("d".repeat(64)));
+    repo.commit("replaced");
+
+    const client = new FakeLfsClient();
+    client.stored.set(first, "x");
+    const bucket = new MemoryBucket();
+    bucket.seed(`acme/assets/${first}`, { ageDays: 2 });
+    bucket.seed(`_trash/acme/assets/${second}`);
+    const deps = { repo: Git.open(repo.dir), client, reporter: new SilentReporter() };
+
+    await expect(explain(deps, "abcdef")).rejects.toThrow(/abcdef is ambiguous/);
+    await expect(explain(deps, "abcdef9")).rejects.toThrow(/no LFS object in history starts with abcdef9/);
+
+    const withBucket = await explain({ ...deps, bucket }, "abcdef1");
+    expect(withBucket.path).toBeUndefined();
+    expect(withBucket.objects).toEqual([
+      expect.objectContaining({
+        oid: first,
+        paths: ["one.bin"],
+        onServer: true,
+        inTrash: false,
+        uploaded: expect.any(Date),
+        decision: { kind: "young" },
+      }),
+    ]);
+    const withoutBucket = await explain(deps, "abcdef1");
+    expect(withoutBucket.objects[0]).toMatchObject({ onServer: true, decision: { kind: "delete" } });
+    expect(withoutBucket.objects[0]?.uploaded).toBeUndefined();
+    expect((await explain({ ...deps, bucket }, "abcdef2")).objects[0]).toMatchObject({ onServer: false, inTrash: true });
   });
 });
 
