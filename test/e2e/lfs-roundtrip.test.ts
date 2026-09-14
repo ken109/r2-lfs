@@ -105,8 +105,12 @@ describe("git-lfs through a local r2-lfs server", () => {
   });
 
   // The Worker's own errors explain a failed git command far better than git-lfs's "Server error".
-  afterEach((ctx) => {
-    if (ctx.task.result?.state === "fail") console.error(`wrangler dev output:\n${serverLog}`);
+  afterEach(async (ctx) => {
+    if (ctx.task.result?.state === "fail") {
+      // wrangler writes its request log a little after each response.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      console.error(`wrangler dev output:\n${serverLog}`);
+    }
     serverLog = "";
   });
 
