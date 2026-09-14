@@ -60,7 +60,7 @@ export interface GitRepository {
   /** Reasons the local history may lack commits the remote has, such as a shallow or single-branch clone. */
   historyGaps(): string[];
   setLfsConfig(key: string, value: string): void;
-  lfsTrack(patterns: string[]): void;
+  lfsTrack(patterns: string[], opts?: { lockable?: boolean }): void;
   lfsInstalled(): boolean;
   lfsHooksInstalled(): boolean;
   lfsObjectPath(oid: string): string;

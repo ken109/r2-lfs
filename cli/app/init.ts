@@ -20,6 +20,8 @@ export interface InitOptions {
   /** `owner/name`; derived from the origin remote when omitted. */
   repo?: string;
   track: string[];
+  /** Track the patterns as lockable, so git keeps them read-only until someone locks them. */
+  lockable?: boolean;
   /** Defaults to "gh" when the server uses GitHub auth and gh is logged in. */
   credential?: "gh" | "none";
 }
@@ -75,13 +77,14 @@ export async function initRepository(deps: InitDeps, opts: InitOptions): Promise
   if (!repo.lfsHooksInstalled()) throw new UsageError("git-lfs hooks are not set up for your user; run `git lfs install` once");
 
   repo.setLfsConfig("lfs.url", location.url);
-  repo.setLfsConfig("lfs.locksverify", "false");
+  // The server supports file locks, so git-lfs checks them before a push.
+  repo.setLfsConfig("lfs.locksverify", "true");
   reporter.success(`Wrote .lfsconfig: ${location.url}`);
 
   const patterns = expandTracks(opts.track);
   if (patterns.length > 0) {
-    repo.lfsTrack(patterns);
-    reporter.success(`Tracking ${patterns.join(" ")}`);
+    repo.lfsTrack(patterns, { lockable: opts.lockable ?? false });
+    reporter.success(`Tracking ${patterns.join(" ")}${opts.lockable ? " as lockable" : ""}`);
   }
 
   const credential = opts.credential ?? (info.authMode === "github" && gh.loggedIn() ? "gh" : "none");

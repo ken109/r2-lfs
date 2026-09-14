@@ -17,6 +17,7 @@ export default defineCommand({
     },
     repo: { type: "string", description: "owner/name to store objects under (default: from the origin remote)", valueHint: "owner/name" },
     track: { type: "string", description: `Presets (${Object.keys(PRESETS).join(", ")}) or patterns to track, comma-separated` },
+    lockable: { type: "boolean", description: "Track them as lockable: read-only in checkouts until locked with git lfs lock" },
     credential: {
       type: "enum",
       options: ["gh", "none"],
@@ -62,6 +63,7 @@ export default defineCommand({
         server,
         ...(args.repo ? { repo: args.repo } : {}),
         track,
+        ...(args.lockable ? { lockable: true } : {}),
         ...(args.credential ? { credential: args.credential as "gh" | "none" } : {}),
       },
     );

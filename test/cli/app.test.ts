@@ -401,7 +401,7 @@ describe("restore", () => {
 describe("tokens", () => {
   it("creates, lists and revokes without storing the token", async () => {
     const bucket = new MemoryBucket();
-    const { token, entry } = await createToken(bucket, { label: "laptop", scope: "acme/*", readOnly: false });
+    const { token, entry } = await createToken(bucket, { label: "laptop", scope: "acme/*", permission: "write" });
     expect(token).toMatch(/^r2lfs_[\w-]{43}$/);
     expect(bucket.objects.get(TOKENS_KEY)?.body).not.toContain(token);
     expect(await listTokens(bucket)).toEqual([
@@ -413,7 +413,7 @@ describe("tokens", () => {
 
   it("refuses to overwrite tokens another command added in the meantime", async () => {
     const bucket = new MemoryBucket();
-    await createToken(bucket, { label: "laptop", scope: "acme/*", readOnly: false });
+    await createToken(bucket, { label: "laptop", scope: "acme/*", permission: "write" });
     const read = bucket.get.bind(bucket);
     const racing = async (key: string) => {
       const current = await read(key);
@@ -423,8 +423,8 @@ describe("tokens", () => {
     };
 
     bucket.get = racing;
-    await expect(createToken(bucket, { label: "ci", scope: "acme/*", readOnly: true })).rejects.toBeInstanceOf(ConflictError);
-    await createToken(bucket, { label: "desk", scope: "acme/*", readOnly: true });
+    await expect(createToken(bucket, { label: "ci", scope: "acme/*", permission: "read" })).rejects.toBeInstanceOf(ConflictError);
+    await createToken(bucket, { label: "desk", scope: "acme/*", permission: "read" });
     bucket.get = racing;
     await expect(revoke(bucket, "desk")).rejects.toBeInstanceOf(ConflictError);
 
@@ -433,7 +433,7 @@ describe("tokens", () => {
       await empty.put(key, JSON.stringify({ version: 1, tokens: [] }));
       return undefined;
     };
-    await expect(createToken(empty, { label: "first", scope: "*", readOnly: true })).rejects.toBeInstanceOf(ConflictError);
+    await expect(createToken(empty, { label: "first", scope: "*", permission: "read" })).rejects.toBeInstanceOf(ConflictError);
   });
 });
 
@@ -750,13 +750,13 @@ describe("init and doctor", () => {
     const client = new FakeLfsClient();
     const result = await initRepository(
       { repo: git, gitConfig, gh: noGh, reporter: new SilentReporter(), connect: () => client },
-      { server: "https://lfs.example.com/", track: ["*.blend"] },
+      { server: "https://lfs.example.com/", track: ["*.blend"], lockable: true },
     );
     expect(result.location.url).toBe("https://lfs.example.com/acme/assets");
     expect(result.access).toBe("write");
     expect(git.config("lfs.url", ".lfsconfig")).toBe("https://lfs.example.com/acme/assets");
-    expect(git.config("lfs.locksverify", ".lfsconfig")).toBe("false");
-    expect(git.readFile(".gitattributes")).toContain("*.blend filter=lfs");
+    expect(git.config("lfs.locksverify", ".lfsconfig")).toBe("true");
+    expect(git.readFile(".gitattributes")).toContain("*.blend filter=lfs diff=lfs merge=lfs -text lockable");
     expect(gitConfig.get("r2-lfs.server")).toBe("https://lfs.example.com");
   });
 

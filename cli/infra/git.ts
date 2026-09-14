@@ -257,8 +257,8 @@ export class Git implements GitRepository {
     this.run(["config", "-f", ".lfsconfig", key, value]);
   }
 
-  lfsTrack(patterns: string[]): void {
-    if (patterns.length > 0) this.run(["lfs", "track", ...patterns]);
+  lfsTrack(patterns: string[], opts: { lockable?: boolean } = {}): void {
+    if (patterns.length > 0) this.run(["lfs", "track", ...(opts.lockable ? ["--lockable"] : []), ...patterns]);
   }
 
   lfsInstalled(): boolean {

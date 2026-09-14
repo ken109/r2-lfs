@@ -310,7 +310,14 @@ describe("usage", () => {
 });
 
 describe("tokens", () => {
-  const input = { label: "ci", scope: "Acme/*", readOnly: true, id: "id1", sha256: "f".repeat(64), created: new Date("2026-01-01") };
+  const input = {
+    label: "ci",
+    scope: "Acme/*",
+    permission: "read" as const,
+    id: "id1",
+    sha256: "f".repeat(64),
+    created: new Date("2026-01-01"),
+  };
 
   it("adds, lists and revokes", () => {
     const { file, entry } = addToken(emptyTokensFile(), input);
@@ -320,6 +327,7 @@ describe("tokens", () => {
     expect(() => addToken(file, { ...input, label: "x", scope: "_meta/*" })).toThrow(/scope/);
     expect(addToken(file, { ...input, label: "emu", scope: "alice_acme/*" }).entry.scope).toBe("alice_acme/*");
     expect(addToken(file, { ...input, label: "blender", scope: "Me/Blender-*" }).entry.scope).toBe("me/blender-*");
+    expect(addToken(file, { ...input, label: "lead", permission: "admin" }).entry.permission).toBe("admin");
     expect(() => addToken(file, { ...input, label: "x", scope: "acme/a/b" })).toThrow(/scope/);
     expect(revokeToken(file, "ci").file.tokens).toEqual([]);
     expect(() => revokeToken(file, "nope")).toThrow(/no token/);

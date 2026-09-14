@@ -17,7 +17,7 @@ export async function listTokens(bucket: Bucket): Promise<Omit<StoredToken, "sha
 
 export async function createToken(
   bucket: Bucket,
-  input: { label: string; scope: string; readOnly: boolean },
+  input: { label: string; scope: string; permission: StoredToken["permission"] },
 ): Promise<{ token: string; entry: StoredToken }> {
   const { file, etag } = await load(bucket);
   const token = `r2lfs_${randomBytes(32).toString("base64url")}`;

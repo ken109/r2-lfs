@@ -20,7 +20,7 @@ export function parseTokensFile(text: string): TokensFile {
 export interface NewToken {
   label: string;
   scope: string;
-  readOnly: boolean;
+  permission: StoredToken["permission"];
   id: string;
   sha256: string;
   created: Date;
@@ -35,7 +35,7 @@ export function addToken(file: TokensFile, input: NewToken): { file: TokensFile;
     id: input.id,
     label: input.label,
     scope: input.scope.toLowerCase(),
-    permission: input.readOnly ? "read" : "write",
+    permission: input.permission,
     sha256: input.sha256,
     created: input.created.toISOString(),
   };

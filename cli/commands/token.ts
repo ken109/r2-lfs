@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 
 import { createToken, listTokens, revoke } from "../app/token.ts";
 import * as compose from "../composition.ts";
+import { UsageError } from "../domain/errors.ts";
 import { table } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
 import { jsonArg } from "./shared.ts";
@@ -16,16 +17,18 @@ const create = defineCommand({
     },
     label: { type: "string", description: "A name to recognise it by, such as laptop or ci", required: true },
     "read-only": { type: "boolean", description: "Allow downloads only" },
+    admin: { type: "boolean", description: "Also allow unlocking files other people locked" },
     ...jsonArg,
   },
   async run({ args }) {
     const term = new Terminal({ quiet: args.json });
+    if (args.admin && args["read-only"]) throw new UsageError("--admin and --read-only cannot be combined");
     const bucket = compose.bucket();
     term.intro("r2-lfs token create");
     const { token, entry } = await createToken(bucket, {
       label: args.label,
       scope: args.scope,
-      readOnly: Boolean(args["read-only"]),
+      permission: args.admin ? "admin" : args["read-only"] ? "read" : "write",
     });
     if (args.json) {
       const { sha256: _hash, ...rest } = entry;
