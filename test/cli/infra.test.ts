@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { ConflictError } from "../../cli/app/ports.ts";
 import { parseLfsUrl } from "../../cli/domain/remote.ts";
+import { GithubActionsIdTokens } from "../../cli/infra/actions-id-token.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
 import { parseListObjects, R2Bucket } from "../../cli/infra/r2-bucket.ts";
@@ -295,6 +296,32 @@ describe("R2Bucket against an S3-compatible server", () => {
     );
     expect(page.objects[0]?.storageClass).toBe("STANDARD");
     expect(page.nextToken).toBeUndefined();
+  });
+});
+
+describe("GithubActionsIdTokens", () => {
+  it("requests a token for the audience with the job's request token", async () => {
+    const seen: { url: string; auth: string | undefined }[] = [];
+    const server = createServer((req, res) => {
+      seen.push({ url: req.url ?? "", auth: req.headers.authorization });
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ value: "id-token" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const env = {
+        ACTIONS_ID_TOKEN_REQUEST_URL: `http://127.0.0.1:${port}/token?api-version=2.0`,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "job-secret",
+      };
+      const tokens = new GithubActionsIdTokens(env);
+      expect(tokens.available()).toBe(true);
+      expect(await tokens.request("r2-lfs")).toBe("id-token");
+      expect(seen).toEqual([{ url: "/token?api-version=2.0&audience=r2-lfs", auth: "bearer job-secret" }]);
+      expect(new GithubActionsIdTokens({}).available()).toBe(false);
+      expect(await new GithubActionsIdTokens({}).request("r2-lfs")).toBeUndefined();
+    } finally {
+      server.close();
+    }
   });
 });
 

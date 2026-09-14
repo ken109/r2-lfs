@@ -20,10 +20,14 @@ export class UserGitConfig implements GlobalGitConfig {
   }
 
   useGhCredentials(origin: string): void {
+    this.useCredentialHelper(origin, GH_CREDENTIAL_HELPER);
+  }
+
+  useCredentialHelper(origin: string, helper: string): void {
     const key = `credential.${origin}.helper`;
     // An empty helper first resets helpers inherited from other config files, such as a keychain.
     output("git", ["config", "--global", "--replace-all", key, ""]);
-    output("git", ["config", "--global", "--add", key, GH_CREDENTIAL_HELPER]);
+    output("git", ["config", "--global", "--add", key, helper]);
   }
 
   credentialFor(origin: string): string | undefined {

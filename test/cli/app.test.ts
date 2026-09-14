@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { archiveTag } from "../../cli/app/archive.ts";
+import { parseCredentialRequest, passwordFor } from "../../cli/app/credential.ts";
 import { diagnose } from "../../cli/app/doctor.ts";
 import { applyGc, applyPlan, gcMode, planGc, recheckPlan, trashObject } from "../../cli/app/gc.ts";
 import { initRepository } from "../../cli/app/init.ts";
@@ -45,6 +46,7 @@ class FakeGitConfig implements GlobalGitConfig {
   useGhCredentials(origin: string) {
     this.ghOrigins.push(origin);
   }
+  useCredentialHelper() {}
   credentialFor() {
     return this.token;
   }
@@ -736,6 +738,39 @@ describe("setup", () => {
     expect(everyone.runs.some((r) => r.args.includes("lock"))).toBe(false);
     await expect(setupServer(f.deps, { ...base, repos: ["acme"] })).rejects.toThrow(/is not owner\/repo/);
     await expect(setupServer(f.deps, { ...base, repos: [] })).rejects.toThrow(/--repos is required/);
+  });
+});
+
+describe("credential helper", () => {
+  it("answers with R2_LFS_TOKEN first, then an Actions OIDC token for the audience the server announces", async () => {
+    const requested: string[] = [];
+    const actions = { available: () => true, request: async (audience: string) => (requested.push(audience), `oidc-for-${audience}`) };
+    const client = new FakeLfsClient();
+    const origins: string[] = [];
+    const connect = (location: { origin: string }) => (origins.push(location.origin), client);
+
+    expect(await passwordFor({ token: "from-env", actions, connect }, "https://lfs.example.com")).toBe("from-env");
+    expect(requested).toEqual([]);
+
+    expect(await passwordFor({ token: undefined, actions, connect }, "https://lfs.example.com")).toBeUndefined();
+    client.serverInfo = { ...client.serverInfo, actionsOidcAudience: "r2-lfs" };
+    expect(await passwordFor({ token: undefined, actions, connect }, "https://lfs.example.com")).toBe("oidc-for-r2-lfs");
+    expect(origins).toEqual(["https://lfs.example.com", "https://lfs.example.com"]);
+
+    const outside = { available: () => false, request: async () => "never" };
+    expect(await passwordFor({ token: undefined, actions: outside, connect }, "https://lfs.example.com")).toBeUndefined();
+    client.info = async () => {
+      throw new Error("offline");
+    };
+    expect(await passwordFor({ token: undefined, actions, connect }, "https://lfs.example.com")).toBeUndefined();
+  });
+
+  it("reads git's credential request", () => {
+    expect(Object.fromEntries(parseCredentialRequest("protocol=https\r\nhost=lfs.example.com:8443\npath=a=b\n\n"))).toEqual({
+      protocol: "https",
+      host: "lfs.example.com:8443",
+      path: "a=b",
+    });
   });
 });
 

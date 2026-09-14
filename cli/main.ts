@@ -20,6 +20,7 @@ const main = defineCommand({
     archive: () => import("./commands/archive.ts").then((m) => m.default),
     token: () => import("./commands/token.ts").then((m) => m.default),
     setup: () => import("./commands/setup.ts").then((m) => m.default),
+    credential: () => import("./commands/credential.ts").then((m) => m.default),
   },
 });
 

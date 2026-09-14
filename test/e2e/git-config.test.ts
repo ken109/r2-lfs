@@ -58,6 +58,18 @@ describe("UserGitConfig against the real global git config", () => {
     expect(config.credentialFor(ORIGIN)).toBe("from_env");
   });
 
+  it("installs r2-lfs credential as the helper, which answers git with R2_LFS_TOKEN", () => {
+    const cli = join(process.cwd(), "dist", "cli.js");
+    execFileSync("node", [cli, "credential", "--install", "--server", ORIGIN], { encoding: "utf8" });
+    process.env.R2_LFS_TOKEN = "token-from-env";
+    const filled = execFileSync("git", ["credential", "fill"], {
+      input: "protocol=https\nhost=lfs.example.com\n\n",
+      encoding: "utf8",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    expect(filled).toContain("password=token-from-env");
+  });
+
   it("returns nothing instead of prompting when no helper knows the host", () => {
     expect(new UserGitConfig().credentialFor(ORIGIN)).toBeUndefined();
   });

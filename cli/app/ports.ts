@@ -78,8 +78,17 @@ export interface GlobalGitConfig {
   set(key: string, value: string): void;
   helpersFor(origin: string): string[];
   useGhCredentials(origin: string): void;
+  /** Makes `helper` the only credential helper for `origin`. */
+  useCredentialHelper(origin: string, helper: string): void;
   /** The password git's credential helpers would send to `origin`, without prompting. */
   credentialFor(origin: string): string | undefined;
+}
+
+/** OpenID Connect tokens of the GitHub Actions job this process runs in. */
+export interface ActionsIdTokens {
+  /** Whether the job has `id-token: write`. */
+  available(): boolean;
+  request(audience: string): Promise<string | undefined>;
 }
 
 export interface GitHubCli {

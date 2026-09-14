@@ -2,9 +2,10 @@
 
 import { fileURLToPath } from "node:url";
 
-import type { Bucket, GitRepository, LfsClient } from "./app/ports.ts";
+import type { ActionsIdTokens, Bucket, GitRepository, LfsClient } from "./app/ports.ts";
 import { UsageError } from "./domain/errors.ts";
 import { type LfsLocation, parseLfsUrl } from "./domain/remote.ts";
+import { GithubActionsIdTokens } from "./infra/actions-id-token.ts";
 import { Git, gitLfsInstalled } from "./infra/git.ts";
 import { GhCli } from "./infra/github-cli.ts";
 import { GH_CREDENTIAL_HELPER, UserGitConfig } from "./infra/global-git-config.ts";
@@ -40,6 +41,15 @@ export function clientFor(repo: GitRepository): LfsClient {
   const location = parseLfsUrl(raw);
   if (!location) throw new UsageError(`lfs.url "${raw}" does not look like https://<server>/<owner>/<repo>`);
   return connect(location, gitConfig.credentialFor(location.origin));
+}
+
+export function actionsIdTokens(): ActionsIdTokens {
+  return new GithubActionsIdTokens();
+}
+
+/** How git runs `r2-lfs credential`: this Node.js and this CLI, quoted for the shell git uses. */
+export function credentialHelperCommand(): string {
+  return `!"${process.execPath}" "${process.argv[1] ?? ""}" credential`;
 }
 
 export function bucket(): Bucket {
