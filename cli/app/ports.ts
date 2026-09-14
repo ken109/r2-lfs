@@ -174,9 +174,16 @@ export interface Files {
   tempDir(prefix: string): string;
 }
 
+export interface WranglerLogin {
+  email: string;
+  /** The account Wrangler deploys to: CLOUDFLARE_ACCOUNT_ID, or the only account the login can use. */
+  accountId: string | undefined;
+}
+
 export interface Wrangler {
   run(args: string[], opts?: { input?: string; cwd?: string }): { code: number; output: string };
-  whoami(): string | undefined;
+  /** Undefined when Wrangler is not logged in. */
+  whoami(): WranglerLogin | undefined;
 }
 
 export interface UploadedPart {

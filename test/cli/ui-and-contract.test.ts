@@ -83,8 +83,7 @@ describe("contract", () => {
     expect(config.migrations).toEqual(jsonc.migrations);
     expect(config.analytics_engine_datasets).toEqual(jsonc.analytics_engine_datasets);
     expect((config.assets as { run_worker_first: string[] }).run_worker_first).toEqual(jsonc.assets.run_worker_first);
-    const { R2_ACCOUNT_ID: _account, ...deployedVars } = jsonc.vars;
-    expect(config.vars).toEqual(deployedVars);
+    expect(config.vars).toEqual(jsonc.vars);
   });
 
   it("builds a Worker config that locks live prefixes but not the trash", () => {

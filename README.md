@@ -336,7 +336,7 @@ It has four pages:
 - **Locks**: a repository's file locks, with the holder and time, and unlocking any of them.
 - **Activity**: requests, bytes through the Worker and server errors by repository, from Workers
   Analytics Engine. It needs `ANALYTICS_API_TOKEN` (`npx wrangler secret put ANALYTICS_API_TOKEN`) and
-  `R2_ACCOUNT_ID`.
+  `R2_ACCOUNT_ID`, which `setup` sets from your Wrangler login; set it yourself after deploying with the button.
 
 The UI changes nothing on requests from other sites: its server functions accept changes only with the
 admin UI's own `Origin`.

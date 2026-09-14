@@ -39,6 +39,8 @@ export interface SetupOptions {
   access?: { teamDomain: string; aud: string };
   /** What GitHub Actions workflows may do in their own repository with an OIDC token. */
   actionsOidc?: "off" | "read" | "write";
+  /** The Cloudflare account, for R2_ACCOUNT_ID; setup takes it from Wrangler's login. */
+  accountId?: string;
 }
 
 export interface SetupResult {
@@ -96,6 +98,8 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
       PROXY_MAX_UPLOAD_MB: "100",
       MAX_OBJECT_MB: "",
       QUOTA_GB: "",
+      // Presigned URLs and the admin UI's activity page need it.
+      R2_ACCOUNT_ID: opts.accountId ?? "",
       R2_BUCKET_NAME: opts.bucket,
       ACCESS_TEAM_DOMAIN: opts.access?.teamDomain ?? "",
       ACCESS_AUD: opts.access?.aud ?? "",
@@ -119,8 +123,8 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
     if (!REPO_PATTERN.test(pattern)) throw new UsageError(`${pattern} is not owner/repo, with * allowed within names, or *`);
   }
 
-  const account = await reporter.task("Checking your Cloudflare login", () => wrangler.whoami());
-  if (!account) throw new UsageError("Wrangler is not logged in; run `npx wrangler login` first");
+  const login = await reporter.task("Checking your Cloudflare login", () => wrangler.whoami());
+  if (!login) throw new UsageError("Wrangler is not logged in; run `npx wrangler login` first");
 
   const created = await reporter.task(`Creating bucket ${opts.bucket}`, () =>
     check(wrangler.run(["r2", "bucket", "create", opts.bucket]), "creating the bucket"),
@@ -198,7 +202,10 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
   const dir = files.tempDir("r2-lfs-setup-");
   files.copyDir(deps.workerFiles.worker, join(dir, "worker"));
   files.copyDir(deps.workerFiles.assets, join(dir, "public"));
-  files.writeText(join(dir, "wrangler.json"), `${JSON.stringify(workerConfig(opts), null, 2)}\n`);
+  files.writeText(
+    join(dir, "wrangler.json"),
+    `${JSON.stringify(workerConfig({ ...(login.accountId ? { accountId: login.accountId } : {}), ...opts }), null, 2)}\n`,
+  );
   const deployed = await reporter.task(`Deploying Worker ${opts.name}`, () =>
     // Relative, because npx runs through a shell on Windows and the temp dir may contain spaces.
     wrangler.run(["deploy", "--config", "wrangler.json"], { cwd: dir }),

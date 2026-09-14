@@ -15,6 +15,7 @@ import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange } from "../../cli/infra/multipart-uploads.ts";
 import { parseListObjects, R2Bucket, ssecHeaders } from "../../cli/infra/r2-bucket.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
+import { parseWhoami } from "../../cli/infra/wrangler-cli.ts";
 import { TempRepo } from "./helpers.ts";
 
 describe("Git adapter", () => {
@@ -442,6 +443,26 @@ describe("transfer agent adapters", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+const whoami = (accounts: { id: string; name: string }[]) => JSON.stringify({ loggedIn: true, email: "me@example.com", accounts });
+
+describe("parseWhoami", () => {
+  it("takes the account from CLOUDFLARE_ACCOUNT_ID, or the only account the login has", () => {
+    const one = whoami([{ id: "acc1", name: "me" }]);
+    const two = whoami([
+      { id: "acc1", name: "me" },
+      { id: "acc2", name: "team" },
+    ]);
+    expect(parseWhoami(one, {})).toEqual({ email: "me@example.com", accountId: "acc1" });
+    expect(parseWhoami(two, {})).toEqual({ email: "me@example.com", accountId: undefined });
+    expect(parseWhoami(two, { CLOUDFLARE_ACCOUNT_ID: "acc2" })).toEqual({ email: "me@example.com", accountId: "acc2" });
+  });
+
+  it("reports no login for output it cannot read", () => {
+    expect(parseWhoami(JSON.stringify({ loggedIn: false }), {})).toBeUndefined();
+    expect(parseWhoami("You are not authenticated", {})).toBeUndefined();
   });
 });
 

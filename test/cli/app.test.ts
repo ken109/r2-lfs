@@ -626,7 +626,7 @@ function setupFakes() {
   const runs: { args: string[]; cwd?: string }[] = [];
   const written = new Map<string, string>();
   const wrangler: Wrangler = {
-    whoami: () => "me@example.com",
+    whoami: () => ({ email: "me@example.com", accountId: "acc123" }),
     run: (args, opts) => {
       runs.push({ args, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
       if (args[0] === "r2" && args[2] === "create") return { code: 1, output: "The bucket already exists" };
@@ -739,7 +739,9 @@ describe("setup", () => {
       "deploy --config wrangler.json",
     ]);
     expect(f.runs.at(-1)?.cwd).toBe("/tmp/with space/r2-lfs-setup-1");
-    expect(f.written.has(join("/tmp/with space/r2-lfs-setup-1", "wrangler.json"))).toBe(true);
+    const config = JSON.parse(f.written.get(join("/tmp/with space/r2-lfs-setup-1", "wrangler.json"))!) as { vars: Record<string, string> };
+    // The account Wrangler deploys to, which presigned URLs and the admin UI's activity page need.
+    expect(config.vars).toMatchObject({ ALLOWED_REPOS: "acme/*", R2_ACCOUNT_ID: "acc123", R2_BUCKET_NAME: "lfs" });
     expect(f.copied).toEqual([
       `dist/worker -> ${join("/tmp/with space/r2-lfs-setup-1", "worker")}`,
       `dist/public -> ${join("/tmp/with space/r2-lfs-setup-1", "public")}`,
