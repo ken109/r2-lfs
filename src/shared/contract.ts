@@ -18,6 +18,14 @@ export const TRASH_PREFIX = "_trash/";
  * reuses the name of a deleted, renamed or transferred one cannot reach its objects.
  */
 export const REPOS_PREFIX = "_repos/";
+/** The key the Worker signs its short-lived tokens with; deleting it revokes them all within minutes. */
+export const SESSION_KEY_KEY = "_meta/session-key";
+/** Tokens the Worker signs start with this, unlike tokens from `r2-lfs token` (`r2lfs_`) and JWTs. */
+export const SESSION_TOKEN_PREFIX = "r2lfs-s1.";
+/** How long a token from the session endpoint lasts. */
+export const SESSION_TTL_SECONDS = 3600;
+/** How long a transfer action's token lasts: long enough to finish a large, resumed upload. */
+export const ACTION_TTL_SECONDS = 12 * 3600;
 /** Tokens managed by `r2-lfs token`. */
 export const TOKENS_KEY = "_meta/tokens.json";
 
@@ -48,6 +56,19 @@ export interface ServerInfo {
   encrypted?: boolean;
   /** Set when GitHub Actions workflows may authenticate with an OIDC token requested for this audience. */
   actionsOidcAudience?: string;
+  /** Set when `<repository>/r2-lfs/session` trades a Git host token for a short-lived one. */
+  sessions?: boolean;
+}
+
+/** Appended to a repository's LFS URL: POST with Git host credentials for a short-lived token. */
+export const SESSION_ENDPOINT = "r2-lfs/session";
+
+/** What the session endpoint answers with status 200. */
+export interface SessionResponse {
+  token: string;
+  /** ISO 8601. */
+  expires_at: string;
+  permission: "read" | "write" | "admin";
 }
 
 /** A transfer action in a Git LFS batch response. */

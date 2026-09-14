@@ -1,4 +1,4 @@
-import { INFO_PATH, OWNER_NAME, REPO_NAME } from "../shared/contract.ts";
+import { INFO_PATH, OWNER_NAME, REPO_NAME, SESSION_ENDPOINT } from "../shared/contract.ts";
 
 export type Route =
   | { kind: "landing" }
@@ -10,11 +10,12 @@ export type Route =
   | { kind: "locks"; owner: string; name: string }
   | { kind: "locks-verify"; owner: string; name: string }
   | { kind: "unlock"; owner: string; name: string; id: string }
+  | { kind: "session"; owner: string; name: string }
   | { kind: "not-found" };
 
 // `/<owner>/<repo>[.git][/info/lfs]/<endpoint>`; the optional parts let either URL style work.
 const LFS_ROUTE = new RegExp(
-  `^/(${OWNER_NAME})/(${REPO_NAME}?)(?:\\.git)?(?:/info/lfs)?/(objects/batch|objects/verify|objects/([0-9a-f]{64})(?:/multipart(?:/([A-Za-z0-9._~%-]{1,1024})(?:/(\\d{1,5}|complete))?)?)?|locks|locks/verify|locks/([A-Za-z0-9-]{1,64})/unlock)$`,
+  `^/(${OWNER_NAME})/(${REPO_NAME}?)(?:\\.git)?(?:/info/lfs)?/(objects/batch|objects/verify|objects/([0-9a-f]{64})(?:/multipart(?:/([A-Za-z0-9._~%-]{1,1024})(?:/(\\d{1,5}|complete))?)?)?|locks|locks/verify|locks/([A-Za-z0-9-]{1,64})/unlock|${SESSION_ENDPOINT})$`,
 );
 
 export function route(pathname: string): Route {
@@ -32,6 +33,7 @@ export function route(pathname: string): Route {
     string | undefined,
     string | undefined,
   ];
+  if (endpoint === SESSION_ENDPOINT) return { kind: "session", owner, name };
   if (endpoint === "locks") return { kind: "locks", owner, name };
   if (endpoint === "locks/verify") return { kind: "locks-verify", owner, name };
   if (lockId !== undefined) return { kind: "unlock", owner, name, id: lockId };

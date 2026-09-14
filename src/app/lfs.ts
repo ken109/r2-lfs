@@ -29,6 +29,8 @@ export interface LfsContext {
   links: TransferLinks;
   /** Presigned mode only: moves hash-checked uploads into place. */
   copier: ObjectCopier | undefined;
+  /** Set when the request carries a transfer action's token, which covers this object alone. */
+  onlyOid?: string;
 }
 
 const shared = (ctx: LfsContext) => ctx.config.storageLayout === "shared";
@@ -82,11 +84,14 @@ async function planObject(
     };
   }
   // The agent finishes the upload with its own call, which checks the hash, so there is no verify action.
-  if (multipart) return { ...object, authenticated: true, actions: { upload: ctx.links.multipart(object.oid) } };
+  if (multipart) return { ...object, authenticated: true, actions: { upload: await ctx.links.multipart(object.oid) } };
   return {
     ...object,
     authenticated: true,
-    actions: { upload: await ctx.links.upload(staged(ctx) ? stagingKey(ctx, object.oid) : key, object.oid), verify: ctx.links.verify() },
+    actions: {
+      upload: await ctx.links.upload(staged(ctx) ? stagingKey(ctx, object.oid) : key, object.oid),
+      verify: await ctx.links.verify(object.oid),
+    },
   };
 }
 
@@ -121,6 +126,7 @@ export async function verify(ctx: LfsContext, body: unknown): Promise<Result<Rec
   const parsed = parseObjectSpec(body);
   if (!parsed.ok) return parsed;
   const { oid, size } = parsed.value;
+  if (ctx.onlyOid !== undefined && ctx.onlyOid !== oid) return reject(403, "This token was issued for another object");
   const key = liveKey(ctx, oid);
 
   if (staged(ctx)) {

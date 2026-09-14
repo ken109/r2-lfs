@@ -44,9 +44,9 @@ export interface TransferLinks {
   readonly presigned: boolean;
   download(key: string, oid: string): Promise<Action>;
   upload(key: string, oid: string): Promise<Action>;
-  verify(): Action;
+  verify(oid: string): Promise<Action>;
   /** Where `r2-lfs transfer-agent` starts a multipart upload; always through the Worker. */
-  multipart(oid: string): Action;
+  multipart(oid: string): Promise<Action>;
 }
 
 /** Multipart uploads in the bucket, and moving a finished one into place. */
@@ -84,7 +84,13 @@ export type Lookup =
 
 /** What the request may do, and a way to learn who is asking, which only file locks need. */
 export type Authorization =
-  | { ok: true; permission: Permission; identify: () => Promise<string | undefined> }
+  | {
+      ok: true;
+      permission: Permission;
+      identify: () => Promise<string | undefined>;
+      /** Set for a token a batch response issued for one object's transfer, which covers nothing else. */
+      oid?: string;
+    }
   | { ok: false; status: 401 | 403 | 404 | 502 | 503; message: string };
 
 /** File locks of one repository. */
@@ -121,6 +127,26 @@ export interface AccessVerifier {
 export interface Credentials {
   username?: string;
   password: string;
+}
+
+/** What a token the Worker issued stands for. */
+export interface SessionClaims {
+  /** `owner/repo`, lowercased. */
+  repo: string;
+  permission: "read" | "write" | "admin";
+  /** Unix seconds. */
+  expires: number;
+  /** Who holds it, as file locks name them. */
+  login?: string;
+  /** Limits the token to transferring this object. */
+  oid?: string;
+}
+
+/** Short-lived tokens the Worker signs, so clients and transfer actions do not carry a Git host's token around. */
+export interface SessionTokens {
+  mint(claims: SessionClaims): Promise<string>;
+  /** The claims of a token this server signed and that has not expired; undefined otherwise. */
+  verify(token: string): Promise<SessionClaims | undefined>;
 }
 
 /** Which repository each name belongs to, recorded the first time the name is used. */

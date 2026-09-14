@@ -680,7 +680,7 @@ describe("presigned transfers", () => {
     expect(href.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
 
     const up = await batch(e, "/acme/app", "upload", [await blob()]);
-    expect(up.objects[0]!.actions!.verify!.header?.Authorization).toBe(basic(WRITE_TOKEN));
+    expect(up.objects[0]!.actions!.verify!.header?.Authorization).toMatch(/^Bearer r2lfs-s1\./);
   });
 
   it("falls back to proxy in auto mode without credentials", async () => {

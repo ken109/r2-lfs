@@ -2,6 +2,7 @@ import { authorize } from "../app/authorize.ts";
 import * as lfs from "../app/lfs.ts";
 import { createLock, listLocks, type LockResponse, type LocksContext, unlock, verifyLocks } from "../app/locks.ts";
 import * as multipart from "../app/multipart.ts";
+import { hasPermission } from "../domain/access.ts";
 import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
@@ -14,9 +15,18 @@ import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { R2RepositoryIdentities } from "../infra/r2-repository-identities.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 import { S3Copier } from "../infra/s3-copier.ts";
+import { HmacSessionTokens } from "../infra/session-tokens.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
 import { PresignedLinks, ProxyLinks } from "../infra/transfer-links.ts";
-import { type MisconfiguredInfo, type ServerInfo, VERSION } from "../shared/contract.ts";
+import {
+  ACTION_TTL_SECONDS,
+  type MisconfiguredInfo,
+  type ServerInfo,
+  SESSION_TOKEN_PREFIX,
+  SESSION_TTL_SECONDS,
+  type SessionResponse,
+  VERSION,
+} from "../shared/contract.ts";
 import { extractCredentials } from "./credentials.ts";
 import { lfsError, lfsJson } from "./responses.ts";
 import { route } from "./router.ts";
@@ -65,6 +75,7 @@ function info(env: Env): Response {
       ...(config.encryptionKey ? { encrypted: true } : {}),
       ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
       ...(config.actionsOidc ? { actionsOidcAudience: config.actionsOidc.audience } : {}),
+      sessions: true,
     };
     return Response.json(body);
   } catch (err) {
@@ -138,24 +149,35 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
     return lfsError(500, err.message);
   }
 
-  const authorization = request.headers.get("Authorization") ?? "";
-  const auth = await authorize(config, repo, extractCredentials(authorization), {
+  const credentials = extractCredentials(request.headers.get("Authorization"));
+  const sessions = new HmacSessionTokens(env.BUCKET);
+  const auth = await authorize(config, repo, credentials, {
     tokens: new CombinedTokenDirectory(config.tokens, env.BUCKET),
     host: new RemoteHostPermissions(deps.fetch, config.host),
     actions: new GithubActionsOidc(deps.fetch),
     identities: new R2RepositoryIdentities(env.BUCKET),
+    sessions,
     isJwt: looksLikeJwt,
   });
   if (!auth.ok) return lfsError(auth.status, auth.message);
+  // A transfer action's token covers that object's transfer and nothing else.
+  if (auth.oid !== undefined) {
+    const covered = matched.kind === "verify" || ((matched.kind === "object" || matched.kind === "multipart") && matched.oid === auth.oid);
+    if (!covered) return lfsError(403, "This token was issued for one object's transfer only");
+  }
 
   const baseUrl = `${url.origin}/${repo.owner}/${repo.name}`;
+  const repoKey = `${repo.owner}/${repo.name}`.toLowerCase();
+  const actionAuthorization = async (oid: string, permission: "read" | "write") =>
+    `Bearer ${await sessions.mint({ repo: repoKey, permission, oid, expires: Math.floor(Date.now() / 1000) + ACTION_TTL_SECONDS })}`;
   const ctx: lfs.LfsContext = {
     config,
     repo,
     permission: auth.permission,
     store: new R2ObjectStore(env.BUCKET, config.encryptionKey),
-    links: config.presign ? new PresignedLinks(config.presign, baseUrl, authorization) : new ProxyLinks(baseUrl, authorization),
+    links: config.presign ? new PresignedLinks(config.presign, baseUrl, actionAuthorization) : new ProxyLinks(baseUrl, actionAuthorization),
     copier: config.presign ? new S3Copier(config.presign, deps.fetch) : undefined,
+    ...(auth.oid === undefined ? {} : { onlyOid: auth.oid }),
   };
 
   const parts: multipart.MultipartContext = { ...ctx, multipart: new R2MultipartStore(env.BUCKET, config.encryptionKey) };
@@ -167,6 +189,18 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
   };
 
   switch (matched.kind) {
+    case "session": {
+      if (request.method !== "POST") return lfsError(405, "Method not allowed");
+      // Trading a token for another would let a session outlive the permission it was issued for.
+      if (credentials?.password.startsWith(SESSION_TOKEN_PREFIX)) return lfsError(403, "Send Git host credentials, not an r2-lfs token");
+      if (!hasPermission(auth.permission, "read")) return lfsError(403, "You do not have read access to this repository");
+      const expires = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+      const login = await auth.identify();
+      const permission = auth.permission as SessionResponse["permission"];
+      const token = await sessions.mint({ repo: repoKey, permission, expires, ...(login ? { login } : {}) });
+      const body: SessionResponse = { token, expires_at: new Date(expires * 1000).toISOString(), permission };
+      return lfsJson(200, body);
+    }
     case "locks":
       if (request.method === "GET") return lockResponse(await listLocks(locks, url.searchParams));
       if (request.method === "POST") return lockResponse(await createLock(locks, await readJson(request)));

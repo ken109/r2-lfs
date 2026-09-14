@@ -1,14 +1,23 @@
 import { repoAllowed, strongestGrant } from "../domain/access.ts";
 import type { Config } from "../domain/config.ts";
 import { isSafeRepoName, type Repo } from "../domain/repo.ts";
-import { repositoryIdKey } from "../shared/contract.ts";
-import type { ActionsTokenVerifier, Authorization, Credentials, HostPermissions, RepositoryIdentities, TokenDirectory } from "./ports.ts";
+import { repositoryIdKey, SESSION_TOKEN_PREFIX } from "../shared/contract.ts";
+import type {
+  ActionsTokenVerifier,
+  Authorization,
+  Credentials,
+  HostPermissions,
+  RepositoryIdentities,
+  SessionTokens,
+  TokenDirectory,
+} from "./ports.ts";
 
 export interface AuthorizeDeps {
   tokens: TokenDirectory;
   host: HostPermissions;
   actions: ActionsTokenVerifier;
   identities: RepositoryIdentities;
+  sessions: SessionTokens;
   /** Whether the credential has the shape of a JWT, which GitHub and r2-lfs tokens never have. */
   isJwt: (token: string) => boolean;
 }
@@ -30,6 +39,15 @@ export async function authorize(
   if (!repoAllowed(config, repo)) return { ok: false, status: 403, message: `${repo.owner}/${repo.name} is not allowed on this server` };
   if (!credentials) return { ok: false, status: 401, message: "Credentials required" };
   const token = credentials.password;
+  if (token.startsWith(SESSION_TOKEN_PREFIX)) {
+    const claims = await deps.sessions.verify(token);
+    // 401 makes git-lfs drop the credential and ask its helper again, which trades for a fresh token.
+    if (!claims) return { ok: false, status: 401, message: "The r2-lfs token is invalid or has expired" };
+    if (claims.repo !== `${repo.owner}/${repo.name}`.toLowerCase()) {
+      return { ok: false, status: 404, message: `This token was issued for ${claims.repo}` };
+    }
+    return { ok: true, permission: claims.permission, identify: async () => claims.login, ...(claims.oid ? { oid: claims.oid } : {}) };
+  }
   if (config.actionsOidc && deps.isJwt(token)) {
     const claims = await deps.actions.verify(token, config.actionsOidc.audience);
     if (!claims)
