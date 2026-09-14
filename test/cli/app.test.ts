@@ -125,7 +125,10 @@ describe("gc", () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     const reporter = new SilentReporter();
-    const plan = await planGc({ repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter }, { fetch: false });
+    const plan = await planGc(
+      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
+      { fetch: false, mode: "dry-run" },
+    );
 
     const decisions = Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision.kind]));
     expect(decisions).toEqual({
@@ -147,7 +150,10 @@ describe("gc", () => {
     cleanup.push(() => s.repo.remove());
     s.bucket.locked.push(s.prefix);
     const reporter = new SilentReporter();
-    const plan = await planGc({ repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter }, { fetch: false });
+    const plan = await planGc(
+      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
+      { fetch: false, mode: "dry-run" },
+    );
     const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: true });
     expect(outcomes.every((o) => !o.ok)).toBe(true);
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
@@ -160,7 +166,10 @@ describe("gc", () => {
     s.repo.write(".r2-lfs.toml", '[[rule]]\npath = "*.blend"\nold_versions = "infrequent-access"\n');
     s.repo.commit("policy");
     const reporter = new SilentReporter();
-    const plan = await planGc({ repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter }, { fetch: false });
+    const plan = await planGc(
+      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
+      { fetch: false, mode: "dry-run" },
+    );
     expect(plan.candidates.map((p) => [p.oid, p.decision.kind])).toEqual([
       [s.oldOid, "tier"],
       [s.orphan, "delete"],
@@ -247,7 +256,7 @@ describe("gc", () => {
     for (const oid of [rawTenDays, texTenDays, rawThreeDays]) bucket.seed(`acme/assets/${oid}`, { ageDays: 400 });
     const plan = await planGc(
       { repo: Git.open(repo.dir), otherRepos: [], client: new FakeLfsClient(), bucket, reporter: new SilentReporter() },
-      { fetch: false },
+      { fetch: false, mode: "dry-run" },
     );
     expect(Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision]))).toEqual({
       [rawTenDays]: { kind: "delete" },
@@ -263,14 +272,16 @@ describe("gc", () => {
     s.repo.commit("policy");
     const reporter = new SilentReporter();
     const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter };
-    const byPolicy = await planGc(deps, { fetch: false });
+    const byPolicy = await planGc(deps, { fetch: false, mode: "dry-run" });
     expect(byPolicy.planned.find((p) => p.oid === s.oldOid)?.decision.kind).toBe("keep");
 
-    const overridden = await planGc(deps, { fetch: false, minAgeDays: "0" });
+    const overridden = await planGc(deps, { fetch: false, minAgeDays: "0", mode: "dry-run" });
     expect(overridden.planned.find((p) => p.oid === s.youngOrphan)?.decision.kind).toBe("delete");
-    await expect(planGc(deps, { fetch: false, keepDays: "-1" })).rejects.toThrow(UsageError);
+    await expect(planGc(deps, { fetch: false, keepDays: "-1", mode: "dry-run" })).rejects.toThrow(UsageError);
     for (const blank of ["", " ", "1.5", "7 days"]) {
-      await expect(planGc(deps, { fetch: false, minAgeDays: blank })).rejects.toThrow(/--min-age-days must be a non-negative integer/);
+      await expect(planGc(deps, { fetch: false, minAgeDays: blank, mode: "dry-run" })).rejects.toThrow(
+        /--min-age-days must be a non-negative integer/,
+      );
     }
   });
 
@@ -281,12 +292,12 @@ describe("gc", () => {
     const shallow = new TempRepo(s.repo, "--depth", "1");
     cleanup.push(() => shallow.remove());
     const deps = (repo: Git) => ({ repo, otherRepos: [], client: s.client, bucket: s.bucket, reporter });
-    await expect(planGc(deps(Git.open(shallow.dir)), { fetch: false })).rejects.toThrow(/full history/);
+    await expect(planGc(deps(Git.open(shallow.dir)), { fetch: false, mode: "dry-run" })).rejects.toThrow(/full history/);
 
     s.repo.git("remote", "add", "origin", join(s.repo.dir, "does-not-exist"));
     await expect(planGc(deps(s.git), { fetch: true, mode: "apply" })).rejects.toThrow(/git fetch failed/);
     await expect(planGc(deps(s.git), { fetch: true, mode: "interactive" })).rejects.toThrow(/git fetch failed/);
-    await planGc(deps(s.git), { fetch: true });
+    await planGc(deps(s.git), { fetch: true, mode: "dry-run" });
     expect(reporter.warnings).toEqual([expect.stringContaining("git fetch failed")]);
   });
 
@@ -295,7 +306,7 @@ describe("gc", () => {
     cleanup.push(() => s.repo.remove());
     s.client.serverInfo.storageLayout = "shared";
     const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter: new SilentReporter() };
-    const plan = await planGc(deps, { fetch: false });
+    const plan = await planGc(deps, { fetch: false, mode: "dry-run" });
     expect(plan.sharedWithoutRepos).toBe(true);
     expect(plan.prefix).toBe("_shared/");
     await expect(planGc(deps, { fetch: false, mode: "apply" })).rejects.toThrow(/without --repos/);
@@ -332,12 +343,12 @@ describe("gc", () => {
 
     const shallow = new TempRepo(other, "--depth", "1");
     cleanup.push(() => shallow.remove());
-    await expect(planGc({ ...deps, otherRepos: [Git.open(shallow.dir)] }, { fetch: false })).rejects.toThrow(
+    await expect(planGc({ ...deps, otherRepos: [Git.open(shallow.dir)] }, { fetch: false, mode: "dry-run" })).rejects.toThrow(
       /full history of .*r2-lfs-test-/,
     );
 
     const perRepo = { ...deps, client: new FakeLfsClient() };
-    await expect(planGc(perRepo, { fetch: false })).rejects.toThrow(/only applies to the shared layout/);
+    await expect(planGc(perRepo, { fetch: false, mode: "dry-run" })).rejects.toThrow(/only applies to the shared layout/);
   });
 });
 

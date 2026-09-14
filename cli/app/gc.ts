@@ -26,7 +26,7 @@ export function gcMode(flags: { apply?: boolean; interactive?: boolean }): GcMod
 export interface GcPlanOptions extends PolicyOverrides {
   fetch: boolean;
   /** Whether the plan will be applied; changing the bucket needs refs that are known to be current. */
-  mode?: GcMode;
+  mode: GcMode;
   layout?: string;
   now?: Date;
 }
@@ -65,7 +65,7 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
   // Each repository is judged by its own .r2-lfs.toml.
   const views = repos.map((r) => ({ repo: r, policy: loadPolicy(r, opts) }));
   const now = opts.now ?? new Date();
-  const acting = (opts.mode ?? "dry-run") !== "dry-run";
+  const acting = opts.mode !== "dry-run";
   const facts = await reporter.task(
     "Reading git history",
     () => {
