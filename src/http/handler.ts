@@ -5,6 +5,7 @@ import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
 import { GithubActionsOidc } from "../infra/actions-oidc.ts";
+import { AnalyticsEngineMetrics } from "../infra/analytics-metrics.ts";
 import { type Fetcher, RemoteHostPermissions } from "../infra/host-permissions.ts";
 import { looksLikeJwt } from "../infra/jwt.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
@@ -74,6 +75,19 @@ function info(env: Env): Response {
 export async function handle(request: Request, env: Env, deps: Deps): Promise<Response> {
   const url = new URL(request.url);
   const matched = route(url.pathname);
+  if (matched.kind !== "landing" && matched.kind !== "info" && matched.kind !== "not-found") {
+    const response = await handleRepository(request, env, deps, url, matched);
+    // Bytes that crossed the Worker: proxied downloads and uploads.
+    const length = matched.kind === "object" ? (request.method === "PUT" ? request.headers : response.headers).get("Content-Length") : null;
+    new AnalyticsEngineMetrics(env.METRICS).record({
+      repo: `${matched.owner}/${matched.name}`.toLowerCase(),
+      endpoint: matched.kind,
+      method: request.method,
+      status: response.status,
+      bytes: Number(length) || 0,
+    });
+    return response;
+  }
 
   switch (matched.kind) {
     case "landing":
@@ -85,7 +99,11 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
     case "not-found":
       return lfsError(404, "Not found");
   }
+}
 
+type RepositoryRoute = Exclude<ReturnType<typeof route>, { kind: "landing" | "info" | "not-found" }>;
+
+async function handleRepository(request: Request, env: Env, deps: Deps, url: URL, matched: RepositoryRoute): Promise<Response> {
   const repo: Repo = { owner: matched.owner, name: matched.name };
 
   let config: Config;

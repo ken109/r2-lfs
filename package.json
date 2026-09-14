@@ -79,6 +79,12 @@
       "R2_BUCKET_NAME": {
         "description": "Only for presigned URLs. Must be the same name as the bucket bound to `BUCKET`."
       },
+      "MAX_OBJECT_MB": {
+        "description": "Optional. The largest object this server accepts, in MB. Leave empty for no limit."
+      },
+      "QUOTA_GB": {
+        "description": "Optional. Storage each repository may use, in GB (the whole pool in the shared layout). Uploads past it fail with 507. Leave empty for no limit."
+      },
       "ACCESS_TEAM_DOMAIN": {
         "description": "Only for the admin UI at /_admin. Your Cloudflare Access team domain, e.g. `my-team.cloudflareaccess.com`. Leave empty to keep the admin UI closed."
       },

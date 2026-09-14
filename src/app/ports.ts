@@ -14,6 +14,21 @@ export interface ObjectStore {
   /** Writes an empty object, such as a membership marker. */
   mark(key: string): Promise<void>;
   delete(key: string): Promise<void>;
+  /** Total bytes stored under `prefix`; may be up to a minute old. */
+  usage(prefix: string): Promise<number>;
+}
+
+/** One request to the LFS API, for Workers Analytics Engine. */
+export interface MetricPoint {
+  repo: string;
+  endpoint: string;
+  method: string;
+  status: number;
+  bytes: number;
+}
+
+export interface Metrics {
+  record(point: MetricPoint): void;
 }
 
 /** Copies inside the bucket without streaming the bytes through the Worker. */

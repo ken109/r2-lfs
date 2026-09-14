@@ -84,6 +84,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
     observability: { enabled: true },
     durable_objects: { bindings: [{ name: "LOCKS", class_name: "RepoLocks" }] },
     migrations: [{ tag: "v1", new_sqlite_classes: ["RepoLocks"] }],
+    analytics_engine_datasets: [{ binding: "METRICS", dataset: "r2_lfs" }],
     r2_buckets: [{ binding: "BUCKET", bucket_name: opts.bucket }],
     vars: {
       ALLOWED_REPOS: opts.repos.join(","),
@@ -92,6 +93,8 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
       STORAGE_LAYOUT: opts.layout,
       TRANSFER_MODE: "auto",
       PROXY_MAX_UPLOAD_MB: "100",
+      MAX_OBJECT_MB: "",
+      QUOTA_GB: "",
       R2_BUCKET_NAME: opts.bucket,
       ACCESS_TEAM_DOMAIN: opts.access?.teamDomain ?? "",
       ACCESS_AUD: opts.access?.aud ?? "",

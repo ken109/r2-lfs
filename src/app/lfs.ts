@@ -1,5 +1,6 @@
 import { hasPermission, type Permission } from "../domain/access.ts";
 import {
+  applyQuota,
   decideUpload,
   isValidObject,
   type ObjectSpec,
@@ -11,7 +12,7 @@ import {
 } from "../domain/batch.ts";
 import type { Config } from "../domain/config.ts";
 import { objectKey, type Repo } from "../domain/repo.ts";
-import { type BatchObjectResult, type BatchResponse, incomingKey, memberKey } from "../shared/contract.ts";
+import { type BatchObjectResult, type BatchResponse, incomingKey, memberKey, repoPrefix } from "../shared/contract.ts";
 import type { ObjectCopier, ObjectStore, TransferLinks } from "./ports.ts";
 
 export type Result<T> = { ok: true; value: T } | ({ ok: false } & Rejection);
@@ -62,10 +63,20 @@ async function planObject(
   }
 
   const member = stored ? await isMember(ctx, object.oid) : false;
-  const transfer = { presigned: ctx.links.presigned, proxyMaxUploadBytes: ctx.config.proxyMaxUploadBytes };
+  const transfer = {
+    presigned: ctx.links.presigned,
+    proxyMaxUploadBytes: ctx.config.proxyMaxUploadBytes,
+    ...(ctx.config.maxObjectBytes === undefined ? {} : { maxObjectBytes: ctx.config.maxObjectBytes }),
+  };
   const decision = decideUpload(object, stored, transfer, member);
   if (decision.kind === "exists") return object;
   if (decision.kind === "too-large") return { ...object, error: { code: 422, message: tooLargeMessage(decision) } };
+  if (decision.kind === "over-limit") {
+    return {
+      ...object,
+      error: { code: 422, message: `Object is larger than ${Math.floor(decision.limitBytes / 1024 ** 2)} MB, this server's limit` },
+    };
+  }
   return {
     ...object,
     authenticated: true,
@@ -79,7 +90,18 @@ export async function batch(ctx: LfsContext, body: unknown): Promise<Result<Batc
   const required = requiredPermission(parsed.value.operation);
   if (!hasPermission(ctx.permission, required)) return denied(required);
 
-  const objects = await Promise.all(parsed.value.objects.map((o) => planObject(ctx, parsed.value.operation, o)));
+  let objects = await Promise.all(parsed.value.objects.map((o) => planObject(ctx, parsed.value.operation, o)));
+  if (parsed.value.operation === "upload" && ctx.config.quotaBytes !== undefined) {
+    const used = await ctx.store.usage(repoPrefix(ctx.config.storageLayout, ctx.repo.owner, ctx.repo.name));
+    const fits = applyQuota(
+      objects.map((o) => ({ size: o.size, upload: o.actions?.upload !== undefined })),
+      used,
+      ctx.config.quotaBytes,
+    );
+    objects = objects.map((o, i) =>
+      fits[i] ? o : { oid: o.oid, size: o.size, error: { code: 507, message: "The repository is over its storage quota on this server" } },
+    );
+  }
   return { ok: true, value: { transfer: "basic", objects, hash_algo: "sha256" } };
 }
 

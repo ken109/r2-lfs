@@ -62,20 +62,42 @@ export function requiredPermission(operation: Operation): Permission {
 /** R2 accepts at most 5 GiB minus 5 MiB in one request, and git-lfs's basic transfer uploads an object in one PUT. */
 export const R2_MAX_SINGLE_UPLOAD_BYTES = 5 * 1024 ** 3 - 5 * 1024 ** 2;
 
-export type UploadDecision = { kind: "exists" } | { kind: "too-large"; limitBytes: number; presigned: boolean } | { kind: "upload" };
+export type UploadDecision =
+  | { kind: "exists" }
+  | { kind: "too-large"; limitBytes: number; presigned: boolean }
+  | { kind: "over-limit"; limitBytes: number }
+  | { kind: "upload" };
 
 export function decideUpload(
   object: ObjectSpec,
   stored: { size: number } | null,
-  transfer: { presigned: boolean; proxyMaxUploadBytes: number },
+  transfer: { presigned: boolean; proxyMaxUploadBytes: number; maxObjectBytes?: number },
   /** Whether this repository has uploaded the stored object; always true outside the shared layout. */
   member = true,
 ): UploadDecision {
   // In the shared layout a repository proves it has the content by uploading it, before it may read it.
   if (stored && stored.size === object.size && member) return { kind: "exists" };
+  if (transfer.maxObjectBytes !== undefined && object.size > transfer.maxObjectBytes) {
+    return { kind: "over-limit", limitBytes: transfer.maxObjectBytes };
+  }
   const limitBytes = transfer.presigned ? R2_MAX_SINGLE_UPLOAD_BYTES : transfer.proxyMaxUploadBytes;
   if (object.size > limitBytes) return { kind: "too-large", limitBytes, presigned: transfer.presigned };
   return { kind: "upload" };
+}
+
+/** Keeps uploads in the batch that still fit the quota, in order; the rest get a 507. */
+export function applyQuota<T extends { size: number; upload: boolean }>(
+  objects: readonly T[],
+  usedBytes: number,
+  quotaBytes: number,
+): boolean[] {
+  let used = usedBytes;
+  return objects.map((object) => {
+    if (!object.upload) return true;
+    if (used + object.size > quotaBytes) return false;
+    used += object.size;
+    return true;
+  });
 }
 
 export function tooLargeMessage(decision: { limitBytes: number; presigned: boolean }): string {

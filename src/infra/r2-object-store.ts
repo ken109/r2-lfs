@@ -1,6 +1,13 @@
 import type { ObjectStore } from "../app/ports.ts";
 import { toHex } from "./crypto.ts";
 
+const USAGE_TTL_MS = 60_000;
+const usageCache = new Map<string, { bytes: number; expires: number }>();
+
+export function clearUsageCache(): void {
+  usageCache.clear();
+}
+
 export class R2ObjectStore implements ObjectStore {
   private readonly bucket: R2Bucket;
 
@@ -24,6 +31,20 @@ export class R2ObjectStore implements ObjectStore {
     const digest = new crypto.DigestStream("SHA-256");
     await object.body.pipeTo(digest);
     return toHex(await digest.digest);
+  }
+
+  async usage(prefix: string) {
+    const hit = usageCache.get(prefix);
+    if (hit && hit.expires > Date.now()) return hit.bytes;
+    let bytes = 0;
+    let cursor: string | undefined;
+    do {
+      const page = await this.bucket.list({ prefix, ...(cursor ? { cursor } : {}) });
+      for (const object of page.objects) bytes += object.size;
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    usageCache.set(prefix, { bytes, expires: Date.now() + USAGE_TTL_MS });
+    return bytes;
   }
 
   async mark(key: string) {

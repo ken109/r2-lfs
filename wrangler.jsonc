@@ -17,6 +17,8 @@
     "bindings": [{ "name": "LOCKS", "class_name": "RepoLocks" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RepoLocks"] }],
+  // Request metrics for the admin UI. Optional: remove it and the Worker records nothing.
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "r2_lfs" }],
   "r2_buckets": [
     {
       "binding": "BUCKET",
@@ -36,6 +38,9 @@
     "TRANSFER_MODE": "auto",
     // Request body limit of your Workers plan (Free/Pro: 100, Business: 200, Enterprise: 500).
     "PROXY_MAX_UPLOAD_MB": "100",
+    // Optional limits: the largest object in MB, and storage per repository (whole pool when shared) in GB.
+    "MAX_OBJECT_MB": "",
+    "QUOTA_GB": "",
     // Presigned URLs only. R2_BUCKET_NAME must match bucket_name above.
     "R2_ACCOUNT_ID": "",
     "R2_BUCKET_NAME": "r2-lfs",

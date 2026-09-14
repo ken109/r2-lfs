@@ -11,6 +11,10 @@ export interface ConfigVars {
   STORAGE_LAYOUT?: string;
   TRANSFER_MODE?: string;
   PROXY_MAX_UPLOAD_MB?: string;
+  /** Largest object accepted, in MB; empty for no limit. */
+  MAX_OBJECT_MB?: string;
+  /** Storage per repository (or for the whole shared pool), in GB; empty for no limit. */
+  QUOTA_GB?: string;
   R2_ACCOUNT_ID?: string;
   R2_BUCKET_NAME?: string;
   R2_ACCESS_KEY_ID?: string;
@@ -72,6 +76,8 @@ export interface Config {
   /** Hash presigned uploads before they count as stored. Proxy uploads are always checked by R2. */
   verifyUploads: boolean;
   proxyMaxUploadBytes: number;
+  maxObjectBytes: number | undefined;
+  quotaBytes: number | undefined;
   tokens: readonly StaticToken[];
   /** Settings that work but should change, such as deprecated variables. */
   warnings: readonly string[];
@@ -177,6 +183,16 @@ export function parseConfig(vars: ConfigVars): Config {
   const maxMb = Number(value(vars.PROXY_MAX_UPLOAD_MB) ?? "100");
   if (!Number.isFinite(maxMb) || maxMb <= 0) problems.push("PROXY_MAX_UPLOAD_MB must be a positive number");
 
+  const limit = (name: string, raw: string | undefined, unit: number) => {
+    const text = value(raw);
+    if (text === undefined) return undefined;
+    const n = Number(text);
+    if (!Number.isFinite(n) || n <= 0) problems.push(`${name} must be a positive number`);
+    return Math.floor(n * unit);
+  };
+  const maxObjectBytes = limit("MAX_OBJECT_MB", vars.MAX_OBJECT_MB, 1024 ** 2);
+  const quotaBytes = limit("QUOTA_GB", vars.QUOTA_GB, 1024 ** 3);
+
   const creds = {
     R2_ACCOUNT_ID: value(vars.R2_ACCOUNT_ID),
     R2_BUCKET_NAME: value(vars.R2_BUCKET_NAME),
@@ -225,6 +241,8 @@ export function parseConfig(vars: ConfigVars): Config {
     presign,
     verifyUploads,
     proxyMaxUploadBytes: Math.floor(maxMb * 1024 * 1024),
+    maxObjectBytes,
+    quotaBytes,
     tokens,
     warnings,
     access: teamDomain && aud ? { teamDomain: teamDomain.toLowerCase(), aud } : undefined,

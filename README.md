@@ -176,6 +176,8 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `STORAGE_LAYOUT`        | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                                                                                                             |
 | `TRANSFER_MODE`         | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                                                                                                 |
 | `PROXY_MAX_UPLOAD_MB`   | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                                                                                                          |
+| `MAX_OBJECT_MB`         | var    |            | The largest object accepted, in MB.                                                                                                                                                                                                             |
+| `QUOTA_GB`              | var    |            | Storage each repository may use (the whole pool in the `shared` layout), in GB; uploads past it fail with 507.                                                                                                                                  |
 | `R2_ACCOUNT_ID`         | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                                                                                                     |
 | `R2_BUCKET_NAME`        | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                                                                                                        |
 | `R2_ACCESS_KEY_ID`      | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                                                                                                         |
@@ -186,6 +188,9 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `ACTIONS_OIDC_AUDIENCE` | var    | `r2-lfs`   | The audience workflows request that token for.                                                                                                                                                                                                  |
 | `VERIFY_UPLOADS`        | var    | `on`       | Presigned mode: hash each upload before it counts as stored. `off` checks only the size, for the Free plan.                                                                                                                                     |
 | `AUTH_TOKENS`           | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
+
+The Worker also writes one Workers Analytics Engine data point per request to the `r2_lfs` dataset:
+repository, endpoint, method, status and bytes proxied. Remove the `METRICS` binding to turn it off.
 
 If a setting is invalid, LFS requests fail with a message listing every problem, and `r2-lfs doctor` shows it too.
 

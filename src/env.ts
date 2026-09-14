@@ -4,4 +4,6 @@ import type { RepoLocks } from "./infra/repo-locks.ts";
 export interface Env extends ConfigVars {
   BUCKET: R2Bucket;
   LOCKS: DurableObjectNamespace<RepoLocks>;
+  /** Optional: request metrics in Workers Analytics Engine. */
+  METRICS?: AnalyticsEngineDataset;
 }

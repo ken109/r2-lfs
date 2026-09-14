@@ -63,6 +63,7 @@ describe("contract", () => {
       compatibility_flags: string[];
       durable_objects: unknown;
       migrations: unknown;
+      analytics_engine_datasets: unknown;
       assets: { run_worker_first: string[] };
       vars: Record<string, string>;
     };
@@ -80,6 +81,7 @@ describe("contract", () => {
     expect(config.compatibility_flags).toEqual(jsonc.compatibility_flags);
     expect(config.durable_objects).toEqual(jsonc.durable_objects);
     expect(config.migrations).toEqual(jsonc.migrations);
+    expect(config.analytics_engine_datasets).toEqual(jsonc.analytics_engine_datasets);
     expect((config.assets as { run_worker_first: string[] }).run_worker_first).toEqual(jsonc.assets.run_worker_first);
     const { R2_ACCOUNT_ID: _account, ...deployedVars } = jsonc.vars;
     expect(config.vars).toEqual(deployedVars);
