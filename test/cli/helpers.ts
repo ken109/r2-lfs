@@ -49,6 +49,8 @@ export class MemoryBucket implements Bucket {
   readonly objects = new Map<string, { body: string; size: number; lastModified: Date; storageClass: string; etag: string }>();
   /** Keys under these prefixes refuse deletion, like a bucket lock rule. */
   readonly locked: string[] = [];
+  /** Prefixes whose deletes fail with a 403 that is not a bucket lock. */
+  readonly forbidden: string[] = [];
   /** Keys whose deletion goes through but reports an error, like a response lost to a timeout. */
   readonly deletesThatTimeOut = new Set<string>();
   private etagCounter = 0;
@@ -87,7 +89,8 @@ export class MemoryBucket implements Bucket {
   }
 
   async delete(key: string): Promise<WriteResult> {
-    if (this.locked.some((prefix) => key.startsWith(prefix))) return { ok: false, status: 403, message: "locked" };
+    if (this.locked.some((prefix) => key.startsWith(prefix))) return { ok: false, status: 403, message: "locked", locked: true };
+    if (this.forbidden.some((prefix) => key.startsWith(prefix))) return { ok: false, status: 403, message: "AccessDenied" };
     this.objects.delete(key);
     if (this.deletesThatTimeOut.has(key)) return { ok: false, status: 504, message: "timeout" };
     return { ok: true, status: 204, message: "" };
@@ -96,6 +99,9 @@ export class MemoryBucket implements Bucket {
   async copy(source: string, target: string, storageClass?: "STANDARD" | "STANDARD_IA"): Promise<WriteResult> {
     const object = this.objects.get(source);
     if (!object) return { ok: false, status: 404, message: "NoSuchKey" };
+    if (this.objects.has(target) && this.locked.some((prefix) => target.startsWith(prefix))) {
+      return { ok: false, status: 403, message: "locked", locked: true };
+    }
     this.objects.set(target, {
       ...object,
       storageClass: storageClass ?? object.storageClass,

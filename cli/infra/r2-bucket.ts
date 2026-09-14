@@ -113,8 +113,15 @@ export class R2Bucket implements Bucket {
     const text = await res.text();
     // S3 can report a failed copy inside a 200 response.
     const failed = !res.ok || /<Error>/.test(text);
-    const message = /<Message>([\s\S]*?)<\/Message>/.exec(text)?.[1] ?? /<Code>([\s\S]*?)<\/Code>/.exec(text)?.[1] ?? "";
-    return { ok: !failed, status: res.status, message: decodeXml(message) };
+    const code = /<Code>([\s\S]*?)<\/Code>/.exec(text)?.[1];
+    const message = /<Message>([\s\S]*?)<\/Message>/.exec(text)?.[1] ?? code ?? "";
+    return {
+      ok: !failed,
+      status: res.status,
+      message: decodeXml(message),
+      // https://developers.cloudflare.com/r2/api/error-codes/ (10069)
+      ...(failed && code === "ObjectLockedByBucketPolicy" ? { locked: true } : {}),
+    };
   }
 
   async list(prefix: string): Promise<StoredObject[]> {

@@ -110,6 +110,8 @@ export interface WriteResult {
   ok: boolean;
   status: number;
   message: string;
+  /** Refused by a bucket lock rule, which proves nothing changed. */
+  locked?: boolean;
 }
 
 export interface Bucket {

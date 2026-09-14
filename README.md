@@ -111,6 +111,10 @@ removing a remote, delete its refs with `git for-each-ref --format='delete %(ref
   not been pushed yet are safe
 - otherwise **move it to the trash**, or to R2 Infrequent Access storage if a rule says so
 
+An object a bucket lock rule still protects is reported as locked rather than as a failure, and a later
+gc collects it once the lock expires. gc cannot read lock rules with R2 API credentials, so it learns
+this from R2 refusing the delete; the copy it made in the trash is removed again.
+
 Right before applying, gc fetches again and leaves alone anything that commits pushed in the meantime
 need. Pushing content the bucket already has, such as a revert to an old version, does not upload it
 again and so does not reset its age; if such a push races with gc, `r2-lfs restore` brings the object back.

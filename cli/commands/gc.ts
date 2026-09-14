@@ -120,13 +120,14 @@ export default defineCommand({
     if (args.json) report(outcomes);
     const failed = outcomes.filter((o) => !o.ok);
     if (failed.length > 0) {
-      term.warn(
-        `${failed.length} change(s) were refused; a bucket lock rule may still protect them:\n${failed.map((f) => `${f.key}: ${f.ok ? "" : f.message}`).join("\n")}`,
-      );
+      term.warn(`${failed.length} change(s) failed:\n${failed.map((f) => `${f.key}: ${f.ok ? "" : f.message}`).join("\n")}`);
     }
+    const locked = outcomes.filter((o) => o.action === "locked").length;
+    if (locked > 0) term.info(`${locked} object(s) are still protected by a bucket lock rule; a later gc collects them once it expires.`);
     if (outcomes.some((o) => o.ok && o.action === "trashed"))
       term.info("`r2-lfs restore` brings trashed objects back until the trash rule expires them.");
-    term.outro(failed.length ? red(`${outcomes.length - failed.length} applied, ${failed.length} refused`) : `${outcomes.length} applied`);
+    const applied = outcomes.length - failed.length - locked;
+    term.outro(failed.length ? red(`${applied} applied, ${failed.length} refused`) : `${applied} applied`);
     if (failed.length) process.exitCode = 2;
   },
 });

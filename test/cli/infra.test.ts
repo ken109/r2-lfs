@@ -239,7 +239,13 @@ describe("R2Bucket against an S3-compatible server", () => {
           res.end();
         } else if (req.method === "DELETE") {
           if (key.startsWith("locked/")) {
-            res.writeHead(403).end("<Error><Code>AccessDenied</Code><Message>Object is locked</Message></Error>");
+            res
+              .writeHead(403)
+              .end("<Error><Code>ObjectLockedByBucketPolicy</Code><Message>Object is protected by a bucket lock rule</Message></Error>");
+            return;
+          }
+          if (key.startsWith("denied/")) {
+            res.writeHead(403).end("<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>");
             return;
           }
           objects.delete(key);
@@ -270,7 +276,13 @@ describe("R2Bucket against an S3-compatible server", () => {
     expect(requests.at(-1)?.headers["x-amz-metadata-directive"]).toBe("REPLACE");
     expect((await bucket.list("p/a"))[0]?.storageClass).toBe("STANDARD_IA");
     expect(await bucket.copy("missing", "p/z")).toMatchObject({ ok: false, status: 404, message: "missing" });
-    expect(await bucket.delete("locked/y")).toMatchObject({ ok: false, status: 403, message: "Object is locked" });
+    expect(await bucket.delete("locked/y")).toEqual({
+      ok: false,
+      status: 403,
+      message: "Object is protected by a bucket lock rule",
+      locked: true,
+    });
+    expect(await bucket.delete("denied/y")).toEqual({ ok: false, status: 403, message: "Access Denied" });
     expect((await bucket.delete("q/x")).ok).toBe(true);
   });
 

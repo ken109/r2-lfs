@@ -126,6 +126,8 @@ export async function recheckPlan(deps: GcDeps, plan: GcPlan, chosen: Planned[],
 
 export type Outcome =
   | { key: string; action: "trashed" | "deleted" | "tiered"; ok: true }
+  /** A bucket lock rule still protects the object; a later gc collects it. */
+  | { key: string; action: "locked"; ok: true }
   | { key: string; action: "trash" | "delete" | "tier"; ok: false; message: string };
 
 /** Copies to the trash before deleting, so a refused delete never loses data. */
@@ -136,6 +138,10 @@ export async function trashObject(bucket: Bucket, object: StoredObject): Promise
   if (!copied.ok) return { key, action: "trash", ok: false, message: `copy failed: ${copied.status} ${copied.message}` };
   const deleted = await bucket.delete(key);
   if (deleted.ok) return { key, action: "trashed", ok: true };
+  if (deleted.locked) {
+    await bucket.delete(target);
+    return { key, action: "locked", ok: true };
+  }
 
   // An error response does not prove nothing was deleted, as with a timeout, so drop the copy only when the object is still there.
   const refused = `delete refused: ${deleted.status} ${deleted.message}`;
@@ -174,7 +180,11 @@ export async function applyGc(
     if (item.decision.kind === "tier") {
       const result = await bucket.copy(key, key, "STANDARD_IA");
       outcomes.push(
-        result.ok ? { key, action: "tiered", ok: true } : { key, action: "tier", ok: false, message: `${result.status} ${result.message}` },
+        result.ok
+          ? { key, action: "tiered", ok: true }
+          : result.locked
+            ? { key, action: "locked", ok: true }
+            : { key, action: "tier", ok: false, message: `${result.status} ${result.message}` },
       );
     } else if (opts.trash) {
       outcomes.push(await trashObject(bucket, item.object));
@@ -183,7 +193,9 @@ export async function applyGc(
       outcomes.push(
         result.ok
           ? { key, action: "deleted", ok: true }
-          : { key, action: "delete", ok: false, message: `${result.status} ${result.message}` },
+          : result.locked
+            ? { key, action: "locked", ok: true }
+            : { key, action: "delete", ok: false, message: `${result.status} ${result.message}` },
       );
     }
     bar.advance(1, item.oid?.slice(0, 10));

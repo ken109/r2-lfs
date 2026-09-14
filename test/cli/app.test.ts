@@ -160,7 +160,7 @@ describe("gc", () => {
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(false);
   });
 
-  it("keeps the object and drops the trash copy when a lock refuses the delete", async () => {
+  it("reports objects a bucket lock still protects as locked, dropping the trash copy", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     s.bucket.locked.push(s.prefix);
@@ -170,7 +170,7 @@ describe("gc", () => {
       { fetch: false, mode: "dry-run", keepDays: "90" },
     );
     const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: true });
-    expect(outcomes.every((o) => !o.ok)).toBe(true);
+    expect(outcomes).toEqual(plan.candidates.map((p) => ({ key: p.object.key, action: "locked", ok: true })));
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
     expect([...s.bucket.objects.keys()].some((k) => k.startsWith("_trash/"))).toBe(false);
   });
@@ -190,11 +190,17 @@ describe("gc", () => {
       [s.orphan, "delete"],
     ]);
 
-    s.bucket.locked.push(`${s.prefix}${s.orphan}`);
+    s.bucket.forbidden.push(`${s.prefix}${s.orphan}`);
     const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: false });
     expect(outcomes).toEqual([
       { key: `${s.prefix}${s.oldOid}`, action: "tiered", ok: true },
-      { key: `${s.prefix}${s.orphan}`, action: "delete", ok: false, message: "403 locked" },
+      { key: `${s.prefix}${s.orphan}`, action: "delete", ok: false, message: "403 AccessDenied" },
+    ]);
+    s.bucket.forbidden.length = 0;
+    s.bucket.locked.push(s.prefix);
+    expect(await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: false })).toEqual([
+      { key: `${s.prefix}${s.oldOid}`, action: "locked", ok: true },
+      { key: `${s.prefix}${s.orphan}`, action: "locked", ok: true },
     ]);
     expect(s.bucket.objects.get(`${s.prefix}${s.oldOid}`)?.storageClass).toBe("STANDARD_IA");
 
@@ -215,7 +221,7 @@ describe("gc", () => {
     expect(bucket.objects.has("_trash/acme/assets/timeout")).toBe(true);
 
     bucket.seed("acme/assets/unknown");
-    bucket.locked.push("acme/assets/unknown");
+    bucket.forbidden.push("acme/assets/unknown");
     bucket.exists = async () => {
       throw new Error("network down");
     };
