@@ -4,7 +4,7 @@ import { UsageError } from "../../cli/domain/errors.ts";
 import { buildHistory } from "../../cli/domain/history.ts";
 import { combinePlans, type Facts, planObjects } from "../../cli/domain/plan.ts";
 import { parsePointer } from "../../cli/domain/pointer.ts";
-import { effectiveFor, globMatch, keepDayWindows, parsePolicy } from "../../cli/domain/policy.ts";
+import { checkKeepVersions, effectiveFor, globMatch, keepDayWindows, parsePolicy } from "../../cli/domain/policy.ts";
 import { expandTracks } from "../../cli/domain/presets.ts";
 import { githubLfsEndpoint, parseLfsUrl, parseRemote } from "../../cli/domain/remote.ts";
 import { END_BYTES, entryBytes, encodeHeader, partNames, paxRecordsFor, splitParts, type TarEntry } from "../../cli/domain/tar.ts";
@@ -89,7 +89,13 @@ describe("remote parsing", () => {
 
 describe("policy", () => {
   it("uses defaults without a file", () => {
-    expect(parsePolicy(undefined)).toMatchObject({ keepDays: 90, keepVersions: 0, minAgeDays: 30, oldVersions: "delete", rules: [] });
+    expect(parsePolicy(undefined)).toMatchObject({
+      keepDays: undefined,
+      keepVersions: 0,
+      minAgeDays: 30,
+      oldVersions: "delete",
+      rules: [],
+    });
   });
 
   it("parses rules and reports every problem at once", () => {
@@ -169,8 +175,17 @@ describe("policy", () => {
   it("applies the first matching rule and scans each keep_days window once", () => {
     const policy = parsePolicy(`[[rule]]\npath = "raw/**"\nkeep_days = 7\n[[rule]]\npath = "**"\nkeep_days = 7\n`);
     expect(effectiveFor(policy, "raw/a.exr")).toMatchObject({ keepDays: 7, rule: "raw/**" });
-    expect(effectiveFor(policy, undefined)).toMatchObject({ keepDays: 90, rule: undefined });
-    expect(keepDayWindows(policy)).toEqual([7, 90]);
+    expect(effectiveFor(policy, undefined)).toMatchObject({ keepDays: undefined, rule: undefined });
+    expect(keepDayWindows(policy)).toEqual([7]);
+    expect(keepDayWindows(parsePolicy('keep_days = 90\n[[rule]]\npath = "raw/**"\nkeep_days = 7\n'))).toEqual([7, 90]);
+    expect(keepDayWindows(parsePolicy(undefined))).toEqual([]);
+  });
+
+  it("refuses keep_versions without keep_days, where it would do nothing", () => {
+    expect(() => checkKeepVersions(parsePolicy("keep_versions = 2\n"))).toThrow(/only applies together with keep_days/);
+    expect(() => checkKeepVersions(parsePolicy('[[rule]]\npath = "tex/**"\nkeep_versions = 2\n'))).toThrow(UsageError);
+    expect(() => checkKeepVersions(parsePolicy('keep_versions = 2\n[[rule]]\npath = "tex/**"\nkeep_days = 7\n'))).not.toThrow();
+    expect(() => checkKeepVersions(parsePolicy("keep_days = 30\nkeep_versions = 2\n"))).not.toThrow();
   });
 });
 
@@ -183,18 +198,33 @@ describe("planObjects", () => {
     storageClass,
   });
 
-  it("keeps tips and recent objects, spares young ones, collects the rest", () => {
+  it("by default keeps every object a commit uses and collects only the rest", () => {
+    const plan = planObjects(
+      [stored(`r/${A}`, 400), stored(`r/${B}`, 400), stored(`r/${C}`, 5), stored("r/README", 400)],
+      facts({ paths: new Map([[A, new Set(["old/hero.blend"])]]) }),
+      parsePolicy(undefined),
+      now,
+    );
+    expect(plan.map((p) => p.decision)).toEqual([
+      { kind: "keep", reason: "old/hero.blend: used by a commit" },
+      { kind: "delete" },
+      { kind: "young" },
+      { kind: "foreign" },
+    ]);
+  });
+
+  it("with keep_days, keeps tips and recent objects, spares young ones, collects the rest", () => {
     const plan = planObjects(
       [stored(`r/${A}`, 400), stored(`r/${B}`, 400), stored(`r/${C}`, 5), stored(`r/${D}`, 400), stored("r/README", 400)],
-      facts({ tips: new Set([A]), windows: new Map([[90, new Set([B])]]) }),
-      parsePolicy(undefined),
+      facts({ tips: new Set([A]), windows: new Map([[90, new Set([B])]]), paths: new Map([[D, new Set(["old.blend"])]]) }),
+      parsePolicy("keep_days = 90\n"),
       now,
     );
     expect(plan.map((p) => p.decision.kind)).toEqual(["keep", "keep", "young", "delete", "foreign"]);
   });
 
   it("keeps the newest N versions of a path and tiers instead of deleting when a rule says so", () => {
-    const policy = parsePolicy(`[[rule]]\npath = "tex/**"\nkeep_versions = 1\nold_versions = "infrequent-access"\n`);
+    const policy = parsePolicy(`keep_days = 90\n[[rule]]\npath = "tex/**"\nkeep_versions = 1\nold_versions = "infrequent-access"\n`);
     const plan = planObjects(
       [stored(`r/${A}`, 400), stored(`r/${B}`, 400), stored(`r/${C}`, 400, "STANDARD_IA")],
       facts({
@@ -216,14 +246,14 @@ describe("planObjects", () => {
   });
 
   it("never collects a path covered by keep = all", () => {
-    const policy = parsePolicy(`[[rule]]\npath = "final/**"\nkeep = "all"\n`);
+    const policy = parsePolicy(`keep_days = 90\n[[rule]]\npath = "final/**"\nkeep = "all"\n`);
     const [planned] = planObjects([stored(`r/${A}`, 400)], facts({ paths: new Map([[A, new Set(["final/hero.blend"])]]) }), policy, now);
     expect(planned?.decision.kind).toBe("keep");
   });
 
   it("keeps an object when any of its paths keeps it, and tiers when any path asks for it", () => {
     const policy = parsePolicy(
-      `[[rule]]\npath = "final/**"\nkeep = "all"\n[[rule]]\npath = "cold/**"\nold_versions = "infrequent-access"\n`,
+      `keep_days = 90\n[[rule]]\npath = "final/**"\nkeep = "all"\n[[rule]]\npath = "cold/**"\nold_versions = "infrequent-access"\n`,
     );
     const plan = planObjects(
       [stored(`r/${A}`, 400), stored(`r/${B}`, 400)],
@@ -244,8 +274,8 @@ describe("planObjects", () => {
 
   it("combines plans from several repositories, letting the most lenient decision win", () => {
     const objects = [stored(`r/${A}`, 400), stored(`r/${B}`, 400), stored(`r/${C}`, 400), stored(`r/${D}`, 400)];
-    const policy = parsePolicy(undefined);
-    const tiering = parsePolicy('old_versions = "infrequent-access"\n');
+    const policy = parsePolicy("keep_days = 90\n");
+    const tiering = parsePolicy('keep_days = 90\nold_versions = "infrequent-access"\n');
     const first = planObjects(objects, facts({ paths: new Map([[A, new Set(["a.png"])]]) }), policy, now);
     const second = planObjects(
       objects,

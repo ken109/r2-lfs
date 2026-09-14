@@ -10,14 +10,22 @@ import { commaList, jsonArg, layoutArg } from "./shared.ts";
 const size = (items: Planned[]) => formatBytes(items.reduce((s, p) => s + p.object.size, 0));
 
 export default defineCommand({
-  meta: { name: "gc", description: "Move LFS objects that no recent commit needs to the trash (dry run unless --apply)" },
+  meta: { name: "gc", description: "Move LFS objects that no commit uses to the trash (dry run unless --apply)" },
   args: {
     apply: { type: "boolean", description: "Make the changes; without it gc only reports" },
     interactive: { type: "boolean", alias: "i", description: "Pick which candidates to act on" },
     trash: { type: "boolean", default: true, negativeDescription: "Delete immediately instead of moving to the trash" },
     fetch: { type: "boolean", default: true, negativeDescription: "Skip git fetch before reading refs" },
-    "keep-days": { type: "string", description: "Override keep_days from .r2-lfs.toml (default 90)", valueHint: "n" },
-    "keep-versions": { type: "string", description: "Override keep_versions (default 0)", valueHint: "n" },
+    "keep-days": {
+      type: "string",
+      description: "Also collect old versions no commit from the last n days uses (overrides keep_days)",
+      valueHint: "n",
+    },
+    "keep-versions": {
+      type: "string",
+      description: "With keep_days, keep the newest n versions of each file (overrides keep_versions)",
+      valueHint: "n",
+    },
     "min-age-days": { type: "string", description: "Override min_age_days (default 30)", valueHint: "n" },
     repos: { type: "string", description: "Shared layout: other clones that use the bucket, comma-separated", valueHint: "path,path" },
     ...layoutArg,

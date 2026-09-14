@@ -20,7 +20,7 @@ such as `.blend` files, textures, audio and game builds.
 r2-lfs keeps the same Git workflow and gives you control over what is kept:
 
 - **Cheap to run.** R2 costs $0.015/GB-month with 10 GB free, and has no egress fees ([pricing](https://developers.cloudflare.com/r2/pricing/)).
-- **Old versions are yours to delete.** `r2-lfs gc` removes objects that no recent commit needs, following rules you write.
+- **Old versions are yours to delete.** `r2-lfs gc` removes objects no commit uses, and old versions too if you write rules for it.
 - **Deletion is recoverable.** gc moves objects to a trash that expires on its own; `r2-lfs restore` brings them back.
 - **Recent uploads can be made undeletable**, even by you, with an R2 [bucket lock](https://developers.cloudflare.com/r2/buckets/bucket-locks/).
 - **One deployment serves many repositories**, authenticated with GitHub permissions or your own tokens.
@@ -98,12 +98,15 @@ Commands that talk to the server use the password git's credential helpers have 
 ## Cleaning up old versions
 
 `r2-lfs gc` fetches every branch and tag, reads the history of all of them, lists the bucket,
-and decides for each object. Remote tags are fetched to `refs/r2-lfs/tags/<remote>/`, so they never
+and decides for each object. Like `git gc`, by default it only removes objects that no commit uses:
+leftovers of deleted branches, rewritten history and pushes that never landed. Every commit stays
+checkoutable. Remote tags are fetched to `refs/r2-lfs/tags/<remote>/`, so they never
 overwrite or prune your own tags; `migrate` does the same. Objects those refs use are kept, so after
 removing a remote, delete its refs with `git for-each-ref --format='delete %(refname)' refs/r2-lfs/tags/<remote>/ | git update-ref --stdin`.
 
-- **keep** it if it is in the tree of any branch or tag tip, used by a commit from the last
-  `keep_days` days, one of a file's newest `keep_versions` versions, or under a path marked `keep = "all"`
+- **keep** it if any commit uses it; with `keep_days` set, only if it is in the tree of any branch or tag tip,
+  used by a commit from the last `keep_days` days, one of a file's newest `keep_versions` versions,
+  or under a path marked `keep = "all"`
 - **leave it alone** if it was uploaded less than `min_age_days` ago, so objects whose commits have
   not been pushed yet are safe
 - otherwise **move it to the trash**, or to R2 Infrequent Access storage if a rule says so
@@ -116,14 +119,18 @@ It is a dry run unless you pass `--apply`. It refuses shallow and single-branch 
 commits would make objects look unreferenced, and it stops if `git fetch` fails while applying. Tune it with a `.r2-lfs.toml` at the repository root:
 
 ```toml
-keep_days = 90          # keep objects used by commits from the last 90 days
-keep_versions = 0       # also keep the newest N versions of every file
 min_age_days = 30       # never touch objects uploaded more recently than this
-old_versions = "delete" # or "infrequent-access" to keep old versions on cheaper storage
+old_versions = "delete" # or "infrequent-access" to keep what gc removes on cheaper storage
+
+# Removing old versions is opt-in. Storage on R2 is cheap, and a commit whose objects
+# were removed can no longer be checked out, so set these only once the bucket's size calls for it.
+keep_days = 90          # keep old versions used by commits from the last 90 days
+keep_versions = 0       # also keep the newest N versions of every file
 
 # Rules are matched in order, like .gitattributes patterns. The first match wins.
 [[rule]]
-path = "textures/**"
+path = "renders/**"
+keep_days = 30          # a rule can set keep_days for its paths alone
 keep_versions = 3
 
 [[rule]]
@@ -134,8 +141,9 @@ keep = "all"
 Trashed objects live under `_trash/` until the lifecycle rule created by `setup` expires them.
 Use `r2-lfs restore --list` to see them and `r2-lfs restore <oid>` to bring one back.
 
-Checking out a commit older than your policy keeps will fail for files whose objects were collected.
-That is the trade-off gc makes; `r2-lfs archive <tag>` keeps full snapshots of releases you care about.
+With `keep_days` set, checking out a commit older than your policy keeps fails for files whose objects were
+collected. Tags keep their whole tree, and `r2-lfs archive <tag>` publishes a full snapshot as a GitHub release;
+`r2-lfs usage` shows what old versions cost before you decide.
 
 ### Running gc in CI
 

@@ -3,7 +3,7 @@ import { UsageError } from "../domain/errors.ts";
 import { addPath, buildHistory, type History } from "../domain/history.ts";
 import type { ObjectRef } from "../domain/objects.ts";
 import type { Facts } from "../domain/plan.ts";
-import { keepDayWindows, POLICY_FILE, type Policy, parsePolicy } from "../domain/policy.ts";
+import { checkKeepVersions, keepDayWindows, POLICY_FILE, type Policy, parsePolicy } from "../domain/policy.ts";
 import type { Bucket, GitRepository, LfsClient } from "./ports.ts";
 
 export async function requireServerInfo(client: LfsClient): Promise<ServerInfo> {
@@ -64,6 +64,7 @@ export function loadPolicy(repo: GitRepository, overrides: PolicyOverrides = {})
   policy.keepDays = readDays("keep-days", overrides.keepDays) ?? policy.keepDays;
   policy.keepVersions = readDays("keep-versions", overrides.keepVersions) ?? policy.keepVersions;
   policy.minAgeDays = readDays("min-age-days", overrides.minAgeDays) ?? policy.minAgeDays;
+  checkKeepVersions(policy);
   return policy;
 }
 
@@ -80,7 +81,7 @@ export function collectFacts(repo: GitRepository, policy: Policy, now: Date): Fa
   const windows = new Map<number, Set<string>>();
   const days = keepDayWindows(policy);
   const nowUnix = Math.floor(now.getTime() / 1000);
-  const recent = repo.commitsSince(nowUnix - Math.max(...days) * 86_400);
+  const recent = days.length > 0 ? repo.commitsSince(nowUnix - Math.max(...days) * 86_400) : [];
   for (const d of days) {
     const since = nowUnix - d * 86_400;
     const objects = repo.pointersIn(recent.filter((c) => c.time >= since).map((c) => c.sha));

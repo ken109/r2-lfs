@@ -93,7 +93,8 @@ Deleting needs R2 API credentials, which only the CLI uses, and bucket lock rule
 
 **gc judges from git, not from access logs.** git-lfs does not download objects it already has, so
 "not downloaded for a long time" would also match the current version of a file nobody changed.
-gc instead keeps what branch and tag tips, recent commits and the policy reference.
+gc instead keeps what any commit uses. Removing old versions is opt-in through `keep_days`, because R2
+storage is cheap and a commit whose objects are gone can no longer be checked out.
 
 **Copy, then delete.** R2 has no object versioning. gc copies an object to `_trash/` before deleting
 it. If the delete fails, it removes the copy only after checking that the object is still there, so a

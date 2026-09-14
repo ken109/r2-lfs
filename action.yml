@@ -1,5 +1,5 @@
 name: r2-lfs gc
-description: Move Git LFS objects that no recent commit needs to the trash of an r2-lfs bucket
+description: Move Git LFS objects that no commit uses to the trash of an r2-lfs bucket
 author: Kensuke Kubo
 branding:
   icon: trash-2

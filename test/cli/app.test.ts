@@ -118,7 +118,7 @@ describe("gc", () => {
     );
     const reporter = new SilentReporter();
     const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, bucket: s.bucket, reporter };
-    const opts = { fetch: true, mode: gcMode({ apply: true }) };
+    const opts = { fetch: true, mode: gcMode({ apply: true }), keepDays: "90" };
     const plan = await planGc(deps, opts);
 
     s.repo.writeLfs("hero.blend", "hero v1");
@@ -132,11 +132,19 @@ describe("gc", () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     const reporter = new SilentReporter();
-    const plan = await planGc(
-      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
-      { fetch: false, mode: "dry-run" },
-    );
+    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter };
 
+    // By default only objects no commit uses are collected, so every commit stays checkoutable.
+    const byDefault = await planGc(deps, { fetch: false, mode: "dry-run" });
+    expect(Object.fromEntries(byDefault.planned.map((p) => [p.oid, p.decision]))).toEqual({
+      [s.oldOid]: { kind: "keep", reason: "hero.blend: used by a commit" },
+      [s.newOid]: { kind: "keep", reason: "in a branch or tag tip" },
+      [s.texOid]: { kind: "keep", reason: "in a branch or tag tip" },
+      [s.orphan]: { kind: "delete" },
+      [s.youngOrphan]: { kind: "young" },
+    });
+
+    const plan = await planGc(deps, { fetch: false, mode: "dry-run", keepDays: "90" });
     const decisions = Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision.kind]));
     expect(decisions).toEqual({
       [s.oldOid]: "delete",
@@ -159,7 +167,7 @@ describe("gc", () => {
     const reporter = new SilentReporter();
     const plan = await planGc(
       { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
-      { fetch: false, mode: "dry-run" },
+      { fetch: false, mode: "dry-run", keepDays: "90" },
     );
     const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: true });
     expect(outcomes.every((o) => !o.ok)).toBe(true);
@@ -170,7 +178,7 @@ describe("gc", () => {
   it("deletes without the trash, tiers, and reports what a lock refuses", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
-    s.repo.write(".r2-lfs.toml", '[[rule]]\npath = "*.blend"\nold_versions = "infrequent-access"\n');
+    s.repo.write(".r2-lfs.toml", 'keep_days = 90\n[[rule]]\npath = "*.blend"\nold_versions = "infrequent-access"\n');
     s.repo.commit("policy");
     const reporter = new SilentReporter();
     const plan = await planGc(
@@ -228,7 +236,7 @@ describe("gc", () => {
     );
     const reporter = new SilentReporter();
     const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, bucket: s.bucket, reporter };
-    const opts = { fetch: true, mode: "apply" as const };
+    const opts = { fetch: true, mode: "apply" as const, keepDays: "90" };
     const plan = await planGc(deps, opts);
     expect(plan.candidates.map((p) => p.oid)).toEqual([s.oldOid, s.orphan]);
     expect(await recheckPlan(deps, plan, plan.candidates, opts)).toEqual(plan.candidates);
@@ -275,7 +283,7 @@ describe("gc", () => {
   it("honours .r2-lfs.toml and command-line overrides", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
-    s.repo.write(".r2-lfs.toml", '[[rule]]\npath = "*.blend"\nkeep_versions = 2\n');
+    s.repo.write(".r2-lfs.toml", 'keep_days = 90\n[[rule]]\npath = "*.blend"\nkeep_versions = 2\n');
     s.repo.commit("policy");
     const reporter = new SilentReporter();
     const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter };
@@ -290,6 +298,14 @@ describe("gc", () => {
         /--min-age-days must be a non-negative integer/,
       );
     }
+
+    s.repo.write(".r2-lfs.toml", "keep_versions = 2\n");
+    await expect(planGc(deps, { fetch: false, mode: "dry-run" })).rejects.toThrow(/only applies together with keep_days/);
+    const withFlag = await planGc(deps, { fetch: false, mode: "dry-run", keepDays: "90" });
+    expect(withFlag.planned.find((p) => p.oid === s.oldOid)?.decision).toEqual({
+      kind: "keep",
+      reason: "hero.blend: one of the newest 2 versions",
+    });
   });
 
   it("refuses to change an encrypting server's bucket without the key", async () => {
@@ -352,6 +368,7 @@ describe("gc", () => {
     for (const oid of [s.oldOid, s.newOid, finalOld, finalNew, s.orphan]) bucket.seed(`_shared/${oid}`, { size: 5, ageDays: 400 });
     const reporter = new SilentReporter();
     const deps = { repo: s.git, otherRepos: [Git.open(other.dir)], client: s.client, bucket, reporter };
+    s.repo.write(".r2-lfs.toml", "keep_days = 90\n");
 
     const plan = await planGc(deps, { fetch: false, mode: "apply" });
     expect(Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision.kind]))).toEqual({
@@ -487,8 +504,13 @@ describe("verify, usage and why", () => {
   it("explains a path version by version", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
-    const result = await explain({ repo: s.git, client: s.client, reporter: new SilentReporter(), bucket: s.bucket }, "hero.blend");
-    expect(result.objects.map((o) => [o.oid, o.decision.kind])).toEqual([
+    const deps = { repo: s.git, client: s.client, reporter: new SilentReporter(), bucket: s.bucket };
+    expect((await explain(deps, "hero.blend")).objects.map((o) => [o.oid, o.decision.kind])).toEqual([
+      [s.newOid, "keep"],
+      [s.oldOid, "keep"],
+    ]);
+    s.repo.write(".r2-lfs.toml", "keep_days = 90\n");
+    expect((await explain(deps, "hero.blend")).objects.map((o) => [o.oid, o.decision.kind])).toEqual([
       [s.newOid, "keep"],
       [s.oldOid, "delete"],
     ]);
@@ -506,6 +528,7 @@ describe("verify, usage and why", () => {
     repo.write("one.bin", pointer("c".repeat(64)));
     repo.write("two.bin", pointer("d".repeat(64)));
     repo.commit("replaced");
+    repo.write(".r2-lfs.toml", "keep_days = 90\n");
 
     const client = new FakeLfsClient();
     client.stored.set(first, "x");

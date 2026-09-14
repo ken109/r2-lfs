@@ -15,7 +15,8 @@ export interface Rule {
 }
 
 export interface Policy {
-  keepDays: number;
+  /** Unset keeps every version the history uses; set, only versions used in the last N days. */
+  keepDays: number | undefined;
   keepVersions: number;
   minAgeDays: number;
   oldVersions: OldVersions;
@@ -23,7 +24,7 @@ export interface Policy {
 }
 
 export interface Effective {
-  keepDays: number;
+  keepDays: number | undefined;
   keepVersions: number;
   keepAll: boolean;
   oldVersions: OldVersions;
@@ -32,7 +33,7 @@ export interface Effective {
 }
 
 export const DEFAULT_POLICY: Policy = {
-  keepDays: 90,
+  keepDays: undefined,
   keepVersions: 0,
   minAgeDays: 30,
   oldVersions: "delete",
@@ -58,8 +59,8 @@ const RULE_KEYS = new Set(["path", "keep_days", "keep_versions", "keep", "old_ve
 
 /**
  * ```toml
- * keep_days = 90            # keep objects used by commits from the last 90 days
- * keep_versions = 0         # also keep the newest N versions of every file
+ * keep_days = 90            # only keep old versions used by commits from the last 90 days (unset: keep them all)
+ * keep_versions = 0         # with keep_days, also keep the newest N versions of every file
  * min_age_days = 30         # never touch objects uploaded more recently
  * old_versions = "delete"   # or "infrequent-access"
  *
@@ -223,5 +224,14 @@ export function effectiveFor(policy: Policy, path: string | undefined): Effectiv
 
 /** Every distinct keep_days value, so history is scanned once per window. */
 export function keepDayWindows(policy: Policy): number[] {
-  return [...new Set([policy.keepDays, ...policy.rules.map((r) => r.keepDays ?? policy.keepDays)])].toSorted((a, b) => a - b);
+  const days = [policy.keepDays, ...policy.rules.map((r) => r.keepDays ?? policy.keepDays)];
+  return [...new Set(days.filter((d) => d !== undefined))].toSorted((a, b) => a - b);
+}
+
+/** keep_versions only narrows what keep_days removes, so without keep_days anywhere it would silently do nothing. */
+export function checkKeepVersions(policy: Policy): void {
+  if (keepDayWindows(policy).length > 0) return;
+  if (policy.keepVersions > 0 || policy.rules.some((r) => (r.keepVersions ?? 0) > 0)) {
+    throw new UsageError(`${POLICY_FILE}: keep_versions only applies together with keep_days`);
+  }
 }

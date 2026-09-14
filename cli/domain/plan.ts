@@ -30,6 +30,11 @@ function keepReason(oid: string, paths: string[], facts: Facts, policy: Policy):
     const eff = effectiveFor(policy, path);
     const label = path ?? "unknown path";
     if (eff.keepAll) return `${label}: rule "${eff.rule}" keeps all versions`;
+    // Without keep_days, gc only collects what no commit uses, like git gc.
+    if (eff.keepDays === undefined) {
+      if (path !== undefined) return `${label}: used by a commit`;
+      continue;
+    }
     if (facts.windows.get(eff.keepDays)?.has(oid)) return `${label}: used in the last ${eff.keepDays} days`;
     if (path !== undefined && eff.keepVersions > 0) {
       const newest = facts.versions.get(path)?.slice(0, eff.keepVersions) ?? [];
