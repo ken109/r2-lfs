@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 
 import { readDays } from "../app/common.ts";
-import { type SetupOptions, setupServer } from "../app/setup.ts";
+import { reposOfOwners, type SetupOptions, setupServer } from "../app/setup.ts";
 import * as compose from "../composition.ts";
 import { bold } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
@@ -10,12 +10,12 @@ import { commaList } from "./shared.ts";
 export default defineCommand({
   meta: { name: "setup", description: "Create the bucket, its lock and trash rules, and deploy the server with Wrangler" },
   args: {
-    owners: {
+    repos: {
       type: "string",
-      description: "GitHub users or orgs allowed to use the server, comma-separated",
-      required: true,
-      valueHint: "me,my-org",
+      description: "Repositories the server serves, comma-separated, with * within names; quote it in the shell",
+      valueHint: "'me/*,my-org/assets'",
     },
+    owners: { type: "string", description: "Deprecated: owners whose repositories the server serves, same as --repos 'owner/*'" },
     name: { type: "string", description: "Worker name", default: "r2-lfs" },
     bucket: { type: "string", description: "R2 bucket name", default: "r2-lfs" },
     auth: { type: "enum", options: ["github", "token"], description: "How clients authenticate", default: "github" },
@@ -37,7 +37,7 @@ export default defineCommand({
       {
         name: args.name,
         bucket: args.bucket,
-        owners: commaList(args.owners),
+        repos: [...commaList(args.repos), ...reposOfOwners(commaList(args.owners))],
         authMode: args.auth as SetupOptions["authMode"],
         layout: args.layout as SetupOptions["layout"],
         lockDays: readDays("lock-days", args["lock-days"])!,

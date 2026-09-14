@@ -30,12 +30,14 @@ r2-lfs keeps the same Git workflow and gives you control over what is kept:
 **1. Deploy the server.** Either click **Deploy to Cloudflare** above, or use the CLI (it runs Wrangler for you):
 
 ```sh
-npx r2-lfs setup --owners your-github-name
+npx r2-lfs setup --repos 'your-github-name/*'
 ```
 
 `setup` creates the bucket, a lifecycle rule that empties the trash after 30 days, lock rules that
 protect uploads for 90 days, and deploys the Worker. If you used the button, run
-`npx r2-lfs setup --owners your-github-name --no-deploy` once to add the rules.
+`npx r2-lfs setup --repos 'your-github-name/*' --no-deploy` once to add the rules. Lock rules cover
+each repository pattern up to its first `*`; a pattern with `*` in the owner, such as `*/assets`, gets none,
+because its prefix would also cover the trash.
 
 **2. Point a repository at it.**
 

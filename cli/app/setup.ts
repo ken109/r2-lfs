@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import {
   type AuthMode,
-  OWNER_NAME,
+  REPO_PATTERN,
   SHARED_PREFIX,
   type StorageLayout,
   TRASH_PREFIX,
@@ -22,7 +22,8 @@ export interface SetupDeps {
 export interface SetupOptions {
   name: string;
   bucket: string;
-  owners: string[];
+  /** Repository patterns for ALLOWED_REPOS, such as `me/*` or `my-org/blender-*`. */
+  repos: string[];
   authMode: AuthMode;
   layout: StorageLayout;
   /** 0 disables the lock rules. */
@@ -37,11 +38,28 @@ export interface SetupResult {
   lockPrefixes: string[];
 }
 
-const OWNER = new RegExp(`^${OWNER_NAME}$`);
+/** The older --owners form: each owner stands for all of its repositories. */
+export function reposOfOwners(owners: string[]): string[] {
+  return owners.map((owner) => (owner === "*" ? "*" : `${owner}/*`));
+}
 
-/** Lock rules cover the live prefixes only, so gc can still empty `_trash/`. */
-export function lockPrefixes(layout: StorageLayout, owners: string[]): string[] {
-  return layout === "shared" ? [SHARED_PREFIX] : owners.map((o) => `${o.toLowerCase()}/`);
+/**
+ * Lock rules cover the live prefixes only, so gc can still empty `_trash/`. R2 lock rules match a literal
+ * prefix, so a pattern is locked up to its first `*`; `unlockable` lists patterns with `*` in the owner,
+ * whose prefix would also cover the trash and other owners.
+ */
+export function lockPrefixes(layout: StorageLayout, repos: string[]): { prefixes: string[]; unlockable: string[] } {
+  if (layout === "shared") return { prefixes: [SHARED_PREFIX], unlockable: [] };
+  const unlockable: string[] = [];
+  const candidates: string[] = [];
+  for (const pattern of repos.map((r) => r.toLowerCase())) {
+    const star = pattern.indexOf("*");
+    if (pattern === "*" || (star !== -1 && star < pattern.indexOf("/"))) unlockable.push(pattern);
+    else candidates.push(star === -1 ? `${pattern}/` : pattern.slice(0, star));
+  }
+  // A prefix inside another, such as me/app/ inside me/, needs no rule of its own.
+  const prefixes = [...new Set(candidates)].filter((p, _, all) => !all.some((other) => other !== p && p.startsWith(other)));
+  return { prefixes: prefixes.toSorted(), unlockable };
 }
 
 export function workerConfig(opts: SetupOptions): Record<string, unknown> {
@@ -52,7 +70,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
     observability: { enabled: true },
     r2_buckets: [{ binding: "BUCKET", bucket_name: opts.bucket }],
     vars: {
-      ALLOWED_REPOS: opts.owners.map((owner) => (owner === "*" ? "*" : `${owner}/*`)).join(","),
+      ALLOWED_REPOS: opts.repos.join(","),
       AUTH_MODE: opts.authMode,
       STORAGE_LAYOUT: opts.layout,
       TRANSFER_MODE: "auto",
@@ -70,10 +88,9 @@ function check(result: { code: number; output: string }, what: string, alreadyDo
 
 export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<SetupResult> {
   const { wrangler, files, reporter } = deps;
-  if (opts.owners.length === 0) throw new UsageError("--owners is required, e.g. --owners my-name,my-org");
-  const wildcard = opts.owners.includes("*");
-  for (const owner of opts.owners) {
-    if (owner !== "*" && !OWNER.test(owner)) throw new UsageError(`${owner} is not a valid GitHub user or organization name`);
+  if (opts.repos.length === 0) throw new UsageError("--repos is required, e.g. --repos 'my-name/*,my-org/assets'");
+  for (const pattern of opts.repos) {
+    if (!REPO_PATTERN.test(pattern)) throw new UsageError(`${pattern} is not owner/repo, with * allowed within names, or *`);
   }
 
   const account = await reporter.task("Checking your Cloudflare login", () => wrangler.whoami());
@@ -104,10 +121,11 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
     );
   }
 
-  const prefixes = wildcard && opts.layout === "per-repo" ? [] : lockPrefixes(opts.layout, opts.owners);
+  const { prefixes, unlockable } = lockPrefixes(opts.layout, opts.repos);
   if (opts.lockDays > 0) {
-    if (prefixes.length === 0)
-      reporter.warn("ALLOWED_OWNERS is *, so there is no prefix to lock without also locking the trash; skipping lock rules");
+    if (unlockable.length > 0) {
+      reporter.warn(`${unlockable.join(", ")} cannot be locked without also locking the trash or other owners; no lock rule for them`);
+    }
     for (const prefix of prefixes) {
       await reporter.task(`Locking ${prefix} for ${opts.lockDays} days`, () =>
         check(

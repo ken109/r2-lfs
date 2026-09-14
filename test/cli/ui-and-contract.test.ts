@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { lockPrefixes, workerConfig } from "../../cli/app/setup.ts";
+import { lockPrefixes, reposOfOwners, workerConfig } from "../../cli/app/setup.ts";
 import { displayWidth, formatBytes, table } from "../../cli/ui/format.ts";
 import { REPO_PATTERN, repoPatternMatches, VERSION, WORKER_COMPATIBILITY_DATE } from "../../src/shared/contract.ts";
 
@@ -65,7 +65,7 @@ describe("contract", () => {
     const config = workerConfig({
       name: "r2-lfs",
       bucket: jsonc.vars.R2_BUCKET_NAME!,
-      owners: [],
+      repos: [],
       authMode: "github",
       layout: "per-repo",
       lockDays: 0,
@@ -78,12 +78,20 @@ describe("contract", () => {
   });
 
   it("builds a Worker config that locks live prefixes but not the trash", () => {
-    expect(lockPrefixes("per-repo", ["Acme", "me"])).toEqual(["acme/", "me/"]);
-    expect(lockPrefixes("shared", ["acme"])).toEqual(["_shared/"]);
+    expect(lockPrefixes("per-repo", ["Acme/*", "me/Blender-*", "me/app", "me/blender-cube"])).toEqual({
+      prefixes: ["acme/", "me/app/", "me/blender-"],
+      unlockable: [],
+    });
+    expect(lockPrefixes("per-repo", ["*", "*/assets", "ac*/app", "acme/*"])).toEqual({
+      prefixes: ["acme/"],
+      unlockable: ["*", "*/assets", "ac*/app"],
+    });
+    expect(lockPrefixes("shared", ["acme/*"])).toEqual({ prefixes: ["_shared/"], unlockable: [] });
+    expect(reposOfOwners(["acme", "*"])).toEqual(["acme/*", "*"]);
     const config = workerConfig({
       name: "lfs",
       bucket: "b",
-      owners: ["acme"],
+      repos: ["acme/*"],
       authMode: "github",
       layout: "per-repo",
       lockDays: 90,

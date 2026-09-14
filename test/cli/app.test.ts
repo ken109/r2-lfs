@@ -691,7 +691,7 @@ describe("setup", () => {
   const base = {
     name: "r2-lfs",
     bucket: "lfs",
-    owners: ["acme"],
+    repos: ["acme/*"],
     authMode: "github" as const,
     layout: "per-repo" as const,
     lockDays: 90,
@@ -713,13 +713,18 @@ describe("setup", () => {
     expect(f.written.has(join("/tmp/with space/r2-lfs-setup-1", "wrangler.json"))).toBe(true);
   });
 
-  it("skips lock rules when any owner is allowed, since they would lock the trash too", async () => {
+  it("locks each repository pattern up to its first *, and skips patterns that would lock the trash too", async () => {
     const f = setupFakes();
-    const result = await setupServer(f.deps, { ...base, owners: ["*"], deploy: false });
-    expect(result.lockPrefixes).toEqual([]);
-    expect(f.runs.some((r) => r.args.includes("lock"))).toBe(false);
-    expect(f.deps.reporter.warnings).toEqual([expect.stringContaining("skipping lock rules")]);
-    await expect(setupServer(f.deps, { ...base, owners: ["bad owner"] })).rejects.toThrow(/not a valid/);
+    const result = await setupServer(f.deps, { ...base, repos: ["*/assets", "me/blender-*"], deploy: false });
+    expect(result.lockPrefixes).toEqual(["me/blender-"]);
+    expect(f.runs.filter((r) => r.args.includes("lock")).map((r) => r.args[6])).toEqual(["me/blender-"]);
+    expect(f.deps.reporter.warnings).toEqual([expect.stringContaining("*/assets cannot be locked")]);
+
+    const everyone = setupFakes();
+    expect((await setupServer(everyone.deps, { ...base, repos: ["*"], deploy: false })).lockPrefixes).toEqual([]);
+    expect(everyone.runs.some((r) => r.args.includes("lock"))).toBe(false);
+    await expect(setupServer(f.deps, { ...base, repos: ["acme"] })).rejects.toThrow(/is not owner\/repo/);
+    await expect(setupServer(f.deps, { ...base, repos: [] })).rejects.toThrow(/--repos is required/);
   });
 });
 
