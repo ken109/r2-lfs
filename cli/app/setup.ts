@@ -33,6 +33,8 @@ export interface SetupOptions {
   deploy: boolean;
   /** The Cloudflare Access application protecting the admin UI; the UI stays closed without it. */
   access?: { teamDomain: string; aud: string };
+  /** What GitHub Actions workflows may do in their own repository with an OIDC token. */
+  actionsOidc?: "off" | "read" | "write";
 }
 
 export interface SetupResult {
@@ -89,6 +91,8 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
       R2_BUCKET_NAME: opts.bucket,
       ACCESS_TEAM_DOMAIN: opts.access?.teamDomain ?? "",
       ACCESS_AUD: opts.access?.aud ?? "",
+      ACTIONS_OIDC: opts.actionsOidc ?? "off",
+      ACTIONS_OIDC_AUDIENCE: "r2-lfs",
     },
   };
 }

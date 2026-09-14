@@ -16,6 +16,8 @@ export interface ConfigVars {
   AUTH_TOKENS?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  ACTIONS_OIDC?: string;
+  ACTIONS_OIDC_AUDIENCE?: string;
 }
 
 export interface StaticToken {
@@ -42,6 +44,13 @@ export interface AccessSettings {
   aud: string;
 }
 
+/** GitHub Actions workflows authenticating with their OIDC token, for their own repository only. */
+export interface ActionsOidcSettings {
+  permission: "read" | "write";
+  /** The `aud` workflows request the token for. */
+  audience: string;
+}
+
 export interface Config {
   /** Lowercased REPO_PATTERNs of the repositories this server serves. */
   allowedRepos: readonly string[];
@@ -55,6 +64,7 @@ export interface Config {
   warnings: readonly string[];
   /** Unset keeps the admin UI closed. */
   access: AccessSettings | undefined;
+  actionsOidc: ActionsOidcSettings | undefined;
 }
 
 export class ConfigError extends Error {
@@ -165,6 +175,9 @@ export function parseConfig(vars: ConfigVars): Config {
   // In token mode AUTH_TOKENS may be empty: tokens can also live in the bucket (`r2-lfs token`).
   const tokens = parseStaticTokens(vars.AUTH_TOKENS, problems);
 
+  const actionsMode = oneOf("ACTIONS_OIDC", vars.ACTIONS_OIDC, ["off", "read", "write"], "off", problems);
+  const actionsAudience = value(vars.ACTIONS_OIDC_AUDIENCE) ?? "r2-lfs";
+
   const teamDomain = value(vars.ACCESS_TEAM_DOMAIN)
     ?.replace(/^https:\/\//, "")
     .replace(/\/+$/, "");
@@ -185,5 +198,6 @@ export function parseConfig(vars: ConfigVars): Config {
     tokens,
     warnings,
     access: teamDomain && aud ? { teamDomain: teamDomain.toLowerCase(), aud } : undefined,
+    actionsOidc: actionsMode === "off" ? undefined : { permission: actionsMode, audience: actionsAudience },
   };
 }

@@ -4,7 +4,9 @@ import { createLock, listLocks, type LockResponse, type LocksContext, unlock, ve
 import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
+import { GithubActionsOidc } from "../infra/actions-oidc.ts";
 import { type Fetcher, GithubApiPermissions } from "../infra/github-permissions.ts";
+import { looksLikeJwt } from "../infra/jwt.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
@@ -55,6 +57,7 @@ function info(env: Env): Response {
       transfer: config.presign ? "presigned" : "proxy",
       proxyMaxUploadBytes: config.proxyMaxUploadBytes,
       ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
+      ...(config.actionsOidc ? { actionsOidcAudience: config.actionsOidc.audience } : {}),
     };
     return Response.json(body);
   } catch (err) {
@@ -96,6 +99,8 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
   const auth = await authorize(config, repo, extractToken(authorization), {
     tokens: new CombinedTokenDirectory(config.tokens, env.BUCKET),
     github: new GithubApiPermissions(deps.fetch),
+    actions: new GithubActionsOidc(deps.fetch),
+    isJwt: looksLikeJwt,
   });
   if (!auth.ok) return lfsError(auth.status, auth.message);
 

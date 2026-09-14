@@ -3,32 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
 import { gateAdmin } from "../../src/http/admin-gate.ts";
-import { clearAccessKeysCache } from "../../src/infra/access-verifier.ts";
 import type { Fetcher } from "../../src/infra/github-permissions.ts";
+import { clearJwtKeysCache } from "../../src/infra/jwt.ts";
+import { signingKey } from "./jwt-helpers.ts";
 
 const TEAM = "my-team.cloudflareaccess.com";
 const AUD = "aud-tag-0123456789";
-
-const base64Url = (bytes: Uint8Array | string) =>
-  btoa(typeof bytes === "string" ? bytes : String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-async function signingKey(kid: string) {
-  const pair = (await crypto.subtle.generateKey(
-    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
-  const jwk = { ...((await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey), kid };
-  const sign = async (claims: Record<string, unknown>, header: Record<string, unknown> = {}) => {
-    const input = `${base64Url(JSON.stringify({ alg: "RS256", kid, ...header }))}.${base64Url(JSON.stringify(claims))}`;
-    const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", pair.privateKey, new TextEncoder().encode(input));
-    return `${input}.${base64Url(new Uint8Array(signature))}`;
-  };
-  return { jwk, sign };
-}
 
 function certs(...keys: JsonWebKey[]) {
   const calls: string[] = [];
@@ -62,7 +42,7 @@ async function gate(e: Env, fetcher: Fetcher, token?: string) {
   return gateAdmin(new Request("https://lfs.example.com/_admin", { headers }), e, { fetch: fetcher });
 }
 
-beforeEach(() => clearAccessKeysCache());
+beforeEach(() => clearJwtKeysCache());
 
 describe("admin gate", () => {
   it("keeps the admin UI closed until Cloudflare Access is configured", async () => {

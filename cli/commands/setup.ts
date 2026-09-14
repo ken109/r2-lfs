@@ -33,6 +33,12 @@ export default defineCommand({
       valueHint: "my-team.cloudflareaccess.com",
     },
     "access-aud": { type: "string", description: "Audience tag of that Access application" },
+    "actions-oidc": {
+      type: "enum",
+      options: ["off", "read", "write"],
+      description: "Let GitHub Actions workflows use their own repository with an OIDC token",
+      default: "off",
+    },
     deploy: { type: "boolean", default: true, negativeDescription: "Only configure the bucket (for servers deployed with the button)" },
   },
   async run({ args }) {
@@ -49,6 +55,7 @@ export default defineCommand({
         lockDays: readDays("lock-days", args["lock-days"])!,
         trashDays: readDays("trash-days", args["trash-days"])!,
         deploy: args.deploy,
+        actionsOidc: args["actions-oidc"] as SetupOptions["actionsOidc"],
         ...(args["access-team"] && args["access-aud"] ? { access: { teamDomain: args["access-team"], aud: args["access-aud"] } } : {}),
       },
     );

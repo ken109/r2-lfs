@@ -40,5 +40,9 @@
     // Admin UI only: the Cloudflare Access team domain and application audience tag protecting /_admin.
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": "",
+    // "off" | "read" | "write": what GitHub Actions workflows may do in their own repository with an OIDC token.
+    "ACTIONS_OIDC": "off",
+    // The audience workflows request the token for.
+    "ACTIONS_OIDC_AUDIENCE": "r2-lfs",
   },
 }

@@ -29,6 +29,8 @@ export interface ServerInfo {
   proxyMaxUploadBytes: number;
   /** Settings that work but should change, such as deprecated variables. */
   warnings?: string[];
+  /** Set when GitHub Actions workflows may authenticate with an OIDC token requested for this audience. */
+  actionsOidcAudience?: string;
 }
 
 /** A transfer action in a Git LFS batch response. */

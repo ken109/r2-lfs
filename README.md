@@ -168,20 +168,22 @@ a minor release may change what gc deletes, so pin an exact tag, as above, when 
 
 These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare page, or by `setup`.
 
-| Name                   | Kind   | Default    | Meaning                                                                                                                                                                                                                                         |
-| ---------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ALLOWED_REPOS`        | var    | (required) | Comma-separated [repository patterns](#repository-patterns) the server serves, such as `my-name/*,my-org/assets`. `*` alone serves anyone's repositories. The older `ALLOWED_OWNERS` (`my-name,my-org`) still works and counts as `<owner>/*`.  |
-| `AUTH_MODE`            | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                                                                                                                                                     |
-| `STORAGE_LAYOUT`       | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                                                                                                             |
-| `TRANSFER_MODE`        | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                                                                                                 |
-| `PROXY_MAX_UPLOAD_MB`  | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                                                                                                          |
-| `R2_ACCOUNT_ID`        | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                                                                                                     |
-| `R2_BUCKET_NAME`       | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                                                                                                        |
-| `R2_ACCESS_KEY_ID`     | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                                                                                                         |
-| `R2_SECRET_ACCESS_KEY` | secret |            | Presigned mode: its secret.                                                                                                                                                                                                                     |
-| `ACCESS_TEAM_DOMAIN`   | var    |            | Admin UI: your Cloudflare Access team domain, such as `my-team.cloudflareaccess.com`. See [Admin UI](#admin-ui).                                                                                                                                |
-| `ACCESS_AUD`           | var    |            | Admin UI: the audience tag of the Access application that protects `/_admin`.                                                                                                                                                                   |
-| `AUTH_TOKENS`          | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
+| Name                    | Kind   | Default    | Meaning                                                                                                                                                                                                                                         |
+| ----------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALLOWED_REPOS`         | var    | (required) | Comma-separated [repository patterns](#repository-patterns) the server serves, such as `my-name/*,my-org/assets`. `*` alone serves anyone's repositories. The older `ALLOWED_OWNERS` (`my-name,my-org`) still works and counts as `<owner>/*`.  |
+| `AUTH_MODE`             | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                                                                                                                                                     |
+| `STORAGE_LAYOUT`        | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                                                                                                             |
+| `TRANSFER_MODE`         | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                                                                                                 |
+| `PROXY_MAX_UPLOAD_MB`   | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                                                                                                          |
+| `R2_ACCOUNT_ID`         | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                                                                                                     |
+| `R2_BUCKET_NAME`        | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                                                                                                        |
+| `R2_ACCESS_KEY_ID`      | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                                                                                                         |
+| `R2_SECRET_ACCESS_KEY`  | secret |            | Presigned mode: its secret.                                                                                                                                                                                                                     |
+| `ACCESS_TEAM_DOMAIN`    | var    |            | Admin UI: your Cloudflare Access team domain, such as `my-team.cloudflareaccess.com`. See [Admin UI](#admin-ui).                                                                                                                                |
+| `ACCESS_AUD`            | var    |            | Admin UI: the audience tag of the Access application that protects `/_admin`.                                                                                                                                                                   |
+| `ACTIONS_OIDC`          | var    | `off`      | `read` or `write` lets GitHub Actions workflows use their own repository with an OIDC token. See [GitHub Actions](#github-actions).                                                                                                             |
+| `ACTIONS_OIDC_AUDIENCE` | var    | `r2-lfs`   | The audience workflows request that token for.                                                                                                                                                                                                  |
+| `AUTH_TOKENS`           | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
 
 If a setting is invalid, LFS requests fail with a message listing every problem, and `r2-lfs doctor` shows it too.
 
@@ -214,6 +216,25 @@ Pro); larger objects fail early with a message pointing at presigned mode.
 **`presigned`** hands Git time-limited R2 URLs, so transfers skip the Worker. Objects can be up to
 4.995 GiB, the most R2 accepts in one request.
 R2 does not verify SHA-256 checksums on presigned uploads, so the Worker checks only the size.
+
+## GitHub Actions
+
+Workflows can fetch and push LFS files without a stored secret. Set `ACTIONS_OIDC` to `read` (or
+`write`), and give the job an OIDC token; r2-lfs accepts it only for the repository the workflow runs in:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+steps:
+  - uses: actions/checkout@v7
+  - run: npx r2-lfs@0.1.0 credential --install # x-release-please-version
+  - run: git lfs pull
+```
+
+`r2-lfs credential` is a git credential helper: it answers with `R2_LFS_TOKEN` when set, and inside
+GitHub Actions with an OIDC token for the audience the server announces. File locks taken this way are
+held by `<actor> (GitHub Actions)`.
 
 ## File locking
 

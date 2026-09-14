@@ -82,6 +82,12 @@
       "ACCESS_AUD": {
         "description": "Only for the admin UI. The Application Audience (AUD) tag of the Cloudflare Access application that protects /_admin."
       },
+      "ACTIONS_OIDC": {
+        "description": "`off`, `read` or `write`: what GitHub Actions workflows may do in their own repository by authenticating with an OIDC token (`id-token: write`), with no secret stored."
+      },
+      "ACTIONS_OIDC_AUDIENCE": {
+        "description": "The audience workflows request their OIDC token for. `r2-lfs credential` reads it from the server."
+      },
       "R2_ACCESS_KEY_ID": {
         "description": "Only for presigned URLs. Create an R2 API token with Object Read & Write on the bucket (R2 > Manage API tokens)."
       },

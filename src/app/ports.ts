@@ -43,6 +43,18 @@ export interface LockStore {
   remove(id: string): Promise<void>;
 }
 
+export interface ActionsClaims {
+  /** `owner/repo` of the workflow's repository. */
+  repository: string;
+  actor: string;
+  workflow: string | undefined;
+}
+
+/** Checks a GitHub Actions OIDC token: signature, issuer, audience and lifetime. */
+export interface ActionsTokenVerifier {
+  verify(token: string, audience: string): Promise<ActionsClaims | undefined>;
+}
+
 /** Checks a Cloudflare Access token: signature, audience, issuer and lifetime. */
 export interface AccessVerifier {
   /** The signed-in user's email, or undefined when the token is not valid for the application. */
