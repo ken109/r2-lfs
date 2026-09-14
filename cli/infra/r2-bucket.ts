@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { AwsClient } from "aws4fetch";
 
 import { type Bucket, type BucketObject, ConflictError, type WriteResult } from "../app/ports.ts";
@@ -43,8 +45,24 @@ export function r2Configured(env: NodeJS.ProcessEnv = process.env): boolean {
 const encodeKey = (key: string) => key.split("/").map(encodeURIComponent).join("/");
 
 /** The bucket through R2's S3 API: listing, deleting and copying, which the LFS protocol cannot do. */
+/** SSE-C headers for a copy: the key to decrypt the source with and to encrypt the copy with. */
+export function ssecHeaders(key: string): Record<string, string> {
+  const bytes = /^[0-9a-f]{64}$/i.test(key) ? Buffer.from(key, "hex") : Buffer.from(key, "base64");
+  if (bytes.length !== 32) throw new UsageError("R2_LFS_ENCRYPTION_KEY must be 32 bytes, as 64 hex characters or base64");
+  const encoded = bytes.toString("base64");
+  const md5 = createHash("md5").update(bytes).digest("base64");
+  const headers: Record<string, string> = {};
+  for (const prefix of ["x-amz-server-side-encryption-customer", "x-amz-copy-source-server-side-encryption-customer"]) {
+    headers[`${prefix}-algorithm`] = "AES256";
+    headers[`${prefix}-key`] = encoded;
+    headers[`${prefix}-key-md5`] = md5;
+  }
+  return headers;
+}
+
 export class R2Bucket implements Bucket {
   readonly name: string;
+  private readonly ssec: Record<string, string> | undefined;
   private readonly client: AwsClient;
   private readonly endpoint: string;
 
@@ -56,8 +74,11 @@ export class R2Bucket implements Bucket {
     endpoint?: string;
     /** How often aws4fetch retries a 5xx response with backoff; its default is 10. */
     retries?: number;
+    /** The server's ENCRYPTION_KEY, as 64 hex characters or base64. */
+    encryptionKey?: string;
   }) {
     this.name = opts.bucket;
+    this.ssec = opts.encryptionKey ? ssecHeaders(opts.encryptionKey) : undefined;
     this.client = new AwsClient({
       accessKeyId: opts.accessKeyId,
       secretAccessKey: opts.secretAccessKey,
@@ -84,6 +105,7 @@ export class R2Bucket implements Bucket {
       accessKeyId: env.R2_ACCESS_KEY_ID!,
       secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
       endpoint: env.R2_ENDPOINT,
+      ...(env.R2_LFS_ENCRYPTION_KEY ? { encryptionKey: env.R2_LFS_ENCRYPTION_KEY } : {}),
     });
   }
 
@@ -139,8 +161,12 @@ export class R2Bucket implements Bucket {
     return this.result(await this.client.fetch(`${this.endpoint}/${encodeKey(key)}`, { method: "DELETE" }));
   }
 
+  get encrypted(): boolean {
+    return this.ssec !== undefined;
+  }
+
   async copy(source: string, target: string, storageClass?: "STANDARD" | "STANDARD_IA"): Promise<WriteResult> {
-    const headers: Record<string, string> = { "x-amz-copy-source": `/${this.name}/${encodeKey(source)}` };
+    const headers: Record<string, string> = { "x-amz-copy-source": `/${this.name}/${encodeKey(source)}`, ...this.ssec };
     if (storageClass) headers["x-amz-storage-class"] = storageClass;
     // Copying an object onto itself is only allowed when something changes, like the storage class.
     if (source === target) headers["x-amz-metadata-directive"] = "REPLACE";

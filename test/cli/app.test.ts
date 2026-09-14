@@ -287,6 +287,20 @@ describe("gc", () => {
     }
   });
 
+  it("refuses to change an encrypting server's bucket without the key", async () => {
+    const s = scenario();
+    cleanup.push(() => s.repo.remove());
+    s.client.serverInfo = { ...s.client.serverInfo, encrypted: true };
+    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter: new SilentReporter() };
+    expect((await planGc(deps, { fetch: false, mode: "dry-run" })).candidates.length).toBeGreaterThan(0);
+    await expect(planGc(deps, { fetch: false, mode: "apply" })).rejects.toThrow(/R2_LFS_ENCRYPTION_KEY/);
+    await expect(restoreObjects({ bucket: s.bucket, reporter: new SilentReporter(), client: s.client }, [])).rejects.toThrow(
+      /R2_LFS_ENCRYPTION_KEY/,
+    );
+    s.bucket.encrypted = true;
+    expect((await planGc(deps, { fetch: false, mode: "apply" })).candidates.length).toBeGreaterThan(0);
+  });
+
   it("refuses clones with incomplete history, and stops on a failed fetch unless it only reports", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());

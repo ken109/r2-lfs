@@ -114,6 +114,8 @@ export interface WriteResult {
 
 export interface Bucket {
   readonly name: string;
+  /** Whether copies send the SSE-C key that an encrypting server stores objects with. */
+  readonly encrypted: boolean;
   list(prefix: string): Promise<StoredObject[]>;
   get(key: string): Promise<BucketObject | undefined>;
   /**

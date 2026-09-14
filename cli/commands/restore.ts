@@ -61,7 +61,7 @@ export default defineCommand({
       term.outro("Nothing in the trash matches");
       return;
     }
-    const outcomes = await restoreObjects({ bucket, reporter: term }, selected);
+    const outcomes = await restoreObjects({ bucket, reporter: term, client: deps.client }, selected);
     if (args.json) term.json(outcomes);
     for (const o of outcomes) if (o.message) (o.ok ? term.warn : term.error).call(term, `${shortOid(o.oid)}: ${o.message}`);
     const failed = outcomes.filter((o) => !o.ok).length;

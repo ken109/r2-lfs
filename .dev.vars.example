@@ -3,3 +3,5 @@ R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 # AUTH_MODE=token only. Comma- or newline-separated <owner/repo, * allowed within names>:<r|rw|admin>:<token of 16+ chars>
 AUTH_TOKENS=
+# Optional. 32 bytes (openssl rand -base64 32) to store objects encrypted with SSE-C. Transfers then go through the Worker.
+ENCRYPTION_KEY=

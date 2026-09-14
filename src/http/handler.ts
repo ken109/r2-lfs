@@ -59,6 +59,7 @@ function info(env: Env): Response {
       storageLayout: config.storageLayout,
       transfer: config.presign ? "presigned" : "proxy",
       proxyMaxUploadBytes: config.proxyMaxUploadBytes,
+      ...(config.encryptionKey ? { encrypted: true } : {}),
       ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
       ...(config.actionsOidc ? { actionsOidcAudience: config.actionsOidc.audience } : {}),
     };
@@ -129,7 +130,7 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
     config,
     repo,
     permission: auth.permission,
-    store: new R2ObjectStore(env.BUCKET),
+    store: new R2ObjectStore(env.BUCKET, config.encryptionKey),
     links: config.presign ? new PresignedLinks(config.presign, baseUrl, authorization) : new ProxyLinks(baseUrl, authorization),
     copier: config.presign ? new S3Copier(config.presign, deps.fetch) : undefined,
   };

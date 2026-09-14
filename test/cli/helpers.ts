@@ -45,6 +45,7 @@ export function oidOf(content: string): string {
 /** An in-memory bucket that behaves like R2 for the operations the CLI uses. */
 export class MemoryBucket implements Bucket {
   readonly name = "test-bucket";
+  encrypted = false;
   readonly objects = new Map<string, { body: string; size: number; lastModified: Date; storageClass: string; etag: string }>();
   /** Keys under these prefixes refuse deletion, like a bucket lock rule. */
   readonly locked: string[] = [];

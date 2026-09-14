@@ -10,9 +10,19 @@ export function clearUsageCache(): void {
 
 export class R2ObjectStore implements ObjectStore {
   private readonly bucket: R2Bucket;
+  private readonly ssecKey: string | undefined;
 
-  constructor(bucket: R2Bucket) {
+  /** With `ssecKey`, new objects are encrypted with SSE-C; objects stored before it was set are still read. */
+  constructor(bucket: R2Bucket, ssecKey?: string) {
     this.bucket = bucket;
+    this.ssecKey = ssecKey;
+  }
+
+  /** Reading an SSE-C object needs the key; R2 tells which objects are encrypted without it. */
+  private async open(key: string): Promise<R2ObjectBody | null> {
+    const head = await this.bucket.head(key);
+    if (!head) return null;
+    return this.bucket.get(key, head.ssecKeyMd5 && this.ssecKey ? { ssecKey: this.ssecKey } : {});
   }
 
   async head(key: string) {
@@ -21,12 +31,12 @@ export class R2ObjectStore implements ObjectStore {
   }
 
   async get(key: string) {
-    const object = await this.bucket.get(key);
+    const object = await this.open(key);
     return object ? { body: object.body, size: object.size } : null;
   }
 
   async sha256(key: string) {
-    const object = await this.bucket.get(key);
+    const object = await this.open(key);
     if (!object) return undefined;
     const digest = new crypto.DigestStream("SHA-256");
     await object.body.pipeTo(digest);
@@ -58,7 +68,7 @@ export class R2ObjectStore implements ObjectStore {
   async put(key: string, body: ReadableStream, sha256: string) {
     try {
       // R2 rejects the write if the body does not hash to the given digest.
-      await this.bucket.put(key, body, { sha256 });
+      await this.bucket.put(key, body, { sha256, ...(this.ssecKey ? { ssecKey: this.ssecKey } : {}) });
       return "stored" as const;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

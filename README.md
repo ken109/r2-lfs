@@ -85,6 +85,9 @@ in `usage`, `verify` and `why`) need an R2 API token with **Object Read & Write*
 export R2_ACCOUNT_ID=... R2_BUCKET_NAME=r2-lfs R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=...
 ```
 
+If the server has an `ENCRYPTION_KEY`, set `R2_LFS_ENCRYPTION_KEY` to the same key for `gc --apply` and
+`restore`, whose copies inside R2 need it.
+
 Set `R2_ENDPOINT` as well for a bucket in a jurisdiction, such as `https://<account id>.eu.r2.cloudflarestorage.com`.
 
 Commands that talk to the server use the password git's credential helpers have for it. Set
@@ -188,6 +191,7 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `ACTIONS_OIDC_AUDIENCE` | var    | `r2-lfs`   | The audience workflows request that token for.                                                                                                                                                                                                  |
 | `VERIFY_UPLOADS`        | var    | `on`       | Presigned mode: hash each upload before it counts as stored. `off` checks only the size, for the Free plan.                                                                                                                                     |
 | `AUTH_TOKENS`           | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
+| `ENCRYPTION_KEY`        | secret |            | 32 bytes as base64 (`openssl rand -base64 32`) or hex. R2 stores new objects encrypted with it (SSE-C), and transfers go through the Worker. Objects cannot be read without the key.                                                            |
 
 The Worker also writes one Workers Analytics Engine data point per request to the `r2_lfs` dataset:
 repository, endpoint, method, status and bytes proxied. Remove the `METRICS` binding to turn it off.
@@ -293,6 +297,9 @@ refuses requests that did not come through that application.
   and bucket lock rules stop even them within the retention period.
 - gc copies an object to the trash before deleting it, and removes the copy again if the delete is
   refused, so a failure never loses data.
+- With `ENCRYPTION_KEY`, R2 stores objects encrypted with your key, so the bucket's contents are unreadable
+  without it. The key never leaves the Worker, which is why transfers then go through it. Objects stored
+  before the key was set stay readable and unencrypted.
 - Stored content always hashes to its oid: R2 checks proxy uploads and the Worker checks presigned ones,
   unless `VERIFY_UPLOADS=off`.
 - In the `shared` layout an object is stored once, but a repository can read it only after uploading its

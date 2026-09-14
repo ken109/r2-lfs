@@ -1,7 +1,7 @@
 import { TRASH_PREFIX } from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
 import { oidOfKey, type StoredObject } from "../domain/objects.ts";
-import { readHistory, resolveLayout, trashPrefix } from "./common.ts";
+import { readHistory, requireKeyIfEncrypted, resolveLayout, trashPrefix } from "./common.ts";
 import type { Bucket, GitRepository, LfsClient, Reporter } from "./ports.ts";
 
 export interface RestoreDeps {
@@ -65,7 +65,11 @@ export interface RestoreOutcome {
   message?: string;
 }
 
-export async function restoreObjects(deps: { bucket: Bucket; reporter: Reporter }, selected: TrashedObject[]): Promise<RestoreOutcome[]> {
+export async function restoreObjects(
+  deps: { bucket: Bucket; reporter: Reporter; client?: LfsClient },
+  selected: TrashedObject[],
+): Promise<RestoreOutcome[]> {
+  if (deps.client) await requireKeyIfEncrypted(deps.client, deps.bucket);
   const outcomes: RestoreOutcome[] = [];
   const bar = deps.reporter.progress(selected.length, "Restoring");
   for (const { object, oid } of selected) {

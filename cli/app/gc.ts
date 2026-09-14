@@ -3,7 +3,7 @@ import { UsageError } from "../domain/errors.ts";
 import type { StoredObject } from "../domain/objects.ts";
 import { combinePlans, type Planned, planObjects } from "../domain/plan.ts";
 import type { Policy } from "../domain/policy.ts";
-import { collectFacts, livePrefix, loadPolicy, type PolicyOverrides, resolveLayout } from "./common.ts";
+import { collectFacts, livePrefix, loadPolicy, type PolicyOverrides, requireKeyIfEncrypted, resolveLayout } from "./common.ts";
 import type { Bucket, GitRepository, LfsClient, Reporter } from "./ports.ts";
 
 export interface GcDeps {
@@ -49,6 +49,7 @@ const refsOf = (repos: readonly GitRepository[]) => repos.map((r) => r.refTips()
 export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan> {
   const { client, bucket, reporter } = deps;
   const layout = await resolveLayout(client, opts.layout);
+  if (opts.mode !== "dry-run") await requireKeyIfEncrypted(client, bucket);
   if (layout === "per-repo" && deps.otherRepos.length > 0) throw new UsageError("--repos only applies to the shared layout");
   const sharedWithoutRepos = layout === "shared" && deps.otherRepos.length === 0;
   if (sharedWithoutRepos && opts.mode === "apply") {

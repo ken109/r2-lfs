@@ -106,6 +106,9 @@
       "R2_SECRET_ACCESS_KEY": {
         "description": "Only for presigned URLs. The secret that pairs with `R2_ACCESS_KEY_ID`."
       },
+      "ENCRYPTION_KEY": {
+        "description": "Optional. 32 bytes as base64 (`openssl rand -base64 32`) or hex: R2 stores new objects encrypted with this key (SSE-C). Transfers then go through the Worker. Keep a copy: objects cannot be read without it."
+      },
       "AUTH_TOKENS": {
         "description": "Only for `AUTH_MODE=token`. Comma- or newline-separated `<owner/repo>:<r|rw|admin>:<token>` entries (`admin` can also unlock other people's file locks), where `*` may stand for any characters within a name (or be the whole scope), with tokens of 16 or more characters, e.g. `my-name/blender-*:rw:<random>`. May stay empty when you create tokens with `r2-lfs token`."
       }

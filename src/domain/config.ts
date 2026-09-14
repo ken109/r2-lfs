@@ -19,6 +19,8 @@ export interface ConfigVars {
   R2_BUCKET_NAME?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
+  /** 32 bytes as 64 hex characters or base64: encrypts objects in R2 with SSE-C. */
+  ENCRYPTION_KEY?: string;
   AUTH_TOKENS?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
@@ -73,6 +75,8 @@ export interface Config {
   storageLayout: StorageLayout;
   /** Set when transfers go through presigned URLs; absent means proxy. */
   presign: PresignCredentials | undefined;
+  /** SSE-C key as 64 hex characters; set, objects are stored encrypted and transfers go through the Worker. */
+  encryptionKey: string | undefined;
   /** Hash presigned uploads before they count as stored. Proxy uploads are always checked by R2. */
   verifyUploads: boolean;
   proxyMaxUploadBytes: number;
@@ -107,6 +111,21 @@ function oneOf<T extends string>(name: string, raw: string | undefined, allowed:
   if ((allowed as readonly string[]).includes(v)) return v as T;
   problems.push(`${name} must be one of ${allowed.join(", ")} (got "${v}")`);
   return fallback;
+}
+
+/** Accepts 32 bytes as 64 hex characters or base64, and returns hex, which R2 takes as `ssecKey`. */
+function parseEncryptionKey(raw: string | undefined, problems: string[]): string | undefined {
+  if (raw === undefined) return undefined;
+  if (/^[0-9a-f]{64}$/i.test(raw)) return raw.toLowerCase();
+  try {
+    const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    if (bytes.length === 32) return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    // Reported below.
+  }
+  // Never echo the value: it is the key.
+  problems.push("ENCRYPTION_KEY must be 32 bytes, as 64 hex characters or base64 (openssl rand -base64 32)");
+  return undefined;
 }
 
 /** Entries of a comma- or newline-separated list, trimmed. */
@@ -205,8 +224,11 @@ export function parseConfig(vars: ConfigVars): Config {
   if (transferMode === "presigned" && missing.length > 0) {
     problems.push(`TRANSFER_MODE=presigned needs ${missing.join(", ")}`);
   }
+  const encryptionKey = parseEncryptionKey(value(vars.ENCRYPTION_KEY), problems);
+  // Clients cannot be given the key, so encrypted objects only travel through the Worker.
+  if (encryptionKey && transferMode === "presigned") problems.push("TRANSFER_MODE=presigned cannot be used with ENCRYPTION_KEY");
   const presign: PresignCredentials | undefined =
-    transferMode !== "proxy" && missing.length === 0
+    transferMode !== "proxy" && missing.length === 0 && !encryptionKey
       ? {
           accountId: creds.R2_ACCOUNT_ID!,
           bucketName: creds.R2_BUCKET_NAME!,
@@ -239,6 +261,7 @@ export function parseConfig(vars: ConfigVars): Config {
     host: { kind: authMode === "token" ? "github" : authMode, url: hostUrl || "https://github.com" },
     storageLayout,
     presign,
+    encryptionKey,
     verifyUploads,
     proxyMaxUploadBytes: Math.floor(maxMb * 1024 * 1024),
     maxObjectBytes,

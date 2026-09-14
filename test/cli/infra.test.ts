@@ -12,7 +12,7 @@ import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import { GithubActionsIdTokens } from "../../cli/infra/actions-id-token.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
-import { parseListObjects, R2Bucket } from "../../cli/infra/r2-bucket.ts";
+import { parseListObjects, R2Bucket, ssecHeaders } from "../../cli/infra/r2-bucket.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { TempRepo } from "./helpers.ts";
 
@@ -288,6 +288,27 @@ describe("R2Bucket against an S3-compatible server", () => {
     await expect(bucket.put("_meta/tokens.json", '{"v":3}', { expectEtag: current!.etag! })).rejects.toBeInstanceOf(ConflictError);
     expect(await (await bucket.get("_meta/tokens.json"))!.text()).toBe('{"v":2}');
     expect(await bucket.get("_meta/none")).toBeUndefined();
+  });
+
+  it("sends the SSE-C key for both sides of a copy when the server encrypts", async () => {
+    const encrypted = new R2Bucket({
+      bucket: "bucket",
+      accountId: "acct",
+      accessKeyId: "k",
+      secretAccessKey: "s",
+      endpoint: (bucket as unknown as { endpoint: string }).endpoint.replace(/\/bucket$/, ""),
+      retries: 0,
+      encryptionKey: "0f".repeat(32),
+    });
+    objects.set("enc/a", { body: "a", etag: '"1"', storageClass: "STANDARD" });
+    expect((await encrypted.copy("enc/a", "_trash/enc/a")).ok).toBe(true);
+    const headers = requests.at(-1)!.headers;
+    expect(headers["x-amz-server-side-encryption-customer-key"]).toBe(Buffer.alloc(32, 0x0f).toString("base64"));
+    expect(headers["x-amz-copy-source-server-side-encryption-customer-algorithm"]).toBe("AES256");
+    expect(encrypted.encrypted).toBe(true);
+    expect(bucket.encrypted).toBe(false);
+    expect(ssecHeaders(Buffer.alloc(32, 0x0f).toString("base64"))).toEqual(ssecHeaders("0f".repeat(32)));
+    expect(() => ssecHeaders("short")).toThrow(/32 bytes/);
   });
 
   it("parses storage classes and defaults them", () => {

@@ -36,6 +36,8 @@ export interface ServerInfo {
   proxyMaxUploadBytes: number;
   /** Settings that work but should change, such as deprecated variables. */
   warnings?: string[];
+  /** Set when objects are stored with SSE-C, which copies through R2's S3 API need the key for. */
+  encrypted?: boolean;
   /** Set when GitHub Actions workflows may authenticate with an OIDC token requested for this audience. */
   actionsOidcAudience?: string;
 }
