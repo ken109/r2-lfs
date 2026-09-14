@@ -2,6 +2,8 @@ import { type AuthMode, REPO_PATTERN, type StorageLayout } from "../shared/contr
 
 /** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
 export interface ConfigVars {
+  ALLOWED_REPOS?: string;
+  /** Deprecated: owners, each read as `<owner>/*` in ALLOWED_REPOS. */
   ALLOWED_OWNERS?: string;
   AUTH_MODE?: string;
   STORAGE_LAYOUT?: string;
@@ -29,14 +31,16 @@ export interface PresignCredentials {
 }
 
 export interface Config {
-  /** Lowercased owners, or `*` for anyone. */
-  allowedOwners: ReadonlySet<string> | "*";
+  /** Lowercased REPO_PATTERNs of the repositories this server serves. */
+  allowedRepos: readonly string[];
   authMode: AuthMode;
   storageLayout: StorageLayout;
   /** Set when transfers go through presigned URLs; absent means proxy. */
   presign: PresignCredentials | undefined;
   proxyMaxUploadBytes: number;
   tokens: readonly StaticToken[];
+  /** Settings that work but should change, such as deprecated variables. */
+  warnings: readonly string[];
 }
 
 export class ConfigError extends Error {
@@ -62,6 +66,14 @@ function oneOf<T extends string>(name: string, raw: string | undefined, allowed:
   return fallback;
 }
 
+/** Entries of a comma- or newline-separated list, trimmed. */
+function listOf(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export function parseStaticTokens(raw: string | undefined, problems: string[]): StaticToken[] {
   const tokens: StaticToken[] = [];
   let index = 0;
@@ -85,20 +97,25 @@ export function parseStaticTokens(raw: string | undefined, problems: string[]): 
 export function parseConfig(vars: ConfigVars): Config {
   const problems: string[] = [];
 
+  const warnings: string[] = [];
+  const reposRaw = value(vars.ALLOWED_REPOS);
   const ownersRaw = value(vars.ALLOWED_OWNERS);
-  let allowedOwners: Config["allowedOwners"] = new Set();
-  if (ownersRaw === undefined) {
-    problems.push("ALLOWED_OWNERS is required, e.g. `my-name,my-org`");
-  } else if (ownersRaw === "*") {
-    allowedOwners = "*";
-  } else {
-    allowedOwners = new Set(
-      ownersRaw
-        .split(",")
-        .map((o) => o.trim().toLowerCase())
-        .filter(Boolean),
-    );
-    if (allowedOwners.size === 0) problems.push("ALLOWED_OWNERS lists no owner, e.g. `my-name,my-org`");
+  const allowedRepos = [
+    ...listOf(reposRaw),
+    // Before ALLOWED_REPOS, the server was limited by owner: `acme` meant every repository of acme.
+    ...listOf(ownersRaw).map((owner) => (owner === "*" ? "*" : `${owner}/*`)),
+  ].map((pattern) => pattern.toLowerCase());
+  if (ownersRaw !== undefined) {
+    warnings.push("ALLOWED_OWNERS is deprecated; list repositories in ALLOWED_REPOS instead, such as `my-org/*` for an owner");
+  }
+  if (reposRaw === undefined && ownersRaw === undefined) {
+    problems.push("ALLOWED_REPOS is required, e.g. `my-name/*,my-org/assets`");
+  } else if (allowedRepos.length === 0) {
+    problems.push("ALLOWED_REPOS lists no repository, e.g. `my-name/*,my-org/assets`");
+  }
+  for (const pattern of allowedRepos) {
+    if (!REPO_PATTERN.test(pattern))
+      problems.push(`ALLOWED_REPOS entry "${pattern}" must be owner/repo, with * allowed within names, or *`);
   }
 
   const authMode = oneOf("AUTH_MODE", vars.AUTH_MODE, ["github", "token"], "github", problems);
@@ -136,11 +153,12 @@ export function parseConfig(vars: ConfigVars): Config {
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
-    allowedOwners,
+    allowedRepos,
     authMode,
     storageLayout,
     presign,
     proxyMaxUploadBytes: Math.floor(maxMb * 1024 * 1024),
     tokens,
+    warnings,
   };
 }

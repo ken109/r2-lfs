@@ -15,7 +15,7 @@ const READ_TOKEN = "r".repeat(32);
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     BUCKET: env.BUCKET,
-    ALLOWED_OWNERS: "acme",
+    ALLOWED_REPOS: "acme/*",
     AUTH_MODE: "token",
     STORAGE_LAYOUT: "per-repo",
     TRANSFER_MODE: "proxy",
@@ -138,19 +138,19 @@ afterEach(() => {
 
 describe("routing and configuration", () => {
   it("answers the landing page without configuration", async () => {
-    const res = await call(makeEnv({ ALLOWED_OWNERS: "" }), "/");
+    const res = await call(makeEnv({ ALLOWED_REPOS: "" }), "/");
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("r2-lfs is running");
   });
 
   it("reports every configuration problem at once", async () => {
-    const res = await call(makeEnv({ ALLOWED_OWNERS: " ", STORAGE_LAYOUT: "flat" }), "/acme/app/objects/batch", {
+    const res = await call(makeEnv({ ALLOWED_REPOS: " ", STORAGE_LAYOUT: "flat" }), "/acme/app/objects/batch", {
       token: WRITE_TOKEN,
       json: { operation: "download", objects: [] },
     });
     expect(res.status).toBe(500);
     const { message } = (await res.json()) as { message: string };
-    expect(message).toContain("ALLOWED_OWNERS is required");
+    expect(message).toContain("ALLOWED_REPOS is required");
     expect(message).toContain("STORAGE_LAYOUT must be one of");
   });
 
@@ -160,10 +160,15 @@ describe("routing and configuration", () => {
     expect(error).not.toContain("supersecretvalue1234");
   });
 
-  it("parses owners, limits and transfer modes", () => {
-    expect(() => parseConfig(makeEnv({ ALLOWED_OWNERS: " , ," }))).toThrow(/ALLOWED_OWNERS lists no owner/);
-    expect(parseConfig(makeEnv({ ALLOWED_OWNERS: " Acme , Beta " })).allowedOwners).toEqual(new Set(["acme", "beta"]));
-    expect(parseConfig(makeEnv({ ALLOWED_OWNERS: "*" })).allowedOwners).toBe("*");
+  it("parses repositories, limits and transfer modes", () => {
+    expect(() => parseConfig(makeEnv({ ALLOWED_REPOS: " , ," }))).toThrow(/ALLOWED_REPOS lists no repository/);
+    expect(parseConfig(makeEnv({ ALLOWED_REPOS: " Acme/* , beta/Assets\nme/blender-*" })).allowedRepos).toEqual([
+      "acme/*",
+      "beta/assets",
+      "me/blender-*",
+    ]);
+    expect(parseConfig(makeEnv({ ALLOWED_REPOS: "*" })).allowedRepos).toEqual(["*"]);
+    expect(() => parseConfig(makeEnv({ ALLOWED_REPOS: "acme,beta/*" }))).toThrow(/ALLOWED_REPOS entry "acme" must be owner\/repo/);
     expect(() => parseConfig(makeEnv({ PROXY_MAX_UPLOAD_MB: "lots" }))).toThrow(/PROXY_MAX_UPLOAD_MB/);
     expect(() => parseConfig(makeEnv({ AUTH_TOKENS: "acme/*:rw:short" }))).toThrow(/AUTH_TOKENS entry #1/);
     const credentials = { R2_ACCOUNT_ID: "a", R2_BUCKET_NAME: "b", R2_ACCESS_KEY_ID: "c", R2_SECRET_ACCESS_KEY: "d" };
@@ -194,7 +199,7 @@ describe("routing and configuration", () => {
   });
 
   it("accepts owners with underscores, such as Enterprise Managed Users, but never the reserved prefixes", async () => {
-    const e = makeEnv({ ALLOWED_OWNERS: "*", AUTH_TOKENS: `*:rw:${WRITE_TOKEN}` });
+    const e = makeEnv({ ALLOWED_REPOS: "*", AUTH_TOKENS: `*:rw:${WRITE_TOKEN}` });
     expect((await batch(e, "/alice_acme/app", "download", [])).status).toBe(200);
     for (const owner of ["_shared", "_trash", "_meta"]) {
       expect((await batch(e, `/${owner}/app`, "download", [])).status).toBe(404);
@@ -240,7 +245,30 @@ describe("routing and configuration", () => {
 });
 
 describe("authentication (token mode)", () => {
-  it("rejects owners outside ALLOWED_OWNERS before checking credentials", async () => {
+  it("serves only the repositories ALLOWED_REPOS names, with * within names", async () => {
+    const e = makeEnv({ ALLOWED_REPOS: "acme/assets,me/blender-*" });
+    expect((await batch(e, "/acme/assets", "download", [])).status).toBe(200);
+    expect((await batch(e, "/acme/app", "download", [])).status).toBe(403);
+    expect(
+      (await batch(makeEnv({ ALLOWED_REPOS: "me/blender-*", AUTH_TOKENS: `*:rw:${WRITE_TOKEN}` }), "/me/blender-cube", "download", []))
+        .status,
+    ).toBe(200);
+    expect(
+      (await batch(makeEnv({ ALLOWED_REPOS: "me/blender-*", AUTH_TOKENS: `*:rw:${WRITE_TOKEN}` }), "/me/cube", "download", [])).status,
+    ).toBe(403);
+  });
+
+  it("still reads ALLOWED_OWNERS as every repository of those owners, and says it is deprecated", async () => {
+    const legacy = makeEnv({ ALLOWED_REPOS: undefined, ALLOWED_OWNERS: "acme" });
+    expect((await batch(legacy, "/acme/anything", "download", [])).status).toBe(200);
+    expect((await batch(legacy, "/other/app", "download", [])).status).toBe(403);
+    const info = (await (await call(legacy, "/_r2-lfs/info")).json()) as { warnings?: string[] };
+    expect(info.warnings).toEqual([expect.stringContaining("ALLOWED_OWNERS is deprecated")]);
+    const current = (await (await call(makeEnv(), "/_r2-lfs/info")).json()) as { warnings?: string[] };
+    expect(current.warnings).toBeUndefined();
+  });
+
+  it("rejects repositories outside ALLOWED_REPOS before checking credentials", async () => {
     const res = await batch(makeEnv(), "/other/app", "download", []);
     expect(res.status).toBe(403);
   });
@@ -273,7 +301,7 @@ describe("authentication (token mode)", () => {
 
   it("uses the strongest grant that covers the repository, and scopes stay within their owner", async () => {
     const token = "t".repeat(32);
-    const e = makeEnv({ ALLOWED_OWNERS: "acme,beta", AUTH_TOKENS: `acme/app:r:${token},acme/*:rw:${token},*:r:${READ_TOKEN}` });
+    const e = makeEnv({ ALLOWED_REPOS: "acme/*,beta/*", AUTH_TOKENS: `acme/app:r:${token},acme/*:rw:${token},*:r:${READ_TOKEN}` });
     expect((await batch(e, "/acme/app", "upload", [], { token })).status).toBe(200);
     expect((await batch(e, "/beta/app", "download", [], { token })).status).toBe(404);
     expect((await batch(e, "/beta/app", "download", [], { token: READ_TOKEN })).status).toBe(200);
@@ -363,10 +391,10 @@ describe("server info", () => {
   });
 
   it("lists configuration problems without leaking secrets", async () => {
-    const res = await call(makeEnv({ ALLOWED_OWNERS: "", AUTH_TOKENS: "bad:entry:supersecretvalue1234" }), "/_r2-lfs/info");
+    const res = await call(makeEnv({ ALLOWED_REPOS: "", AUTH_TOKENS: "bad:entry:supersecretvalue1234" }), "/_r2-lfs/info");
     expect(res.status).toBe(500);
     const text = await res.text();
-    expect(text).toContain("ALLOWED_OWNERS is required");
+    expect(text).toContain("ALLOWED_REPOS is required");
     expect(text).not.toContain("supersecretvalue1234");
   });
 });
@@ -625,7 +653,7 @@ describe("authentication (github mode)", () => {
     expect(gh.calls).toHaveLength(1);
   });
 
-  it("refuses owners outside ALLOWED_OWNERS before asking GitHub or for credentials", async () => {
+  it("refuses repositories outside ALLOWED_REPOS before asking GitHub or for credentials", async () => {
     const withToken = await batch(githubEnv(), "/other/app", "download", [], { token: GH_TOKEN });
     expect(withToken.status).toBe(403);
     const withoutToken = await call(githubEnv(), "/other/app/objects/batch", { json: { operation: "download", objects: [] } });

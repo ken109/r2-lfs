@@ -93,7 +93,7 @@ describe("contract", () => {
     expect(config).toMatchObject({
       main: "worker.js",
       r2_buckets: [{ binding: "BUCKET", bucket_name: "b" }],
-      vars: { ALLOWED_OWNERS: "acme" },
+      vars: { ALLOWED_REPOS: "acme/*" },
     });
   });
 });

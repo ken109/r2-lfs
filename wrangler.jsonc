@@ -13,8 +13,8 @@
     },
   ],
   "vars": {
-    // Comma-separated GitHub users or orgs allowed to use this server. Required.
-    "ALLOWED_OWNERS": "",
+    // Comma-separated repositories this server serves, with * within names: "my-name/*,my-org/assets". Required.
+    "ALLOWED_REPOS": "",
     // "github" | "token"
     "AUTH_MODE": "github",
     // "per-repo" | "shared"

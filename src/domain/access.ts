@@ -10,8 +10,8 @@ export function hasPermission(actual: Permission, required: Permission): boolean
   return RANK[actual] >= RANK[required];
 }
 
-export function ownerAllowed(config: Config, owner: string): boolean {
-  return config.allowedOwners === "*" || config.allowedOwners.has(owner.toLowerCase());
+export function repoAllowed(config: Config, repo: Repo): boolean {
+  return config.allowedRepos.some((pattern) => repoPatternMatches(pattern, repo.owner, repo.name));
 }
 
 export interface Grant {

@@ -81,6 +81,7 @@ export async function diagnose(deps: DoctorDeps): Promise<Check[]> {
     "ok",
     `r2-lfs ${info.info.version}, ${info.info.authMode} auth, ${info.info.storageLayout} layout, ${info.info.transfer} transfers`,
   );
+  for (const warning of info.info.warnings ?? []) add("server settings", "warn", warning, "Change the Worker's variables and redeploy");
 
   if (!client.hasCredentials) {
     const fix =

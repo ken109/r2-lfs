@@ -36,7 +36,7 @@ describe("git-lfs through a local r2-lfs server", () => {
 
     work = mkdtempSync(join(tmpdir(), "r2-lfs-e2e-"));
     const envFile = join(work, "worker.env");
-    writeFileSync(envFile, `ALLOWED_OWNERS=acme\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nAUTH_TOKENS=acme/*:rw:${TOKEN}\n`);
+    writeFileSync(envFile, `ALLOWED_REPOS=acme/*\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nAUTH_TOKENS=acme/*:rw:${TOKEN}\n`);
     server = spawn(
       "pnpm",
       [

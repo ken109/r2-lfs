@@ -793,5 +793,9 @@ describe("init and doctor", () => {
     const checks = await diagnose({ ...base, connect: (): LfsClient => readOnly });
     expect(checks.find((c) => c.name === "access")).toMatchObject({ status: "warn" });
     expect(checks.find((c) => c.name === "R2 credentials")).toMatchObject({ status: "warn" });
+
+    readOnly.serverInfo = { ...readOnly.serverInfo, warnings: ["ALLOWED_OWNERS is deprecated"] };
+    const warned = await diagnose({ ...base, connect: (): LfsClient => readOnly });
+    expect(warned.find((c) => c.name === "server settings")).toMatchObject({ status: "warn", detail: "ALLOWED_OWNERS is deprecated" });
   });
 });

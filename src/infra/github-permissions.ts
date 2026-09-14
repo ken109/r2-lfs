@@ -36,7 +36,7 @@ export class GithubApiPermissions implements GithubPermissions {
           "User-Agent": "r2-lfs",
           "X-GitHub-Api-Version": "2022-11-28",
         },
-        // A renamed or transferred repository redirects to its new owner, whom ALLOWED_OWNERS may not allow.
+        // A renamed or transferred repository redirects to its new owner, which ALLOWED_REPOS may not allow.
         redirect: "manual",
       });
     } catch {

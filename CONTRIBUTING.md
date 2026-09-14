@@ -23,8 +23,8 @@ pnpm build       # dist/cli.js and dist/worker.js
 ```
 
 Run the CLI from source with `pnpm cli <command>`, and the Worker with `pnpm dev`. Put settings in
-`.dev.vars`, which overrides the variables in `wrangler.jsonc`; at least `ALLOWED_OWNERS` is required,
-for example `ALLOWED_OWNERS=your-github-name`. `.dev.vars.example` lists the secrets.
+`.dev.vars`, which overrides the variables in `wrangler.jsonc`; at least `ALLOWED_REPOS` is required,
+for example `ALLOWED_REPOS=your-github-name/*`. `.dev.vars.example` lists the secrets.
 
 ## How the code is organised
 

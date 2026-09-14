@@ -52,7 +52,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
     observability: { enabled: true },
     r2_buckets: [{ binding: "BUCKET", bucket_name: opts.bucket }],
     vars: {
-      ALLOWED_OWNERS: opts.owners.join(","),
+      ALLOWED_REPOS: opts.owners.map((owner) => (owner === "*" ? "*" : `${owner}/*`)).join(","),
       AUTH_MODE: opts.authMode,
       STORAGE_LAYOUT: opts.layout,
       TRANSFER_MODE: "auto",

@@ -16,7 +16,7 @@ to receive them.
 
 ## What r2-lfs protects
 
-- **Who can read and write objects.** Requests must come from an owner in `ALLOWED_OWNERS` and carry
+- **Who can read and write objects.** Requests must be for a repository `ALLOWED_REPOS` covers and carry
   credentials that the GitHub API or the token directory accepts for that repository.
 - **Integrity in proxy mode.** R2 rejects uploads whose content does not hash to the oid.
 - **Deletion.** The Worker cannot delete objects. Deletion needs R2 API credentials, and bucket lock

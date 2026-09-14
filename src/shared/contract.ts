@@ -25,6 +25,8 @@ export interface ServerInfo {
   storageLayout: StorageLayout;
   transfer: "presigned" | "proxy";
   proxyMaxUploadBytes: number;
+  /** Settings that work but should change, such as deprecated variables. */
+  warnings?: string[];
 }
 
 /** A transfer action in a Git LFS batch response. */

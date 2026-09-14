@@ -50,6 +50,7 @@ function info(env: Env): Response {
       storageLayout: config.storageLayout,
       transfer: config.presign ? "presigned" : "proxy",
       proxyMaxUploadBytes: config.proxyMaxUploadBytes,
+      ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
     };
     return Response.json(body);
   } catch (err) {
