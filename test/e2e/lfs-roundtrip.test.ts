@@ -173,7 +173,9 @@ describe("git-lfs through a local r2-lfs server", () => {
     git(repo, "init", "-q");
     git(repo, "remote", "add", "origin", origin);
     cli(repo, "init", "--server", SERVER, "--repo", "acme/big", "--track", "blender", "--credential", "none", "--transfer-agent");
-    expect(git(repo, "config", "--global", "--get", "lfs.customtransfer.r2-lfs-multipart.path")).toMatch(/r2-lfs[\\/]transfer-agent$/);
+    expect(git(repo, "config", "--global", "--get", "lfs.customtransfer.r2-lfs-multipart.path").trim()).toMatch(
+      /r2-lfs[\\/]transfer-agent$/,
+    );
 
     // PROXY_MAX_UPLOAD_MB is 5, so basic transfers would refuse this; the agent sends it in three parts.
     const scene = randomBytes(12 * 1024 * 1024);

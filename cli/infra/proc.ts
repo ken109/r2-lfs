@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 
 export class CommandError extends Error {
   override readonly name = "CommandError";
@@ -64,7 +64,7 @@ export function interactive(cmd: string, args: string[], opts: RunOptions = {}):
 
 /** The first file PATH resolves `command` to, as a shell would; on Windows with PATHEXT's extensions. */
 export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string | undefined {
-  const dirs = (env.PATH ?? env.Path ?? "").split(platform === "win32" ? ";" : delimiter).filter(Boolean);
+  const dirs = (env.PATH ?? env.Path ?? "").split(platform === "win32" ? ";" : ":").filter(Boolean);
   const extensions = platform === "win32" ? ["", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)] : [""];
   for (const dir of dirs) {
     for (const ext of extensions) {

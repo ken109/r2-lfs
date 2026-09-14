@@ -513,9 +513,12 @@ describe("transfer agent launcher", () => {
     mkdirSync(second);
     files.writeExecutable(join(second, "tool"), "");
     writeFileSync(join(first, "tool.CMD"), "");
-    expect(findOnPath("tool", { PATH: [first, second].join(":") }, "linux")).toBe(join(second, "tool"));
     expect(findOnPath("tool", { Path: [first, second].join(";"), PATHEXT: ".EXE;.CMD" }, "win32")).toBe(join(first, "tool.CMD"));
-    expect(findOnPath("missing", { PATH: first }, "linux")).toBeUndefined();
+    // A Windows drive letter would split a colon-separated PATH.
+    if (!windows) {
+      expect(findOnPath("tool", { PATH: [first, second].join(":") }, "linux")).toBe(join(second, "tool"));
+      expect(findOnPath("missing", { PATH: first }, "linux")).toBeUndefined();
+    }
   });
 });
 
