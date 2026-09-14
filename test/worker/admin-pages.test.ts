@@ -182,10 +182,12 @@ describe("admin activity", () => {
     expect(await recentActivity(failing, 1)).toMatchObject({ ok: false, status: 502, message: expect.stringContaining("403") });
   });
 
-  it("needs the account id to query analytics", () => {
+  it("needs the account id to query analytics, and only warns without it", () => {
     const base = { ALLOWED_REPOS: "acme/*", AUTH_MODE: "token" };
     expect(parseConfig({ ...base, ANALYTICS_API_TOKEN: "t", R2_ACCOUNT_ID: "acc" }).analytics).toEqual({ accountId: "acc", apiToken: "t" });
     expect(parseConfig(base).analytics).toBeUndefined();
-    expect(() => parseConfig({ ...base, ANALYTICS_API_TOKEN: "t" })).toThrow(/R2_ACCOUNT_ID/);
+    const withoutAccount = parseConfig({ ...base, ANALYTICS_API_TOKEN: "t" });
+    expect(withoutAccount.analytics).toBeUndefined();
+    expect(withoutAccount.warnings).toEqual([expect.stringContaining("R2_ACCOUNT_ID")]);
   });
 });

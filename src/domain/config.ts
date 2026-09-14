@@ -259,7 +259,10 @@ export function parseConfig(vars: ConfigVars): Config {
 
   const analyticsToken = value(vars.ANALYTICS_API_TOKEN);
   const accountId = value(vars.R2_ACCOUNT_ID);
-  if (analyticsToken && !accountId) problems.push("ANALYTICS_API_TOKEN needs R2_ACCOUNT_ID, the account the Worker runs in");
+  // Only the admin UI's activity page needs these, so a missing account id must not stop the Git LFS API.
+  if (analyticsToken && !accountId) {
+    warnings.push("ANALYTICS_API_TOKEN is set without R2_ACCOUNT_ID, the account the Worker runs in; the activity page stays off");
+  }
 
   if (problems.length > 0) throw new ConfigError(problems);
 
