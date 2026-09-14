@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writ
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { workerConfig } from "../../cli/app/setup.ts";
 import { assertInContainer } from "./container.ts";
@@ -89,6 +89,12 @@ describe("git-lfs through a local r2-lfs server", () => {
       if (Date.now() > deadline) throw new Error(`wrangler dev did not start:\n${serverLog}`);
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
+  });
+
+  // The Worker's own errors explain a failed git command far better than git-lfs's "Server error".
+  afterEach((ctx) => {
+    if (ctx.task.result?.state === "fail") console.error(`wrangler dev output:\n${serverLog}`);
+    serverLog = "";
   });
 
   afterAll(() => {
