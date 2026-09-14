@@ -5,6 +5,6 @@
     "jsx": "react-jsx",
     "types": ["vite/client"]
   },
-  "include": ["src/routes", "src/router.tsx", "src/routeTree.gen.ts"],
+  "include": ["src/routes", "src/router.tsx", "src/routeTree.gen.ts", "src/start-context.ts"],
   "exclude": []
 }

@@ -40,6 +40,11 @@ flowchart LR
 | `http/`   | Routing, Request/Response mapping, composition of infra per request                                       | everything above                     |
 | `routes/` | The admin UI under `/_admin` (TanStack Start), and `server.ts`, which routes requests to it or to the API | everything above                     |
 
+The admin UI's server functions (`routes/[_]admin/-functions.ts`) do not construct adapters. `server.ts`
+lets a request through only after Cloudflare Access did, builds an `AdminApi` (`app/admin-api.ts`,
+implemented in `http/admin-api.ts`) and passes it to TanStack Start as request context, so the UI, which
+is type-checked with DOM types, depends only on that interface.
+
 Use cases return `Result` values with the HTTP status the LFS spec prescribes, so `http/` only maps
 them to responses.
 

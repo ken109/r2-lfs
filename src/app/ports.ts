@@ -1,7 +1,7 @@
 import type { Grant, Permission } from "../domain/access.ts";
 import type { AccessSettings } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
-import type { LfsAction, LfsLock } from "../shared/contract.ts";
+import type { LfsAction, LfsLock, TokensFile } from "../shared/contract.ts";
 
 /** Where LFS objects live. */
 export interface ObjectStore {
@@ -119,4 +119,22 @@ export interface HostPermissions {
   lookup(repo: Repo, credentials: Credentials): Promise<Lookup>;
   /** The user name of the account the credentials belong to. */
   login(credentials: Credentials): Promise<string | undefined>;
+}
+
+/** The tokens file in the bucket, written only if nobody changed it since it was read. */
+export interface TokensFileStore {
+  /** `etag` is null when the file does not exist yet; `value` is the parsed JSON, or undefined if it is not JSON. */
+  read(): Promise<{ value: unknown; etag: string | null }>;
+  /** False when the file changed since `etag`, or was created when `etag` is null. */
+  write(file: TokensFile, etag: string | null): Promise<boolean>;
+}
+
+/** Makes a new token: its secret, a short id and the hash that is stored instead of the secret. */
+export interface TokenMinter {
+  mint(): Promise<{ token: string; id: string; sha256: string }>;
+}
+
+/** One page of a bucket listing, in key order. */
+export interface BucketLister {
+  list(cursor: string | undefined): Promise<{ objects: { key: string; size: number }[]; cursor?: string }>;
 }

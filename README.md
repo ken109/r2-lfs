@@ -302,6 +302,16 @@ The Worker serves an admin UI at `/_admin`. It stays closed until Cloudflare Acc
 The Worker checks the token Access adds to every request against your team's signing keys, so the UI
 refuses requests that did not come through that application.
 
+It has three pages:
+
+- **Overview**: the server's settings and warnings, and on request a count of what each repository
+  stores, the trash and unfinished uploads.
+- **Tokens**: create and revoke the tokens `r2-lfs token` keeps in the bucket. A new token is shown once.
+- **Locks**: a repository's file locks, with the holder and time, and unlocking any of them.
+
+The UI changes nothing on requests from other sites: its server functions accept changes only with the
+admin UI's own `Origin`.
+
 ## Security
 
 - Tokens from `r2-lfs token` are stored as SHA-256 hashes; `AUTH_TOKENS` is an encrypted Worker secret. Comparisons are constant-time.

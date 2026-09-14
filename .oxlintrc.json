@@ -131,7 +131,7 @@
       }
     },
     {
-      "files": ["src/http/**", "src/index.ts", "src/env.ts", "src/server.ts", "src/router.tsx", "src/routes/**"],
+      "files": ["src/http/**", "src/index.ts", "src/env.ts", "src/server.ts", "src/start-context.ts", "src/router.tsx", "src/routes/**"],
       "rules": {
         "no-restricted-imports": [
           "error",

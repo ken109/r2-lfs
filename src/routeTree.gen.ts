@@ -9,50 +9,113 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AdminRouteRouteImport } from './routes/[_]admin/route'
 import { Route as AdminIndexRouteImport } from './routes/[_]admin/index'
+import { Route as AdminLocksRouteImport } from './routes/[_]admin/locks'
+import { Route as AdminTokensRouteImport } from './routes/[_]admin/tokens'
 
-const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/_admin/',
-  path: '/_admin/',
+const AdminRouteRoute = AdminRouteRouteImport.update({
+  id: '/_admin',
+  path: '/_admin',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminLocksRoute = AdminLocksRouteImport.update({
+  id: '/locks',
+  path: '/locks',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminTokensRoute = AdminTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/_admin': typeof AdminRouteRouteWithChildren
+  '/_admin/locks': typeof AdminLocksRoute
+  '/_admin/tokens': typeof AdminTokensRoute
   '/_admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
+  '/_admin/locks': typeof AdminLocksRoute
+  '/_admin/tokens': typeof AdminTokensRoute
   '/_admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/_admin': typeof AdminRouteRouteWithChildren
+  '/_admin/locks': typeof AdminLocksRoute
+  '/_admin/tokens': typeof AdminTokensRoute
   '/_admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/_admin/'
+  fullPaths: '/_admin' | '/_admin/locks' | '/_admin/tokens' | '/_admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/_admin'
-  id: '__root__' | '/_admin/'
+  to: '/_admin/locks' | '/_admin/tokens' | '/_admin'
+  id: '__root__' | '/_admin' | '/_admin/locks' | '/_admin/tokens' | '/_admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  AdminIndexRoute: typeof AdminIndexRoute
+  AdminRouteRoute: typeof AdminRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/_admin': {
+      id: '/_admin'
+      path: '/_admin'
+      fullPath: '/_admin'
+      preLoaderRoute: typeof AdminRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_admin/': {
       id: '/_admin/'
-      path: '/_admin'
+      path: '/'
       fullPath: '/_admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/_admin/locks': {
+      id: '/_admin/locks'
+      path: '/locks'
+      fullPath: '/_admin/locks'
+      preLoaderRoute: typeof AdminLocksRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/_admin/tokens': {
+      id: '/_admin/tokens'
+      path: '/tokens'
+      fullPath: '/_admin/tokens'
+      preLoaderRoute: typeof AdminTokensRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
+interface AdminRouteRouteChildren {
+  AdminLocksRoute: typeof AdminLocksRoute
+  AdminTokensRoute: typeof AdminTokensRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteRouteChildren: AdminRouteRouteChildren = {
+  AdminLocksRoute: AdminLocksRoute,
+  AdminTokensRoute: AdminTokensRoute,
   AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
+  AdminRouteRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  AdminRouteRoute: AdminRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
