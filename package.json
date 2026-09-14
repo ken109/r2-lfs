@@ -1,6 +1,6 @@
 {
   "name": "r2-lfs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Git LFS server on Cloudflare Workers and R2, with a CLI to inspect, clean up and archive LFS objects",
   "keywords": [
     "git-lfs",
