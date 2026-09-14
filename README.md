@@ -155,10 +155,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: ken109/r2-lfs@v0.1.0 # x-release-please-version
+      - uses: ken109/r2-lfs@v0.2.0 # x-release-please-version
         with:
           apply: true
-          version: 0.1.0 # x-release-please-version
+          version: 0.2.0 # x-release-please-version
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: r2-lfs
@@ -290,7 +290,7 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v7
-  - run: npx r2-lfs@0.1.0 credential --install # x-release-please-version
+  - run: npx r2-lfs@0.2.0 credential --install # x-release-please-version
   - run: git lfs pull
 ```
 
