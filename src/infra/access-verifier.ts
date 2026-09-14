@@ -1,6 +1,6 @@
 import type { AccessVerifier } from "../app/ports.ts";
 import type { AccessSettings } from "../domain/config.ts";
-import type { Fetcher } from "./github-permissions.ts";
+import type { Fetcher } from "./host-permissions.ts";
 import { verifyJwt } from "./jwt.ts";
 
 /** Verifies the tokens Cloudflare Access issues, against the team's published signing keys. */

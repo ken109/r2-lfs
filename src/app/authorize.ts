@@ -1,22 +1,28 @@
 import { repoAllowed, strongestGrant } from "../domain/access.ts";
 import type { Config } from "../domain/config.ts";
 import { isSafeRepoName, type Repo } from "../domain/repo.ts";
-import type { ActionsTokenVerifier, Authorization, GithubPermissions, TokenDirectory } from "./ports.ts";
+import type { ActionsTokenVerifier, Authorization, Credentials, HostPermissions, TokenDirectory } from "./ports.ts";
 
 export interface AuthorizeDeps {
   tokens: TokenDirectory;
-  github: GithubPermissions;
+  host: HostPermissions;
   actions: ActionsTokenVerifier;
   /** Whether the credential has the shape of a JWT, which GitHub and r2-lfs tokens never have. */
   isJwt: (token: string) => boolean;
 }
 
 /** Decides what the request may do with the repository: owner allowed, then credentials. */
-export async function authorize(config: Config, repo: Repo, token: string | undefined, deps: AuthorizeDeps): Promise<Authorization> {
+export async function authorize(
+  config: Config,
+  repo: Repo,
+  credentials: Credentials | undefined,
+  deps: AuthorizeDeps,
+): Promise<Authorization> {
   if (!isSafeRepoName(repo.name)) return { ok: false, status: 404, message: "Not found" };
   // Before credentials, so the GitHub API is not asked about repositories this server does not serve.
   if (!repoAllowed(config, repo)) return { ok: false, status: 403, message: `${repo.owner}/${repo.name} is not allowed on this server` };
-  if (!token) return { ok: false, status: 401, message: "Credentials required" };
+  if (!credentials) return { ok: false, status: 401, message: "Credentials required" };
+  const token = credentials.password;
   if (config.actionsOidc && deps.isJwt(token)) {
     const claims = await deps.actions.verify(token, config.actionsOidc.audience);
     if (!claims)
@@ -31,9 +37,9 @@ export async function authorize(config: Config, repo: Repo, token: string | unde
     }
     return { ok: true, permission: config.actionsOidc.permission, identify: async () => `${claims.actor} (GitHub Actions)` };
   }
-  if (config.authMode === "github") {
-    const lookup = await deps.github.lookup(repo, token);
-    return lookup.ok ? { ...lookup, identify: () => deps.github.login(token) } : lookup;
+  if (config.authMode !== "token") {
+    const lookup = await deps.host.lookup(repo, credentials);
+    return lookup.ok ? { ...lookup, identify: () => deps.host.login(credentials) } : lookup;
   }
 
   const grants = await deps.tokens.grantsFor(token);

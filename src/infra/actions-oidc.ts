@@ -1,5 +1,5 @@
 import type { ActionsClaims, ActionsTokenVerifier } from "../app/ports.ts";
-import type { Fetcher } from "./github-permissions.ts";
+import type { Fetcher } from "./host-permissions.ts";
 import { verifyJwt } from "./jwt.ts";
 
 export const ACTIONS_ISSUER = "https://token.actions.githubusercontent.com";

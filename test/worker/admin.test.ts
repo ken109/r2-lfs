@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
 import { gateAdmin } from "../../src/http/admin-gate.ts";
-import type { Fetcher } from "../../src/infra/github-permissions.ts";
+import type { Fetcher } from "../../src/infra/host-permissions.ts";
 import { clearJwtKeysCache } from "../../src/infra/jwt.ts";
 import { signingKey } from "./jwt-helpers.ts";
 

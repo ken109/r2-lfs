@@ -71,8 +71,15 @@ export interface AccessVerifier {
   verify(token: string, settings: AccessSettings): Promise<string | undefined>;
 }
 
-export interface GithubPermissions {
-  lookup(repo: Repo, token: string): Promise<Lookup>;
-  /** The login of the account that owns the token. */
-  login(token: string): Promise<string | undefined>;
+/** What a client sent as HTTP Basic credentials; `username` is absent for a bearer token. */
+export interface Credentials {
+  username?: string;
+  password: string;
+}
+
+/** The Git host whose repository permissions the server mirrors. */
+export interface HostPermissions {
+  lookup(repo: Repo, credentials: Credentials): Promise<Lookup>;
+  /** The user name of the account the credentials belong to. */
+  login(credentials: Credentials): Promise<string | undefined>;
 }

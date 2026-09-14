@@ -171,7 +171,8 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | Name                    | Kind   | Default    | Meaning                                                                                                                                                                                                                                         |
 | ----------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ALLOWED_REPOS`         | var    | (required) | Comma-separated [repository patterns](#repository-patterns) the server serves, such as `my-name/*,my-org/assets`. `*` alone serves anyone's repositories. The older `ALLOWED_OWNERS` (`my-name,my-org`) still works and counts as `<owner>/*`.  |
-| `AUTH_MODE`             | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                                                                                                                                                     |
+| `AUTH_MODE`             | var    | `github`   | `github`, `gitlab`, `gitea`, `bitbucket` or `token`; see [Authentication](#authentication).                                                                                                                                                     |
+| `AUTH_HOST`             | var    |            | A self-managed GitHub Enterprise Server, GitLab, Gitea or Forgejo, such as `https://git.example.com`.                                                                                                                                           |
 | `STORAGE_LAYOUT`        | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                                                                                                             |
 | `TRANSFER_MODE`         | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                                                                                                 |
 | `PROXY_MAX_UPLOAD_MB`   | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                                                                                                          |
@@ -190,11 +191,16 @@ If a setting is invalid, LFS requests fail with a message listing every problem,
 
 ### Authentication
 
-**`github`.** Git sends a GitHub token as the password. The Worker asks the GitHub API what that
-account can do on the repository with the same owner and name: reading allows downloads, pushing
-allows uploads. Answers are cached for 60 seconds. GitHub reports the **account's** role, not the
-token's scopes, so a read-only token that belongs to a collaborator can still upload. GitHub's redirects
-for renamed or transferred repositories are not followed, so update `lfs.url` after moving a repository.
+**`github`, `gitlab`, `gitea`, `bitbucket`.** Git sends a token for that host as the password (for
+Bitbucket, an app password with your user name, or an access token). The Worker asks the host's API what
+that account can do on the repository with the same owner and name: reading allows downloads, writing
+allows uploads, and admin (GitHub admin or maintain, GitLab Maintainer or Owner) also allows unlocking
+other people's files. Answers are cached for 60 seconds. Hosts report the **account's** role, not the
+token's scopes, so a read-only token that belongs to a collaborator can still upload. Redirects for renamed
+or transferred repositories are not followed, so update `lfs.url` after moving a repository.
+
+For GitHub Enterprise Server, a self-managed GitLab, Gitea or Forgejo, set `AUTH_HOST` to its address.
+Repositories must be `owner/repo`; GitLab projects in subgroups cannot be addressed.
 
 **`token`.** Tokens created with `r2-lfs token create --scope owner/* --label laptop` (stored hashed
 in the bucket, revocable within 30 seconds), plus any in the `AUTH_TOKENS` secret. A scope is a
@@ -293,7 +299,6 @@ See [SECURITY.md](SECURITY.md) to report a vulnerability.
 ## Limitations
 
 - Only the `basic` transfer adapter and SHA-256 oids are supported, which is what git-lfs uses by default.
-- `github` authentication works only for repositories hosted on github.com.
 
 ## Contributing
 

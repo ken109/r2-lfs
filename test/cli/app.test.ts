@@ -818,10 +818,17 @@ describe("init and doctor", () => {
       /just an origin/,
     );
     await expect(initRepository(deps, { ...base, repo: "acme/assets", credential: "gh" })).rejects.toThrow(/gh auth login/);
-    expect(reporter.warnings).toEqual([expect.stringContaining("token auth")]);
+    expect(reporter.warnings).toEqual([expect.stringContaining("its own tokens")]);
 
     const result = await initRepository(deps, { ...base, repo: "acme/assets" });
     expect(result).toMatchObject({ credential: "none", access: "unknown" });
+
+    // gh logs in to github.com, so a GitHub Enterprise Server does not get its token by default.
+    client.serverInfo = { ...client.serverInfo, authMode: "github", authHost: "https://ghe.example.com" };
+    const loggedIn = { ...noGh, loggedIn: () => true };
+    expect((await initRepository({ ...deps, gh: loggedIn }, { ...base, repo: "acme/assets" })).credential).toBe("none");
+    client.serverInfo = { ...client.serverInfo, authHost: "https://github.com" };
+    expect((await initRepository({ ...deps, gh: loggedIn }, { ...base, repo: "acme/assets" })).credential).toBe("gh");
     expect(gitConfig.get("r2-lfs.server")).toBe("https://first.example.com");
   });
 

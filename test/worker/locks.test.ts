@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
-import { clearGithubCache, type Fetcher } from "../../src/infra/github-permissions.ts";
+import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
 import { clearStoredTokensCache } from "../../src/infra/token-directory.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
 
@@ -44,7 +44,7 @@ async function call(e: Env, path: string, opts: { method?: string; token?: strin
 }
 
 beforeEach(() => {
-  clearGithubCache();
+  clearHostCache();
   clearStoredTokensCache();
 });
 

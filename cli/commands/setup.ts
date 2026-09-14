@@ -18,7 +18,17 @@ export default defineCommand({
     owners: { type: "string", description: "Deprecated: owners whose repositories the server serves, same as --repos 'owner/*'" },
     name: { type: "string", description: "Worker name", default: "r2-lfs" },
     bucket: { type: "string", description: "R2 bucket name", default: "r2-lfs" },
-    auth: { type: "enum", options: ["github", "token"], description: "How clients authenticate", default: "github" },
+    auth: {
+      type: "enum",
+      options: ["github", "gitlab", "gitea", "bitbucket", "token"],
+      description: "Whose permissions to mirror, or token for the server's own tokens",
+      default: "github",
+    },
+    "auth-host": {
+      type: "string",
+      description: "Self-managed GitHub Enterprise Server, GitLab, Gitea or Forgejo",
+      valueHint: "https://git.example.com",
+    },
     layout: { type: "enum", options: ["per-repo", "shared"], description: "How objects are grouped in the bucket", default: "per-repo" },
     "lock-days": {
       type: "string",
@@ -51,6 +61,7 @@ export default defineCommand({
         bucket: args.bucket,
         repos: [...commaList(args.repos), ...reposOfOwners(commaList(args.owners))],
         authMode: args.auth as SetupOptions["authMode"],
+        ...(args["auth-host"] ? { authHost: args["auth-host"] } : {}),
         layout: args.layout as SetupOptions["layout"],
         lockDays: readDays("lock-days", args["lock-days"])!,
         trashDays: readDays("trash-days", args["trash-days"])!,

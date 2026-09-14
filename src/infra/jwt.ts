@@ -1,4 +1,4 @@
-import type { Fetcher } from "./github-permissions.ts";
+import type { Fetcher } from "./host-permissions.ts";
 
 interface Jwk extends JsonWebKey {
   kid?: string;

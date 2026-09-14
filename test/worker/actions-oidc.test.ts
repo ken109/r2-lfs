@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
-import { clearGithubCache, type Fetcher } from "../../src/infra/github-permissions.ts";
+import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
 import { clearJwtKeysCache } from "../../src/infra/jwt.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
 import { signingKey } from "./jwt-helpers.ts";
@@ -56,7 +56,7 @@ async function setup() {
 
 beforeEach(() => {
   clearJwtKeysCache();
-  clearGithubCache();
+  clearHostCache();
 });
 
 describe("GitHub Actions OIDC", () => {

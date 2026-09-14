@@ -26,6 +26,8 @@ export interface SetupOptions {
   /** Repository patterns for ALLOWED_REPOS, such as `me/*` or `my-org/blender-*`. */
   repos: string[];
   authMode: AuthMode;
+  /** A self-managed Git host; github.com, gitlab.com and bitbucket.org need none. */
+  authHost?: string;
   layout: StorageLayout;
   /** 0 disables the lock rules. */
   lockDays: number;
@@ -86,6 +88,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
     vars: {
       ALLOWED_REPOS: opts.repos.join(","),
       AUTH_MODE: opts.authMode,
+      AUTH_HOST: opts.authHost ?? "",
       STORAGE_LAYOUT: opts.layout,
       TRANSFER_MODE: "auto",
       PROXY_MAX_UPLOAD_MB: "100",

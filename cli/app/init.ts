@@ -87,9 +87,14 @@ export async function initRepository(deps: InitDeps, opts: InitOptions): Promise
     reporter.success(`Tracking ${patterns.join(" ")}${opts.lockable ? " as lockable" : ""}`);
   }
 
-  const credential = opts.credential ?? (info.authMode === "github" && gh.loggedIn() ? "gh" : "none");
+  // gh answers for github.com; other hosts need their own token.
+  const githubDotCom = info.authMode === "github" && (info.authHost ?? "https://github.com") === "https://github.com";
+  const credential = opts.credential ?? (githubDotCom && gh.loggedIn() ? "gh" : "none");
   if (credential === "gh") {
-    if (info.authMode !== "github") reporter.warn("The server uses token auth, so it will not accept a GitHub login");
+    if (!githubDotCom)
+      reporter.warn(
+        `The server checks ${info.authMode === "token" ? "its own tokens" : info.authHost}, so it will not accept a github.com login`,
+      );
     if (!gh.loggedIn()) throw new UsageError("--credential gh needs the GitHub CLI to be logged in (gh auth login)");
     gitConfig.useGhCredentials(location.origin);
     reporter.success(`Git will use your gh login for ${location.host}`);

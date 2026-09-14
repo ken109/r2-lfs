@@ -6,6 +6,8 @@ export interface ConfigVars {
   /** Deprecated: owners, each read as `<owner>/*` in ALLOWED_REPOS. */
   ALLOWED_OWNERS?: string;
   AUTH_MODE?: string;
+  /** The host of a self-managed GitHub Enterprise Server, GitLab, Gitea or Forgejo. */
+  AUTH_HOST?: string;
   STORAGE_LAYOUT?: string;
   TRANSFER_MODE?: string;
   PROXY_MAX_UPLOAD_MB?: string;
@@ -52,10 +54,18 @@ export interface ActionsOidcSettings {
   audience: string;
 }
 
+/** Which Git host's permissions to mirror, by its web origin, such as https://gitlab.example.com. */
+export interface HostSettings {
+  kind: Exclude<AuthMode, "token">;
+  url: string;
+}
+
 export interface Config {
   /** Lowercased REPO_PATTERNs of the repositories this server serves. */
   allowedRepos: readonly string[];
   authMode: AuthMode;
+  /** The Git host to ask; unused in token mode. */
+  host: HostSettings;
   storageLayout: StorageLayout;
   /** Set when transfers go through presigned URLs; absent means proxy. */
   presign: PresignCredentials | undefined;
@@ -146,7 +156,21 @@ export function parseConfig(vars: ConfigVars): Config {
       problems.push(`ALLOWED_REPOS entry "${pattern}" must be owner/repo, with * allowed within names, or *`);
   }
 
-  const authMode = oneOf("AUTH_MODE", vars.AUTH_MODE, ["github", "token"], "github", problems);
+  const authMode = oneOf("AUTH_MODE", vars.AUTH_MODE, ["github", "gitlab", "gitea", "bitbucket", "token"], "github", problems);
+  const hostRaw = value(vars.AUTH_HOST);
+  let hostUrl = { github: "https://github.com", gitlab: "https://gitlab.com", gitea: "", bitbucket: "https://bitbucket.org", token: "" }[
+    authMode
+  ];
+  if (hostRaw !== undefined) {
+    try {
+      const parsed = new URL(/^https?:\/\//.test(hostRaw) ? hostRaw : `https://${hostRaw}`);
+      if (authMode === "bitbucket") problems.push("AUTH_HOST is not used with AUTH_MODE=bitbucket, which is Bitbucket Cloud only");
+      hostUrl = parsed.origin;
+    } catch {
+      problems.push("AUTH_HOST must be a URL such as https://gitlab.example.com");
+    }
+  }
+  if (authMode === "gitea" && !hostUrl) problems.push("AUTH_MODE=gitea needs AUTH_HOST, the address of your Gitea or Forgejo");
   const storageLayout = oneOf("STORAGE_LAYOUT", vars.STORAGE_LAYOUT, ["per-repo", "shared"], "per-repo", problems);
   const transferMode = oneOf("TRANSFER_MODE", vars.TRANSFER_MODE, ["auto", "presigned", "proxy"], "auto", problems);
 
@@ -196,6 +220,7 @@ export function parseConfig(vars: ConfigVars): Config {
   return {
     allowedRepos,
     authMode,
+    host: { kind: authMode === "token" ? "github" : authMode, url: hostUrl || "https://github.com" },
     storageLayout,
     presign,
     verifyUploads,

@@ -21,13 +21,16 @@ export const INFO_PATH = "/_r2-lfs/info";
 export const ADMIN_PATH = "/_admin";
 
 export type StorageLayout = "per-repo" | "shared";
-export type AuthMode = "github" | "token";
+/** How the server authenticates: by mirroring a Git host's permissions, or with its own tokens. */
+export type AuthMode = "github" | "gitlab" | "gitea" | "bitbucket" | "token";
 
 /** What `INFO_PATH` answers with status 200. */
 export interface ServerInfo {
   name: "r2-lfs";
   version: string;
   authMode: AuthMode;
+  /** The web origin of the Git host whose permissions are mirrored; absent in token mode. */
+  authHost?: string;
   storageLayout: StorageLayout;
   transfer: "presigned" | "proxy";
   proxyMaxUploadBytes: number;

@@ -70,9 +70,13 @@ export default defineCommand({
 
     if (result.access === "unknown") {
       term.note(
-        result.info.authMode === "github"
-          ? "Git will ask for credentials on the first push. Use any username and a GitHub token as the password,\nor run `gh auth login` and then `r2-lfs init --credential gh`."
-          : "Git will ask for credentials on the first push. Use any username and a token from `r2-lfs token create`.",
+        result.info.authMode === "token"
+          ? "Git will ask for credentials on the first push. Use any username and a token from `r2-lfs token create`."
+          : result.info.authMode === "github" && !result.info.authHost?.startsWith("https://github.com")
+            ? `Git will ask for credentials on the first push. Use your ${result.info.authHost} user name and a personal access token.`
+            : result.info.authMode === "github"
+              ? "Git will ask for credentials on the first push. Use any username and a GitHub token as the password,\nor run `gh auth login` and then `r2-lfs init --credential gh`."
+              : `Git will ask for credentials on the first push. Use your ${result.info.authMode} user name and a personal access token or app password.`,
         "Credentials",
       );
     } else {

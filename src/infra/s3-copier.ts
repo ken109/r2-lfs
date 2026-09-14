@@ -2,7 +2,7 @@ import { AwsClient } from "aws4fetch";
 
 import type { ObjectCopier } from "../app/ports.ts";
 import type { PresignCredentials } from "../domain/config.ts";
-import type { Fetcher } from "./github-permissions.ts";
+import type { Fetcher } from "./host-permissions.ts";
 
 const encodeKey = (key: string) => key.split("/").map(encodeURIComponent).join("/");
 

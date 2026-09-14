@@ -26,8 +26,10 @@
   "vars": {
     // Comma-separated repositories this server serves, with * within names: "my-name/*,my-org/assets". Required.
     "ALLOWED_REPOS": "",
-    // "github" | "token"
+    // "github" | "gitlab" | "gitea" | "bitbucket" | "token"
     "AUTH_MODE": "github",
+    // A self-managed GitHub Enterprise Server, GitLab, Gitea or Forgejo, such as "https://git.example.com".
+    "AUTH_HOST": "",
     // "per-repo" | "shared"
     "STORAGE_LAYOUT": "per-repo",
     // "auto" | "presigned" | "proxy"

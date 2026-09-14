@@ -32,6 +32,27 @@ export function strongestGrant(grants: readonly Grant[], repo: Repo): Grant | un
   return best;
 }
 
+/** GitLab access levels: 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner. Public projects are readable. */
+export function permissionFromGitlab(
+  project:
+    | {
+        visibility?: string;
+        permissions?: { project_access?: { access_level?: number } | null; group_access?: { access_level?: number } | null };
+      }
+    | undefined,
+): Permission {
+  const level = Math.max(project?.permissions?.project_access?.access_level ?? 0, project?.permissions?.group_access?.access_level ?? 0);
+  if (level >= 40) return "admin";
+  if (level >= 30) return "write";
+  if (level >= 20 || project?.visibility === "public" || project?.visibility === "internal") return "read";
+  return "none";
+}
+
+/** Bitbucket Cloud reports `admin`, `write` or `read` for the account. */
+export function permissionFromBitbucket(permission: string | undefined): Permission {
+  return permission === "admin" || permission === "write" || permission === "read" ? permission : "none";
+}
+
 /** GitHub's `permissions` object on a repository describes the authenticated account's role. */
 export function permissionFromGithub(
   permissions: { admin?: boolean; maintain?: boolean; push?: boolean; pull?: boolean } | undefined,

@@ -59,7 +59,10 @@
         "description": "Comma-separated GitHub repositories this server serves, where `*` stands for any characters within a name, e.g. `my-name/*,my-org/assets,my-org/blender-*`. Required. `*` alone allows every repository of everyone."
       },
       "AUTH_MODE": {
-        "description": "`github`: authenticate with a GitHub token and mirror the repository's permissions. `token`: accept tokens from `r2-lfs token` and `AUTH_TOKENS`."
+        "description": "`github`, `gitlab`, `gitea` (also Forgejo) or `bitbucket`: authenticate with that host's token and mirror the account's permissions on the repository. `token`: accept tokens from `r2-lfs token` and `AUTH_TOKENS`."
+      },
+      "AUTH_HOST": {
+        "description": "Only for a self-managed GitHub Enterprise Server, GitLab, Gitea or Forgejo: its address, e.g. `https://git.example.com`. Leave empty for github.com, gitlab.com and Bitbucket Cloud."
       },
       "STORAGE_LAYOUT": {
         "description": "`per-repo`: store objects under `<owner>/<repo>/` so each repository can be cleaned up on its own. `shared`: one pool deduplicated across repositories."

@@ -5,7 +5,7 @@ import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
 import { GithubActionsOidc } from "../infra/actions-oidc.ts";
-import { type Fetcher, GithubApiPermissions } from "../infra/github-permissions.ts";
+import { type Fetcher, RemoteHostPermissions } from "../infra/host-permissions.ts";
 import { looksLikeJwt } from "../infra/jwt.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
@@ -13,7 +13,7 @@ import { S3Copier } from "../infra/s3-copier.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
 import { PresignedLinks, ProxyLinks } from "../infra/transfer-links.ts";
 import { type MisconfiguredInfo, type ServerInfo, VERSION } from "../shared/contract.ts";
-import { extractToken } from "./credentials.ts";
+import { extractCredentials } from "./credentials.ts";
 import { lfsError, lfsJson } from "./responses.ts";
 import { route } from "./router.ts";
 
@@ -54,6 +54,7 @@ function info(env: Env): Response {
       name: "r2-lfs",
       version: VERSION,
       authMode: config.authMode,
+      ...(config.authMode === "token" ? {} : { authHost: config.host.url }),
       storageLayout: config.storageLayout,
       transfer: config.presign ? "presigned" : "proxy",
       proxyMaxUploadBytes: config.proxyMaxUploadBytes,
@@ -97,9 +98,9 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
   }
 
   const authorization = request.headers.get("Authorization") ?? "";
-  const auth = await authorize(config, repo, extractToken(authorization), {
+  const auth = await authorize(config, repo, extractCredentials(authorization), {
     tokens: new CombinedTokenDirectory(config.tokens, env.BUCKET),
-    github: new GithubApiPermissions(deps.fetch),
+    host: new RemoteHostPermissions(deps.fetch, config.host),
     actions: new GithubActionsOidc(deps.fetch),
     isJwt: looksLikeJwt,
   });

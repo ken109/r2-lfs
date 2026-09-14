@@ -2,7 +2,7 @@ import { authorizeAdmin } from "../app/admin.ts";
 import { ConfigError, parseConfig } from "../domain/config.ts";
 import type { Env } from "../env.ts";
 import { AccessJwtVerifier } from "../infra/access-verifier.ts";
-import type { Fetcher } from "../infra/github-permissions.ts";
+import type { Fetcher } from "../infra/host-permissions.ts";
 
 /** Stops admin requests that Cloudflare Access did not let through; undefined lets the request go on to the UI. */
 export async function gateAdmin(request: Request, env: Env, deps: { fetch: Fetcher }): Promise<Response | undefined> {
