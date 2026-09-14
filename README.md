@@ -74,6 +74,7 @@ Install it globally with `npm i -g r2-lfs`, or run any command with `npx r2-lfs`
 | `restore`         | List the trash and bring objects back by oid, path, date or all at once.                                                                                         |
 | `archive <tag>`   | Pack a tag, LFS files included, into tar parts and publish them as a GitHub release.                                                                             |
 | `token`           | Create, list and revoke tokens for servers using token authentication.                                                                                           |
+| `credential`      | A git credential helper answering with `R2_LFS_TOKEN` or a GitHub Actions OIDC token.                                                                            |
 | `transfer-agent`  | Upload in resumable parts through the Worker, past its request limit; `--install` registers it.                                                                  |
 
 Every command accepts `--help`. Read-only commands accept `--json`.
