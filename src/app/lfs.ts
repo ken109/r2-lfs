@@ -13,6 +13,7 @@ import {
 import type { Config } from "../domain/config.ts";
 import { objectKey, type Repo } from "../domain/repo.ts";
 import { type BatchObjectResult, type BatchResponse, incomingKey, memberKey, repoPrefix } from "../shared/contract.ts";
+import { parseRange } from "../domain/range.ts";
 import type { ObjectCopier, ObjectStore, TransferLinks } from "./ports.ts";
 
 export type Result<T> = { ok: true; value: T } | ({ ok: false } & Rejection);
@@ -144,11 +145,24 @@ export async function verify(ctx: LfsContext, body: unknown): Promise<Result<Rec
   return { ok: true, value: {} };
 }
 
-export async function download(ctx: LfsContext, oid: string): Promise<Result<{ body: ReadableStream; size: number }>> {
+export interface Download {
+  body: ReadableStream;
+  /** The whole object's size. */
+  size: number;
+  /** The bytes sent, when the client asked for a range to resume an interrupted download. */
+  range?: { offset: number; length: number };
+}
+
+export async function download(ctx: LfsContext, oid: string, rangeHeader: string | null = null): Promise<Result<Download>> {
   if (!hasPermission(ctx.permission, "read")) return denied("read");
-  const object = (await isMember(ctx, oid)) ? await ctx.store.get(liveKey(ctx, oid)) : null;
+  const key = liveKey(ctx, oid);
+  const stored = (await isMember(ctx, oid)) ? await ctx.store.head(key) : null;
+  if (!stored) return reject(404, "Object does not exist");
+  const range = parseRange(rangeHeader, stored.size);
+  if (range === "unsatisfiable") return reject(416, `Range is outside the object's ${stored.size} bytes`);
+  const object = await ctx.store.get(key, range);
   if (!object) return reject(404, "Object does not exist");
-  return { ok: true, value: object };
+  return { ok: true, value: { body: object.body, size: object.size, ...(range ? { range } : {}) } };
 }
 
 export async function upload(ctx: LfsContext, oid: string, body: ReadableStream | null, length: number): Promise<Result<null>> {

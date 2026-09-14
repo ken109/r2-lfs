@@ -160,10 +160,20 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
       return toResponse(await lfs.verify(ctx, await readJson(request)), (body) => lfsJson(200, body));
     case "object":
       if (request.method === "GET") {
-        return toResponse(
-          await lfs.download(ctx, matched.oid),
-          ({ body, size }) =>
-            new Response(body, { headers: { "Content-Type": "application/octet-stream", "Content-Length": String(size) } }),
+        return toResponse(await lfs.download(ctx, matched.oid, request.headers.get("Range")), ({ body, size, range }) =>
+          range
+            ? new Response(body, {
+                status: 206,
+                headers: {
+                  "Content-Type": "application/octet-stream",
+                  "Content-Length": String(range.length),
+                  "Content-Range": `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`,
+                  "Accept-Ranges": "bytes",
+                },
+              })
+            : new Response(body, {
+                headers: { "Content-Type": "application/octet-stream", "Content-Length": String(size), "Accept-Ranges": "bytes" },
+              }),
         );
       }
       if (request.method === "PUT") {

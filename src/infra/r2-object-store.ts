@@ -19,10 +19,10 @@ export class R2ObjectStore implements ObjectStore {
   }
 
   /** Reading an SSE-C object needs the key; R2 tells which objects are encrypted without it. */
-  private async open(key: string): Promise<R2ObjectBody | null> {
+  private async open(key: string, range?: { offset: number; length: number }): Promise<R2ObjectBody | null> {
     const head = await this.bucket.head(key);
     if (!head) return null;
-    return this.bucket.get(key, head.ssecKeyMd5 && this.ssecKey ? { ssecKey: this.ssecKey } : {});
+    return this.bucket.get(key, { ...(head.ssecKeyMd5 && this.ssecKey ? { ssecKey: this.ssecKey } : {}), ...(range ? { range } : {}) });
   }
 
   async head(key: string) {
@@ -30,8 +30,8 @@ export class R2ObjectStore implements ObjectStore {
     return object ? { size: object.size } : null;
   }
 
-  async get(key: string) {
-    const object = await this.open(key);
+  async get(key: string, range?: { offset: number; length: number }) {
+    const object = await this.open(key, range);
     return object ? { body: object.body, size: object.size } : null;
   }
 

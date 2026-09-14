@@ -6,7 +6,8 @@ import type { LfsAction, LfsLock } from "../shared/contract.ts";
 /** Where LFS objects live. */
 export interface ObjectStore {
   head(key: string): Promise<{ size: number } | null>;
-  get(key: string): Promise<{ body: ReadableStream; size: number } | null>;
+  /** `size` is always the whole object's, even when only `range` is read. */
+  get(key: string, range?: { offset: number; length: number }): Promise<{ body: ReadableStream; size: number } | null>;
   /** Stores `body` only if it hashes to `sha256`. */
   put(key: string, body: ReadableStream, sha256: string): Promise<"stored" | "checksum-mismatch">;
   /** The hex SHA-256 of a stored object, read in full; undefined when it does not exist. */
