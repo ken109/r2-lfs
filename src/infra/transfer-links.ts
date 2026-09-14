@@ -47,6 +47,10 @@ export class PresignedLinks implements TransferLinks {
   verify(): Action {
     return { href: `${this.baseUrl}/objects/verify`, header: { Authorization: this.authorization } };
   }
+
+  multipart(oid: string): Action {
+    return { href: `${this.baseUrl}/objects/${oid}/multipart`, header: { Authorization: this.authorization } };
+  }
 }
 
 /** Transfers stream through the Worker; the client's own credentials authenticate each one. */
@@ -70,5 +74,9 @@ export class ProxyLinks implements TransferLinks {
 
   verify(): Action {
     return { href: `${this.baseUrl}/objects/verify`, header: { Authorization: this.authorization } };
+  }
+
+  multipart(oid: string): Action {
+    return { href: `${this.baseUrl}/objects/${oid}/multipart`, header: { Authorization: this.authorization } };
   }
 }

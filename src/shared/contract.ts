@@ -59,7 +59,7 @@ export interface BatchObjectResult {
 }
 
 export interface BatchResponse {
-  transfer: "basic";
+  transfer: "basic" | typeof MULTIPART_TRANSFER;
   objects: BatchObjectResult[];
   hash_algo: "sha256";
 }
@@ -111,6 +111,18 @@ export function storedTokensIn(value: unknown): StoredToken[] | undefined {
 }
 
 export const OID_PATTERN = /^[0-9a-f]{64}$/;
+
+/** The custom transfer `r2-lfs transfer-agent` implements: resumable multipart uploads through the Worker. */
+export const MULTIPART_TRANSFER = "r2-lfs-multipart";
+/** R2's smallest part, except the last. */
+export const MIN_PART_BYTES = 5 * 1024 ** 2;
+
+/** What POST /objects/<oid>/multipart answers. */
+export interface MultipartStart {
+  uploadId: string;
+  /** Every part but the last must have exactly this size. */
+  partSize: number;
+}
 
 /**
  * A GitHub user or organization; Enterprise Managed Users end in `_shortcode`. Names never start with `_`,

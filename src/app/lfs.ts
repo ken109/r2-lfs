@@ -6,14 +6,15 @@ import {
   type ObjectSpec,
   parseBatchRequest,
   parseObjectSpec,
+  R2_MAX_SINGLE_UPLOAD_BYTES,
   type Rejection,
   requiredPermission,
   tooLargeMessage,
 } from "../domain/batch.ts";
 import type { Config } from "../domain/config.ts";
-import { objectKey, type Repo } from "../domain/repo.ts";
-import { type BatchObjectResult, type BatchResponse, incomingKey, memberKey, repoPrefix } from "../shared/contract.ts";
 import { parseRange } from "../domain/range.ts";
+import { objectKey, type Repo } from "../domain/repo.ts";
+import { type BatchObjectResult, type BatchResponse, incomingKey, memberKey, MULTIPART_TRANSFER, repoPrefix } from "../shared/contract.ts";
 import type { ObjectCopier, ObjectStore, TransferLinks } from "./ports.ts";
 
 export type Result<T> = { ok: true; value: T } | ({ ok: false } & Rejection);
@@ -50,6 +51,7 @@ async function planObject(
   ctx: LfsContext,
   operation: "upload" | "download",
   raw: { oid: unknown; size: unknown },
+  multipart: boolean,
 ): Promise<BatchObjectResult> {
   if (!isValidObject(raw.oid, raw.size)) {
     return { oid: String(raw.oid), size: Number(raw.size) || 0, error: { code: 422, message: "Invalid oid or size" } };
@@ -67,6 +69,7 @@ async function planObject(
   const transfer = {
     presigned: ctx.links.presigned,
     proxyMaxUploadBytes: ctx.config.proxyMaxUploadBytes,
+    multipart,
     ...(ctx.config.maxObjectBytes === undefined ? {} : { maxObjectBytes: ctx.config.maxObjectBytes }),
   };
   const decision = decideUpload(object, stored, transfer, member);
@@ -78,6 +81,8 @@ async function planObject(
       error: { code: 422, message: `Object is larger than ${Math.floor(decision.limitBytes / 1024 ** 2)} MB, this server's limit` },
     };
   }
+  // The agent finishes the upload with its own call, which checks the hash, so there is no verify action.
+  if (multipart) return { ...object, authenticated: true, actions: { upload: ctx.links.multipart(object.oid) } };
   return {
     ...object,
     authenticated: true,
@@ -91,7 +96,12 @@ export async function batch(ctx: LfsContext, body: unknown): Promise<Result<Batc
   const required = requiredPermission(parsed.value.operation);
   if (!hasPermission(ctx.permission, required)) return denied(required);
 
-  let objects = await Promise.all(parsed.value.objects.map((o) => planObject(ctx, parsed.value.operation, o)));
+  // Presigned uploads go straight to R2, which is faster, so multipart only takes over where they cannot go.
+  const multipart =
+    parsed.value.operation === "upload" &&
+    parsed.value.transfers.includes(MULTIPART_TRANSFER) &&
+    (!ctx.links.presigned || parsed.value.objects.some((o) => typeof o.size === "number" && o.size > R2_MAX_SINGLE_UPLOAD_BYTES));
+  let objects = await Promise.all(parsed.value.objects.map((o) => planObject(ctx, parsed.value.operation, o, multipart)));
   if (parsed.value.operation === "upload" && ctx.config.quotaBytes !== undefined) {
     const used = await ctx.store.usage(repoPrefix(ctx.config.storageLayout, ctx.repo.owner, ctx.repo.name));
     const fits = applyQuota(
@@ -103,7 +113,7 @@ export async function batch(ctx: LfsContext, body: unknown): Promise<Result<Batc
       fits[i] ? o : { oid: o.oid, size: o.size, error: { code: 507, message: "The repository is over its storage quota on this server" } },
     );
   }
-  return { ok: true, value: { transfer: "basic", objects, hash_algo: "sha256" } };
+  return { ok: true, value: { transfer: multipart ? MULTIPART_TRANSFER : "basic", objects, hash_algo: "sha256" } };
 }
 
 export async function verify(ctx: LfsContext, body: unknown): Promise<Result<Record<string, never>>> {

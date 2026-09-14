@@ -26,13 +26,15 @@ export interface BatchRequest {
   operation: Operation;
   /** Entries as sent; invalid ones are reported per object rather than failing the batch. */
   objects: { oid: unknown; size: unknown }[];
+  /** Transfer adapters the client offers; git-lfs always includes basic. */
+  transfers: string[];
 }
 
 export function parseBatchRequest(body: unknown): Parsed<BatchRequest> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { ok: false, status: 400, message: "Request body must be a JSON object" };
   }
-  const { operation, objects, hash_algo } = body as Record<string, unknown>;
+  const { operation, objects, hash_algo, transfers } = body as Record<string, unknown>;
   if (operation !== "upload" && operation !== "download") {
     return { ok: false, status: 422, message: "operation must be upload or download" };
   }
@@ -45,6 +47,7 @@ export function parseBatchRequest(body: unknown): Parsed<BatchRequest> {
     value: {
       operation,
       objects: objects.map((o) => ({ oid: (o as { oid?: unknown } | null)?.oid, size: (o as { size?: unknown } | null)?.size })),
+      transfers: Array.isArray(transfers) ? transfers.filter((t): t is string => typeof t === "string") : ["basic"],
     },
   };
 }
@@ -71,7 +74,7 @@ export type UploadDecision =
 export function decideUpload(
   object: ObjectSpec,
   stored: { size: number } | null,
-  transfer: { presigned: boolean; proxyMaxUploadBytes: number; maxObjectBytes?: number },
+  transfer: { presigned: boolean; proxyMaxUploadBytes: number; maxObjectBytes?: number; multipart?: boolean },
   /** Whether this repository has uploaded the stored object; always true outside the shared layout. */
   member = true,
 ): UploadDecision {
@@ -80,6 +83,8 @@ export function decideUpload(
   if (transfer.maxObjectBytes !== undefined && object.size > transfer.maxObjectBytes) {
     return { kind: "over-limit", limitBytes: transfer.maxObjectBytes };
   }
+  // Multipart uploads are only bounded by R2's object size.
+  if (transfer.multipart) return { kind: "upload" };
   const limitBytes = transfer.presigned ? R2_MAX_SINGLE_UPLOAD_BYTES : transfer.proxyMaxUploadBytes;
   if (object.size > limitBytes) return { kind: "too-large", limitBytes, presigned: transfer.presigned };
   return { kind: "upload" };
@@ -103,6 +108,6 @@ export function applyQuota<T extends { size: number; upload: boolean }>(
 export function tooLargeMessage(decision: { limitBytes: number; presigned: boolean }): string {
   const limitMb = Math.floor(decision.limitBytes / 1024 / 1024);
   return decision.presigned
-    ? `Object is larger than ${limitMb} MB, the most R2 accepts in one upload; git-lfs uploads each object in one request.`
-    : `Object is larger than ${limitMb} MB, the proxy upload limit. Configure presigned URLs (R2_ACCESS_KEY_ID etc.) to upload it.`;
+    ? `Object is larger than ${limitMb} MB, the most R2 accepts in one upload. Run \`r2-lfs transfer-agent --install\` to upload it in parts.`
+    : `Object is larger than ${limitMb} MB, the proxy upload limit. Run \`r2-lfs transfer-agent --install\` to upload it in parts, or configure presigned URLs (R2_ACCESS_KEY_ID etc.).`;
 }

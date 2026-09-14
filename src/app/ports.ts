@@ -45,6 +45,27 @@ export interface TransferLinks {
   download(key: string, oid: string): Promise<Action>;
   upload(key: string, oid: string): Promise<Action>;
   verify(): Action;
+  /** Where `r2-lfs transfer-agent` starts a multipart upload; always through the Worker. */
+  multipart(oid: string): Action;
+}
+
+/** Multipart uploads in the bucket, and moving a finished one into place. */
+export interface MultipartStore {
+  create(key: string): Promise<string>;
+  /** Undefined when no upload with that id exists for `key`. */
+  uploadPart(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    body: ReadableStream,
+  ): Promise<{ partNumber: number; etag: string } | undefined>;
+  complete(key: string, uploadId: string, parts: { partNumber: number; etag: string }[]): Promise<void>;
+  abort(key: string, uploadId: string): Promise<void>;
+  /**
+   * Copies `source` to `target` if its content hashes to `sha256`, checking while it copies, so a mismatch
+   * leaves `target` untouched.
+   */
+  promote(source: string, target: string, sha256: string, size: number): Promise<"stored" | "checksum-mismatch">;
 }
 
 /** Grants whose secret equals the presented token. */

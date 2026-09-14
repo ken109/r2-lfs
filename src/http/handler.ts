@@ -1,6 +1,7 @@
 import { authorize } from "../app/authorize.ts";
 import * as lfs from "../app/lfs.ts";
 import { createLock, listLocks, type LockResponse, type LocksContext, unlock, verifyLocks } from "../app/locks.ts";
+import * as multipart from "../app/multipart.ts";
 import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
@@ -8,6 +9,7 @@ import { GithubActionsOidc } from "../infra/actions-oidc.ts";
 import { AnalyticsEngineMetrics } from "../infra/analytics-metrics.ts";
 import { type Fetcher, RemoteHostPermissions } from "../infra/host-permissions.ts";
 import { looksLikeJwt } from "../infra/jwt.ts";
+import { R2MultipartStore } from "../infra/r2-multipart-store.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 import { S3Copier } from "../infra/s3-copier.ts";
@@ -79,7 +81,10 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
   if (matched.kind !== "landing" && matched.kind !== "info" && matched.kind !== "not-found") {
     const response = await handleRepository(request, env, deps, url, matched);
     // Bytes that crossed the Worker: proxied downloads and uploads.
-    const length = matched.kind === "object" ? (request.method === "PUT" ? request.headers : response.headers).get("Content-Length") : null;
+    const length =
+      matched.kind === "object" || matched.kind === "multipart"
+        ? (request.method === "PUT" ? request.headers : response.headers).get("Content-Length")
+        : null;
     new AnalyticsEngineMetrics(env.METRICS).record({
       repo: `${matched.owner}/${matched.name}`.toLowerCase(),
       endpoint: matched.kind,
@@ -135,6 +140,8 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
     copier: config.presign ? new S3Copier(config.presign, deps.fetch) : undefined,
   };
 
+  const parts: multipart.MultipartContext = { ...ctx, multipart: new R2MultipartStore(env.BUCKET, config.encryptionKey) };
+
   const locks: LocksContext = {
     permission: auth.permission,
     identify: auth.identify,
@@ -183,5 +190,24 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
         return toResponse(await lfs.upload(ctx, matched.oid, request.body, length), () => new Response(null, { status: 200 }));
       }
       return lfsError(405, "Method not allowed");
+    case "multipart": {
+      const { oid, uploadId, part, complete } = matched;
+      if (uploadId === undefined) {
+        if (request.method !== "POST") return lfsError(405, "Method not allowed");
+        return toResponse(await multipart.startMultipart(parts, oid, await readJson(request)), (body) => lfsJson(200, body));
+      }
+      if (complete) {
+        if (request.method !== "POST") return lfsError(405, "Method not allowed");
+        return toResponse(await multipart.completeMultipart(parts, oid, uploadId, await readJson(request)), (body) => lfsJson(200, body));
+      }
+      if (part !== undefined) {
+        if (request.method !== "PUT") return lfsError(405, "Method not allowed");
+        const header = request.headers.get("Content-Length")?.trim();
+        const length = header ? Number(header) : Number.NaN;
+        return toResponse(await multipart.uploadPart(parts, oid, uploadId, part, request.body, length), (body) => lfsJson(200, body));
+      }
+      if (request.method !== "DELETE") return lfsError(405, "Method not allowed");
+      return toResponse(await multipart.abortMultipart(parts, oid, uploadId), (body) => lfsJson(200, body));
+    }
   }
 }
