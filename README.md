@@ -252,7 +252,9 @@ place inside R2. Hashing a large file takes Worker CPU time beyond the Free plan
 
 **Multipart uploads** lift both limits. Register the CLI as a git-lfs transfer agent with
 `r2-lfs init --transfer-agent` (or `r2-lfs transfer-agent --install`), from a global install rather
-than `npx`, since git config keeps its path. git-lfs then offers it to servers, and r2-lfs uses it in
+than `npx`. git config points at a launcher in `~/.config/r2-lfs`, which starts `r2-lfs` from PATH, or
+the Node and CLI it was installed with when r2-lfs is not on PATH, so upgrading Node through a version
+manager does not break pushes; `r2-lfs doctor` reports when it can start neither. git-lfs then offers it to servers, and r2-lfs uses it in
 proxy mode, or in presigned mode for objects over 4.995 GiB. The agent sends each object in parts of
 `PROXY_MAX_UPLOAD_MB` (at least 5 MiB) through the Worker, and an interrupted push continues from the
 last part it finished. When the parts are complete, the Worker checks the size and SHA-256 before

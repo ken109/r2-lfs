@@ -8,11 +8,14 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ConflictError, TransferError } from "../../cli/app/ports.ts";
+import { launcherFileName, launcherScript } from "../../cli/domain/agent-launcher.ts";
 import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import { GithubActionsIdTokens } from "../../cli/infra/actions-id-token.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { HttpLfsClient } from "../../cli/infra/lfs-client.ts";
+import { LocalFiles } from "../../cli/infra/local-files.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange } from "../../cli/infra/multipart-uploads.ts";
+import { findOnPath } from "../../cli/infra/proc.ts";
 import { parseListObjects, R2Bucket, ssecHeaders } from "../../cli/infra/r2-bucket.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { parseWhoami } from "../../cli/infra/wrangler-cli.ts";
@@ -459,6 +462,62 @@ describe("transfer agent adapters", () => {
 });
 
 const whoami = (accounts: { id: string; name: string }[]) => JSON.stringify({ loggedIn: true, email: "me@example.com", accounts });
+
+describe("transfer agent launcher", () => {
+  const windows = process.platform === "win32";
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "r2-lfs-launcher-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  // Runs the launcher the way git-lfs does, with only the given directories on PATH.
+  const start = (launcher: string, path: string[]) => {
+    const system = windows ? [join(process.env.SystemRoot ?? "C:\\Windows", "System32")] : [];
+    const env = { ...process.env, PATH: [...path, ...system].join(windows ? ";" : ":") };
+    const [cmd, args] = windows ? ["cmd.exe", ["/d", "/c", launcher]] : [launcher, []];
+    try {
+      return { code: 0, out: execFileSync(cmd, args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() };
+    } catch (err) {
+      const failed = err as { status: number; stderr: string };
+      return { code: failed.status, out: String(failed.stderr).trim() };
+    }
+  };
+
+  it("prefers r2-lfs on PATH, falls back to the Node it was installed with, and says what to do when both are gone", () => {
+    const files = new LocalFiles();
+    const bin = join(dir, "bin dir");
+    mkdirSync(bin);
+    const cli = join(dir, "it's 100% cli.js");
+    writeFileSync(cli, 'console.log("fallback " + process.argv.slice(2).join(" "));\n');
+    const launcher = join(dir, launcherFileName(process.platform));
+    files.writeExecutable(launcher, launcherScript(process.platform, { node: process.execPath, cli }));
+
+    expect(start(launcher, [])).toEqual({ code: 0, out: "fallback transfer-agent" });
+
+    if (windows) writeFileSync(join(bin, "r2-lfs.cmd"), "@echo on path %*\r\n");
+    else files.writeExecutable(join(bin, "r2-lfs"), '#!/bin/sh\necho "on path $*"\n');
+    expect(start(launcher, [bin])).toEqual({ code: 0, out: "on path transfer-agent" });
+
+    files.writeExecutable(launcher, launcherScript(process.platform, { node: join(dir, "gone", "node"), cli }));
+    const gone = start(launcher, []);
+    expect(gone.code).toBe(1);
+    expect(gone.out).toContain("r2-lfs transfer-agent --install");
+  });
+
+  it("finds commands on PATH as a shell would", () => {
+    const files = new LocalFiles();
+    const first = join(dir, "first");
+    const second = join(dir, "second");
+    mkdirSync(first);
+    mkdirSync(second);
+    files.writeExecutable(join(second, "tool"), "");
+    writeFileSync(join(first, "tool.CMD"), "");
+    expect(findOnPath("tool", { PATH: [first, second].join(":") }, "linux")).toBe(join(second, "tool"));
+    expect(findOnPath("tool", { Path: [first, second].join(";"), PATHEXT: ".EXE;.CMD" }, "win32")).toBe(join(first, "tool.CMD"));
+    expect(findOnPath("missing", { PATH: first }, "linux")).toBeUndefined();
+  });
+});
 
 describe("parseWhoami", () => {
   it("takes the account from CLOUDFLARE_ACCOUNT_ID, or the only account the login has", () => {

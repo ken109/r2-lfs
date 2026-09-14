@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 
-import { runTransferAgent, transferAgentConfig } from "../app/transfer-agent.ts";
+import { inNpxCache, installTransferAgent, runTransferAgent } from "../app/transfer-agent.ts";
 import * as compose from "../composition.ts";
 
 export default defineCommand({
@@ -13,9 +13,12 @@ export default defineCommand({
   },
   async run({ args }) {
     if (args.install) {
-      const { path, args: agentArgs } = compose.transferAgentCommand();
-      for (const [key, value] of transferAgentConfig(path, agentArgs)) compose.gitConfig.set(key, value);
-      console.error("git-lfs now offers r2-lfs servers multipart uploads");
+      const { deps, target } = compose.transferAgentInstall();
+      const launcher = installTransferAgent(deps, target);
+      console.error(`git-lfs now offers r2-lfs servers multipart uploads, through ${launcher}`);
+      if (inNpxCache(target.cli) && !compose.findOnPath("r2-lfs")) {
+        console.error("This r2-lfs runs from npx's cache, which npm clears; install it globally so the launcher keeps finding it.");
+      }
       return;
     }
     const deps = {

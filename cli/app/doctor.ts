@@ -1,3 +1,5 @@
+import { MULTIPART_TRANSFER } from "../../src/shared/contract.ts";
+import { parseLauncher } from "../domain/agent-launcher.ts";
 import { MAX_POINTER_SIZE } from "../domain/pointer.ts";
 import { type LfsLocation, parseLfsUrl } from "../domain/remote.ts";
 import { probeAccess } from "./init.ts";
@@ -23,6 +25,32 @@ export interface DoctorDeps {
   r2Configured: boolean;
   /** Helper string `init --credential gh` installs, to recognise it. */
   ghHelper: string;
+  /** Reads a file, for the transfer agent's launcher; undefined when it cannot. */
+  readText(path: string): string | undefined;
+  exists(path: string): boolean;
+  /** Where PATH resolves a command, if anywhere. */
+  findOnPath(command: string): string | undefined;
+}
+
+const REINSTALL_AGENT = "r2-lfs transfer-agent --install";
+
+/** Whether git-lfs can still start the registered transfer agent, which breaks when Node or r2-lfs moves. */
+function transferAgentCheck(deps: DoctorDeps, path: string): Omit<Check, "name"> {
+  const target = parseLauncher(deps.readText(path) ?? "");
+  if (target) {
+    const onPath = deps.findOnPath("r2-lfs");
+    if (onPath) return { status: "ok", detail: `uploads in parts through ${onPath}` };
+    if (deps.exists(target.node) && deps.exists(target.cli)) return { status: "ok", detail: `uploads in parts through ${target.cli}` };
+    return {
+      status: "fail",
+      detail: `r2-lfs is not on PATH and ${target.node} or ${target.cli} is gone, so pushes that need the agent fail`,
+      fix: REINSTALL_AGENT,
+    };
+  }
+  if (!deps.exists(path) && !deps.findOnPath(path)) {
+    return { status: "fail", detail: `git-lfs cannot start ${path}, so pushes that need the agent fail`, fix: REINSTALL_AGENT };
+  }
+  return { status: "warn", detail: `registered with a fixed path to ${path}, which upgrading Node can break`, fix: REINSTALL_AGENT };
 }
 
 export const LARGE_FILE_BYTES = 10 * 1024 * 1024;
@@ -46,6 +74,12 @@ export async function diagnose(deps: DoctorDeps): Promise<Check[]> {
   }
   if (repo.lfsHooksInstalled()) add("hooks", "ok", "git-lfs filters are configured");
   else add("hooks", "fail", "git-lfs filters are not configured", "git lfs install");
+
+  const agentPath = deps.gitConfig.get(`lfs.customtransfer.${MULTIPART_TRANSFER}.path`);
+  if (agentPath) {
+    const check = transferAgentCheck(deps, agentPath);
+    add("transfer agent", check.status, check.detail, check.fix);
+  }
 
   const raw = repo.lfsUrl();
   const location = raw ? parseLfsUrl(raw) : undefined;

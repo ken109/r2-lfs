@@ -2,7 +2,8 @@
 // https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md
 
 import { type LfsAction, MULTIPART_TRANSFER } from "../../src/shared/contract.ts";
-import { type MultipartUploads, type SavedUpload, TransferError, type UploadStates } from "./ports.ts";
+import { type AgentTarget, launcherFileName, launcherScript } from "../domain/agent-launcher.ts";
+import { type Files, type GlobalGitConfig, type MultipartUploads, type SavedUpload, TransferError, type UploadStates } from "./ports.ts";
 
 export interface AgentDeps {
   uploads: MultipartUploads;
@@ -125,6 +126,30 @@ export async function runTransferAgent(deps: AgentDeps, lines: AsyncIterable<str
 }
 
 /** The git config that makes git-lfs offer the agent to servers; servers that do not know it keep using basic. */
+export interface AgentInstallDeps {
+  files: Files;
+  gitConfig: GlobalGitConfig;
+  platform: string;
+  /** Where the launcher is written, e.g. ~/.config/r2-lfs. */
+  configDir: string;
+  /** Joins path segments the platform's way. */
+  join(...parts: string[]): string;
+}
+
+/** Writes the launcher and points git-lfs at it. Returns the launcher's path. */
+export function installTransferAgent(deps: AgentInstallDeps, target: AgentTarget): string {
+  deps.files.mkdirp(deps.configDir);
+  const launcher = deps.join(deps.configDir, launcherFileName(deps.platform));
+  deps.files.writeExecutable(launcher, launcherScript(deps.platform, target));
+  for (const [key, value] of transferAgentConfig(launcher, "")) deps.gitConfig.set(key, value);
+  return launcher;
+}
+
+/** npm clears its npx cache, so a launcher falling back to a CLI there stops working unless r2-lfs is on PATH. */
+export function inNpxCache(cli: string): boolean {
+  return /[\\/]_npx[\\/]/.test(cli);
+}
+
 export function transferAgentConfig(path: string, args: string): [string, string][] {
   const prefix = `lfs.customtransfer.${MULTIPART_TRANSFER}`;
   return [

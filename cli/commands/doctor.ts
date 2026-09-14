@@ -29,6 +29,9 @@ export default defineCommand({
       connect: compose.connect,
       r2Configured: compose.r2Configured(),
       ghHelper: compose.ghCredentialHelper,
+      readText: (path) => compose.files.readText(path),
+      exists: (path) => compose.files.sizeOf(path) !== undefined,
+      findOnPath: (command) => compose.findOnPath(command),
     });
 
     if (args.json) term.json(checks);

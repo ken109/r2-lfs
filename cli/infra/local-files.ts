@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, createReadStream, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, createReadStream, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,19 @@ export class LocalFiles implements Files {
     } catch {
       return undefined;
     }
+  }
+
+  readText(path: string): string | undefined {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return undefined;
+    }
+  }
+
+  writeExecutable(path: string, text: string): void {
+    writeFileSync(path, text);
+    chmodSync(path, 0o755);
   }
 
   mkdirp(path: string): void {

@@ -12,7 +12,9 @@ import { GH_CREDENTIAL_HELPER, UserGitConfig } from "./infra/global-git-config.t
 import { HttpLfsClient } from "./infra/lfs-client.ts";
 import { LocalFiles } from "./infra/local-files.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange, stdinLines } from "./infra/multipart-uploads.ts";
+import { findOnPath } from "./infra/proc.ts";
 import { R2Bucket, r2Configured } from "./infra/r2-bucket.ts";
+import { currentCli, joinPath, userConfigDir } from "./infra/user-dirs.ts";
 import { NpxWrangler } from "./infra/wrangler-cli.ts";
 
 export const gitConfig = new UserGitConfig();
@@ -54,9 +56,15 @@ export function credentialHelperCommand(): string {
 }
 
 /** How git-lfs runs `r2-lfs transfer-agent`: git-lfs splits the args itself, without a shell. */
-export function transferAgentCommand(): { path: string; args: string } {
-  return { path: process.execPath, args: `"${process.argv[1] ?? ""}" transfer-agent` };
+/** What `transfer-agent --install` needs: this Node and CLI to fall back to, and where to write the launcher. */
+export function transferAgentInstall() {
+  return {
+    deps: { files, gitConfig, platform: process.platform, configDir: userConfigDir(), join: joinPath },
+    target: currentCli(),
+  };
 }
+
+export { findOnPath };
 
 export function multipartUploads(): HttpMultipartUploads {
   return new HttpMultipartUploads();

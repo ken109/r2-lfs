@@ -70,7 +70,7 @@ export default defineCommand({
         track,
         ...(args.lockable ? { lockable: true } : {}),
         ...(args.credential ? { credential: args.credential as "gh" | "none" } : {}),
-        ...(args["transfer-agent"] ? { transferAgent: compose.transferAgentCommand() } : {}),
+        ...(args["transfer-agent"] ? { transferAgent: compose.transferAgentInstall() } : {}),
       },
     );
 

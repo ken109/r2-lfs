@@ -1,10 +1,11 @@
 import type { ServerInfo } from "../../src/shared/contract.ts";
+import type { AgentTarget } from "../domain/agent-launcher.ts";
 import { UsageError } from "../domain/errors.ts";
 import { expandTracks } from "../domain/presets.ts";
 import { type LfsLocation, parseLfsUrl, parseRemote } from "../domain/remote.ts";
 import { requireServerInfo } from "./common.ts";
 import { BatchRequestError, type GitHubCli, type GitRepository, type GlobalGitConfig, type LfsClient, type Reporter } from "./ports.ts";
-import { transferAgentConfig } from "./transfer-agent.ts";
+import { type AgentInstallDeps, installTransferAgent } from "./transfer-agent.ts";
 
 export const SERVER_CONFIG_KEY = "r2-lfs.server";
 
@@ -25,8 +26,8 @@ export interface InitOptions {
   lockable?: boolean;
   /** Defaults to "gh" when the server uses GitHub auth and gh is logged in. */
   credential?: "gh" | "none";
-  /** How git-lfs runs `r2-lfs transfer-agent`, to register it for uploads past the Worker's request limit. */
-  transferAgent?: { path: string; args: string };
+  /** Registers `r2-lfs transfer-agent` for uploads past the Worker's request limit. */
+  transferAgent?: { deps: AgentInstallDeps; target: AgentTarget };
 }
 
 export interface InitResult {
@@ -104,7 +105,7 @@ export async function initRepository(deps: InitDeps, opts: InitOptions): Promise
   }
 
   if (opts.transferAgent) {
-    for (const [key, value] of transferAgentConfig(opts.transferAgent.path, opts.transferAgent.args)) gitConfig.set(key, value);
+    installTransferAgent(opts.transferAgent.deps, opts.transferAgent.target);
     reporter.success("git-lfs will upload through the r2-lfs transfer agent, in resumable parts");
   }
 

@@ -165,6 +165,10 @@ export class ConflictError extends Error {
 /** Local files the use cases write or inspect. */
 export interface Files {
   sizeOf(path: string): number | undefined;
+  /** The file's text, or undefined when it cannot be read. */
+  readText(path: string): string | undefined;
+  /** Writes a file others may read and everyone may run. */
+  writeExecutable(path: string, text: string): void;
   mkdirp(path: string): void;
   writeText(path: string, text: string): void;
   copyFile(from: string, to: string): void;

@@ -29,6 +29,7 @@ import { runTransferAgent } from "../../cli/app/transfer-agent.ts";
 import { usageReport } from "../../cli/app/usage.ts";
 import { verifyObjects } from "../../cli/app/verify.ts";
 import { explain } from "../../cli/app/why.ts";
+import { launcherScript, parseLauncher } from "../../cli/domain/agent-launcher.ts";
 import { UsageError } from "../../cli/domain/errors.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { LocalFiles } from "../../cli/infra/local-files.ts";
@@ -664,6 +665,8 @@ function setupFakes() {
   };
   const files: Files = {
     sizeOf: () => undefined,
+    readText: () => undefined,
+    writeExecutable: () => {},
     mkdirp: () => {},
     writeText: (path, text) => written.set(path, text),
     copyFile: () => {},
@@ -995,17 +998,24 @@ describe("init and doctor", () => {
     expect(gitConfig.get("r2-lfs.server")).toBe("https://lfs.example.com");
     expect(gitConfig.get("lfs.customtransfer.r2-lfs-multipart.path")).toBeUndefined();
 
+    const files = new LocalFiles();
+    const configDir = join(files.tempDir("r2-lfs-agent-"), "r2-lfs");
+    cleanup.push(() => rmSync(configDir, { recursive: true, force: true }));
+    const target = { node: "/usr/bin/node", cli: "/opt/r2-lfs's/cli.js" };
     await initRepository(
       { repo: git, gitConfig, gh: noGh, reporter: new SilentReporter(), connect: () => client },
       {
         server: "https://lfs.example.com",
         track: [],
-        transferAgent: { path: "/usr/bin/node", args: '"/opt/r2-lfs/cli.js" transfer-agent' },
+        transferAgent: { deps: { files, gitConfig, platform: "linux", configDir, join }, target },
       },
     );
-    expect(gitConfig.get("lfs.customtransfer.r2-lfs-multipart.path")).toBe("/usr/bin/node");
-    expect(gitConfig.get("lfs.customtransfer.r2-lfs-multipart.args")).toBe('"/opt/r2-lfs/cli.js" transfer-agent');
+    // git-lfs starts a launcher, not a Node binary a version manager may move.
+    const launcher = join(configDir, "transfer-agent");
+    expect(gitConfig.get("lfs.customtransfer.r2-lfs-multipart.path")).toBe(launcher);
+    expect(gitConfig.get("lfs.customtransfer.r2-lfs-multipart.args")).toBe("");
     expect(gitConfig.get("lfs.customtransfer.r2-lfs-multipart.direction")).toBe("upload");
+    expect(parseLauncher(files.readText(launcher) ?? "")).toEqual(target);
   });
 
   it("validates its inputs, keeps a remembered server and reports when access cannot be checked", async () => {
@@ -1049,7 +1059,17 @@ describe("init and doctor", () => {
     cleanup.push(() => repo.remove());
     repo.git("config", "filter.lfs.process", "git-lfs filter-process");
     const git = Git.open(repo.dir);
-    const base = { repo: git, lfsInstalled: true, gitConfig: new FakeGitConfig(), gh: noGh, r2Configured: false, ghHelper: "" };
+    const base = {
+      repo: git,
+      lfsInstalled: true,
+      gitConfig: new FakeGitConfig(),
+      gh: noGh,
+      r2Configured: false,
+      ghHelper: "",
+      readText: () => undefined,
+      exists: () => false,
+      findOnPath: () => undefined,
+    };
 
     const noUrl = await diagnose({ ...base, connect: () => new FakeLfsClient() });
     expect(noUrl.at(-1)).toMatchObject({ name: "lfs.url", status: "fail" });
@@ -1077,5 +1097,46 @@ describe("init and doctor", () => {
     repo.write(".lfsconfig", "[lfs]\n\turl = https://lfs.example.com/acme/assets\n\tlocksverify = true\n");
     const locking = await diagnose({ ...base, connect: (): LfsClient => readOnly });
     expect(locking.find((c) => c.name === "locking")).toMatchObject({ status: "ok" });
+    expect(locking.find((c) => c.name === "transfer agent")).toBeUndefined();
+  });
+
+  it("checks that git-lfs can still start the transfer agent", async () => {
+    const repo = new TempRepo();
+    cleanup.push(() => repo.remove());
+    repo.git("config", "filter.lfs.process", "git-lfs filter-process");
+    const gitConfig = new FakeGitConfig();
+    const launcher = "/home/me/.config/r2-lfs/transfer-agent";
+    const script = launcherScript("linux", { node: "/mise/node/24/bin/node", cli: "/mise/node/24/lib/r2-lfs/cli.js" });
+    const present = new Set<string>();
+    let onPath: string | undefined;
+    const agent = async (path: string) => {
+      gitConfig.values.set("lfs.customtransfer.r2-lfs-multipart.path", path);
+      const checks = await diagnose({
+        repo: Git.open(repo.dir),
+        lfsInstalled: true,
+        gitConfig,
+        gh: noGh,
+        connect: () => new FakeLfsClient(),
+        r2Configured: false,
+        ghHelper: "",
+        readText: (p) => (p === launcher ? script : undefined),
+        exists: (p) => present.has(p),
+        findOnPath: (command) => (command === "r2-lfs" ? onPath : undefined),
+      });
+      return checks.find((c) => c.name === "transfer agent");
+    };
+
+    // Node was upgraded away and r2-lfs is not on PATH.
+    expect(await agent(launcher)).toMatchObject({ status: "fail", fix: "r2-lfs transfer-agent --install" });
+    present.add("/mise/node/24/bin/node").add("/mise/node/24/lib/r2-lfs/cli.js");
+    expect(await agent(launcher)).toMatchObject({ status: "ok" });
+    present.clear();
+    onPath = "/mise/shims/r2-lfs";
+    expect(await agent(launcher)).toMatchObject({ status: "ok", detail: "uploads in parts through /mise/shims/r2-lfs" });
+
+    // What versions before the launcher registered: Node itself.
+    expect(await agent("/mise/node/22/bin/node")).toMatchObject({ status: "fail" });
+    present.add("/mise/node/22/bin/node");
+    expect(await agent("/mise/node/22/bin/node")).toMatchObject({ status: "warn", fix: "r2-lfs transfer-agent --install" });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { launcherScript, parseLauncher } from "../../cli/domain/agent-launcher.ts";
 import { UsageError } from "../../cli/domain/errors.ts";
 import { buildHistory } from "../../cli/domain/history.ts";
 import { combinePlans, type Facts, planObjects } from "../../cli/domain/plan.ts";
@@ -84,6 +85,16 @@ describe("remote parsing", () => {
 
   it("derives GitHub's LFS endpoint", () => {
     expect(githubLfsEndpoint({ host: "github.com", owner: "acme", repo: "assets" })).toBe("https://github.com/acme/assets.git/info/lfs");
+  });
+});
+
+describe("transfer agent launcher", () => {
+  it.each(["linux", "darwin", "win32"])("records the fallback Node and CLI so doctor can read them back on %s", (platform) => {
+    const target = { node: "/opt/it's node/bin/node", cli: "C:\\Users\\100% me\\r2-lfs\\cli.js" };
+    const script = launcherScript(platform, target);
+    expect(parseLauncher(script)).toEqual(target);
+    expect(script).toContain("transfer-agent");
+    expect(parseLauncher("#!/bin/sh\nexec node cli.js\n")).toBeUndefined();
   });
 });
 
