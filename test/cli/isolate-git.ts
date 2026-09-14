@@ -11,5 +11,8 @@ const dir = mkdtempSync(join(tmpdir(), "r2-lfs-gitconfig-"));
 const config = join(dir, "config");
 writeFileSync(config, "");
 process.env.GIT_CONFIG_GLOBAL = config;
+// CI images install the LFS filter in the system config, where checkouts of pointer files would try to
+// download objects no server has.
+process.env.GIT_LFS_SKIP_SMUDGE = "1";
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
