@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/ken109/r2-lfs/compare/v0.2.0...v0.3.0) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** without keep_days, gc no longer removes old versions that only commits older than 90 days use. Add keep_days = 90 to .r2-lfs.toml to keep the previous behaviour.
+
+### Features
+
+* **cli:** gc keeps every version a commit uses unless keep_days is set ([7082096](https://github.com/ken109/r2-lfs/commit/70820965a6fdac5439f46e74c1021de27714b89e))
+
 ## [0.2.0](https://github.com/ken109/r2-lfs/compare/v0.1.0...v0.2.0) (2026-09-14)
 
 
