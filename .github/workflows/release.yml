@@ -51,7 +51,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
+      - run: pnpm build:pkg
 
       # Trusted publishing: register this repository and workflow file on npmjs.com; no token is stored here.
       - run: npm publish --provenance --access public

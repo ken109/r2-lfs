@@ -82,6 +82,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - run: pnpm build:pkg
       - run: node dist/cli.js --version
       - run: npm pack --dry-run

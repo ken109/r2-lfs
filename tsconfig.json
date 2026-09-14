@@ -4,7 +4,7 @@
     "lib": ["es2024"],
     "module": "es2022",
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
@@ -13,5 +13,7 @@
     "skipLibCheck": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src", "test/worker"]
+  "include": ["src", "test/worker"],
+  // The admin UI runs in browsers too, so it is checked with DOM types in tsconfig.ui.json.
+  "exclude": ["src/routes", "src/router.tsx", "src/routeTree.gen.ts"]
 }

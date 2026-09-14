@@ -155,6 +155,8 @@ export interface Files {
   mkdirp(path: string): void;
   writeText(path: string, text: string): void;
   copyFile(from: string, to: string): void;
+  /** Copies a directory and everything in it. */
+  copyDir(from: string, to: string): void;
   sha256(path: string): Promise<string>;
   writeTar(path: string, entries: readonly TarEntry[], onEntry?: (entry: TarEntry) => void): Promise<void>;
   /** A fresh directory under the system temp dir. */

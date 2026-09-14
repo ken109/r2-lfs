@@ -7,7 +7,7 @@
     "perf": "error"
   },
   "env": { "es2024": true },
-  "ignorePatterns": ["dist/**", ".wrangler/**", "node_modules/**"],
+  "ignorePatterns": ["dist/**", ".wrangler/**", "node_modules/**", "src/routeTree.gen.ts"],
   "rules": {
     "no-console": ["error", { "allow": ["error"] }],
     "typescript/consistent-type-imports": "error",
@@ -131,7 +131,7 @@
       }
     },
     {
-      "files": ["src/http/**", "src/index.ts", "src/env.ts"],
+      "files": ["src/http/**", "src/index.ts", "src/env.ts", "src/server.ts", "src/router.tsx", "src/routes/**"],
       "rules": {
         "no-restricted-imports": [
           "error",

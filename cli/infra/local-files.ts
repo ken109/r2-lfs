@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, createReadStream, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, createReadStream, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +26,10 @@ export class LocalFiles implements Files {
 
   copyFile(from: string, to: string): void {
     copyFileSync(from, to);
+  }
+
+  copyDir(from: string, to: string): void {
+    cpSync(from, to, { recursive: true });
   }
 
   async sha256(path: string): Promise<string> {

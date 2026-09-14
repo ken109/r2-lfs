@@ -1,8 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "r2-lfs",
-  "main": "src/index.ts",
+  // The Git LFS API and the admin UI; src/index.ts is the API alone.
+  "main": "src/server.ts",
   "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    // Admin paths reach the Worker before any static file, so the Worker can check who is asking.
+    "run_worker_first": ["/_admin/*"],
+  },
   "observability": {
     "enabled": true,
   },

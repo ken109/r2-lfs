@@ -15,8 +15,8 @@ export interface SetupDeps {
   wrangler: Wrangler;
   files: Files;
   reporter: Reporter;
-  /** The bundled Worker shipped with the CLI. */
-  workerBundle: string;
+  /** The built Worker shipped with the CLI: its modules and the admin UI's static files. */
+  workerFiles: { worker: string; assets: string };
 }
 
 export interface SetupOptions {
@@ -65,8 +65,15 @@ export function lockPrefixes(layout: StorageLayout, repos: string[]): { prefixes
 export function workerConfig(opts: SetupOptions): Record<string, unknown> {
   return {
     name: opts.name,
-    main: "worker.js",
+    // Already built by Vite: upload the modules as they are.
+    main: "worker/index.js",
+    base_dir: "worker",
+    no_bundle: true,
+    find_additional_modules: true,
+    rules: [{ type: "ESModule", globs: ["**/*.js"] }],
     compatibility_date: WORKER_COMPATIBILITY_DATE,
+    compatibility_flags: ["nodejs_compat"],
+    assets: { directory: "public", run_worker_first: ["/_admin/*"] },
     observability: { enabled: true },
     r2_buckets: [{ binding: "BUCKET", bucket_name: opts.bucket }],
     vars: {
@@ -150,7 +157,8 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
   if (!opts.deploy) return { lockPrefixes: prefixes };
 
   const dir = files.tempDir("r2-lfs-setup-");
-  files.copyFile(deps.workerBundle, join(dir, "worker.js"));
+  files.copyDir(deps.workerFiles.worker, join(dir, "worker"));
+  files.copyDir(deps.workerFiles.assets, join(dir, "public"));
   files.writeText(join(dir, "wrangler.json"), `${JSON.stringify(workerConfig(opts), null, 2)}\n`);
   const deployed = await reporter.task(`Deploying Worker ${opts.name}`, () =>
     // Relative, because npx runs through a shell on Windows and the temp dir may contain spaces.

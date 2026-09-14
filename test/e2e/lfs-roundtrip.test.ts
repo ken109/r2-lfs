@@ -1,11 +1,12 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { workerConfig } from "../../cli/app/setup.ts";
 import { assertInContainer } from "./container.ts";
 
 assertInContainer();
@@ -37,12 +38,29 @@ describe("git-lfs through a local r2-lfs server", () => {
     work = mkdtempSync(join(tmpdir(), "r2-lfs-e2e-"));
     const envFile = join(work, "worker.env");
     writeFileSync(envFile, `ALLOWED_REPOS=acme/*\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nAUTH_TOKENS=acme/*:rw:${TOKEN}\n`);
+    // The Worker as the npm package ships it and `r2-lfs setup` deploys it.
+    const site = join(work, "site");
+    cpSync(join(process.cwd(), "dist", "worker"), join(site, "worker"), { recursive: true });
+    cpSync(join(process.cwd(), "dist", "public"), join(site, "public"), { recursive: true });
+    const config = workerConfig({
+      name: "r2-lfs-e2e",
+      bucket: "r2-lfs-e2e",
+      repos: ["acme/*"],
+      authMode: "token",
+      layout: "per-repo",
+      lockDays: 0,
+      trashDays: 0,
+      deploy: true,
+    });
+    writeFileSync(join(site, "wrangler.json"), JSON.stringify(config));
     server = spawn(
       "pnpm",
       [
         "exec",
         "wrangler",
         "dev",
+        "--config",
+        join(site, "wrangler.json"),
         "--ip",
         "127.0.0.1",
         "--port",
@@ -73,6 +91,12 @@ describe("git-lfs through a local r2-lfs server", () => {
   afterAll(() => {
     server?.kill();
     if (work) rmSync(work, { recursive: true, force: true });
+  });
+
+  it("serves the admin UI next to the LFS API", async () => {
+    const res = await fetch(`${SERVER}/_admin`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("<h1>r2-lfs</h1>");
   });
 
   it("sets a repository up with init, pushes LFS files and clones them back", () => {

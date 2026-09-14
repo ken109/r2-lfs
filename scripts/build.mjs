@@ -1,13 +1,15 @@
-// Bundles the CLI and the Worker into dist/ for the npm package.
-// The Worker bundle lets `r2-lfs setup` deploy without a checkout of this repository.
+// Builds the npm package: the CLI, and the Worker Vite built for `r2-lfs setup` to deploy without a checkout.
+// Run after `vite build`, which writes dist/server (the Worker) and dist/client (the admin UI's files).
 
-import { chmodSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 
 import { build } from "esbuild";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
-rmSync(new URL("../dist", import.meta.url), { recursive: true, force: true });
+if (!existsSync("dist/server/index.js")) throw new Error("run `vite build` first; dist/server/index.js is missing");
+for (const old of ["dist/cli.js", "dist/cli.js.LEGAL.txt", "dist/worker.js", "dist/worker.js.LEGAL.txt", "dist/worker", "dist/public"])
+  rmSync(old, { recursive: true, force: true });
 
 await build({
   entryPoints: ["cli/main.ts"],
@@ -23,16 +25,8 @@ await build({
 });
 chmodSync("dist/cli.js", 0o755);
 
-await build({
-  entryPoints: ["src/index.ts"],
-  outfile: "dist/worker.js",
-  bundle: true,
-  platform: "neutral",
-  format: "esm",
-  target: "es2024",
-  conditions: ["workerd", "worker", "browser"],
-  mainFields: ["module", "main"],
-  legalComments: "linked",
-});
+// The generated dist/server/wrangler.json holds paths of this machine; setup writes its own.
+cpSync("dist/server", "dist/worker", { recursive: true, filter: (src) => !/wrangler\.json$|[\\/]\.vite$/.test(src) });
+cpSync("dist/client", "dist/public", { recursive: true });
 
-console.log("built dist/cli.js and dist/worker.js");
+console.log("built dist/cli.js, dist/worker and dist/public");

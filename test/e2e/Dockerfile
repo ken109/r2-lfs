@@ -10,7 +10,7 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm build
+RUN pnpm build:pkg
 
 ENV R2_LFS_E2E_CONTAINER=1 CI=true WRANGLER_SEND_METRICS=false
 CMD ["pnpm", "exec", "vitest", "run", "--project", "e2e"]

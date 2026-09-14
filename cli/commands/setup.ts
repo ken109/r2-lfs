@@ -33,7 +33,7 @@ export default defineCommand({
     const term = new Terminal();
     term.intro("r2-lfs setup");
     const result = await setupServer(
-      { wrangler: compose.wrangler, files: compose.files, reporter: term, workerBundle: compose.workerBundlePath() },
+      { wrangler: compose.wrangler, files: compose.files, reporter: term, workerFiles: compose.workerFiles() },
       {
         name: args.name,
         bucket: args.bucket,

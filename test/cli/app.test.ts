@@ -601,6 +601,7 @@ describe("migrate", () => {
 });
 
 function setupFakes() {
+  const copied: string[] = [];
   const runs: { args: string[]; cwd?: string }[] = [];
   const written = new Map<string, string>();
   const wrangler: Wrangler = {
@@ -616,11 +617,17 @@ function setupFakes() {
     mkdirp: () => {},
     writeText: (path, text) => written.set(path, text),
     copyFile: () => {},
+    copyDir: (from, to) => copied.push(`${from} -> ${to}`),
     sha256: async () => "",
     writeTar: async () => {},
     tempDir: () => "/tmp/with space/r2-lfs-setup-1",
   };
-  return { runs, written, deps: { wrangler, files, reporter: new SilentReporter(), workerBundle: "dist/worker.js" } };
+  return {
+    runs,
+    written,
+    copied,
+    deps: { wrangler, files, reporter: new SilentReporter(), workerFiles: { worker: "dist/worker", assets: "dist/public" } },
+  };
 }
 describe("archive", () => {
   function archiving() {
@@ -711,6 +718,10 @@ describe("setup", () => {
     ]);
     expect(f.runs.at(-1)?.cwd).toBe("/tmp/with space/r2-lfs-setup-1");
     expect(f.written.has(join("/tmp/with space/r2-lfs-setup-1", "wrangler.json"))).toBe(true);
+    expect(f.copied).toEqual([
+      `dist/worker -> ${join("/tmp/with space/r2-lfs-setup-1", "worker")}`,
+      `dist/public -> ${join("/tmp/with space/r2-lfs-setup-1", "public")}`,
+    ]);
   });
 
   it("locks each repository pattern up to its first *, and skips patterns that would lock the trash too", async () => {

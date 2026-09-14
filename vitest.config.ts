@@ -1,11 +1,12 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     projects: [
       {
-        plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
+        // The API alone: the admin UI needs Vite's TanStack Start build, which these tests do not exercise.
+        plugins: [cloudflareTest({ main: "./src/index.ts", wrangler: { configPath: "./wrangler.jsonc" } })],
         test: { name: "worker", include: ["test/worker/**/*.test.ts"] },
       },
       {

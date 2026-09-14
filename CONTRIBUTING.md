@@ -19,10 +19,12 @@ pnpm test:e2e    # In Docker: git-lfs against wrangler dev, and the global git c
 pnpm typecheck
 pnpm lint        # oxlint (including layer rules) and oxfmt --check
 pnpm format      # oxfmt, then oxlint --fix
-pnpm build       # dist/cli.js and dist/worker.js
+pnpm build       # vite build: the Worker in dist/server and the admin UI in dist/client
+pnpm build:pkg   # the npm package: dist/cli.js, and the built Worker in dist/worker and dist/public
 ```
 
-Run the CLI from source with `pnpm cli <command>`, and the Worker with `pnpm dev`. Put settings in
+Run the CLI from source with `pnpm cli <command>`, and the Worker with `pnpm dev` (Vite, with the
+admin UI at `/_admin`). Put settings in
 `.dev.vars`, which overrides the variables in `wrangler.jsonc`; at least `ALLOWED_REPOS` is required,
 for example `ALLOWED_REPOS=your-github-name/*`. `.dev.vars.example` lists the secrets.
 

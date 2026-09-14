@@ -53,7 +53,7 @@ export function optionalBucket(): Bucket | undefined {
 
 export { r2Configured };
 
-/** The Worker bundle published next to the CLI in dist/. */
-export function workerBundlePath(): string {
-  return fileURLToPath(new URL("./worker.js", import.meta.url));
+/** The built Worker published next to the CLI in dist/. */
+export function workerFiles(): { worker: string; assets: string } {
+  return { worker: fileURLToPath(new URL("./worker", import.meta.url)), assets: fileURLToPath(new URL("./public", import.meta.url)) };
 }

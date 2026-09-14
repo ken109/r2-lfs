@@ -3,7 +3,7 @@
 r2-lfs has two programs that share one small contract:
 
 ```
-src/     the Worker: a Git LFS server on Cloudflare Workers, storing objects in R2
+src/     the Worker: a Git LFS server on Cloudflare Workers, storing objects in R2, with an admin UI
 cli/     the CLI: runs on developer machines and in CI, talks to git, the Worker and R2's S3 API
 src/shared/contract.ts   bucket key layout, server info, the tokens file; imported by both
 ```
@@ -14,8 +14,15 @@ The CLI may import only `src/shared` from the Worker, and the Worker nothing fro
 
 ## Worker (`src/`)
 
+`src/server.ts` is the deployed entry. It hands `/_admin` to TanStack Start, whose routes live in
+`src/routes/`, and every other path to `src/index.ts`, the Git LFS API on its own. Tests run the API
+through `src/index.ts`, without Vite.
+
 ```mermaid
 flowchart LR
+  server[server.ts] --> routes[routes/, TanStack Start]
+  server --> index[index.ts]
+  routes --> app
   index[index.ts] --> http
   http --> app
   http --> infra
@@ -25,12 +32,13 @@ flowchart LR
   domain --> shared
 ```
 
-| Layer     | Holds                                                                                                   | May import                           |
-| --------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `domain/` | Configuration parsing, permission rules, batch request validation, key layout                           | `shared/`                            |
-| `app/`    | Use cases: authorize, batch, verify, download, upload. `ports.ts` declares what they need from outside. | `domain/`, `shared/`                 |
-| `infra/`  | Port implementations: R2 binding, presigned URLs, GitHub API, token directory                           | `app/ports.ts`, `domain/`, `shared/` |
-| `http/`   | Routing, Request/Response mapping, composition of infra per request                                     | everything above                     |
+| Layer     | Holds                                                                                                     | May import                           |
+| --------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `domain/` | Configuration parsing, permission rules, batch request validation, key layout                             | `shared/`                            |
+| `app/`    | Use cases: authorize, batch, verify, download, upload. `ports.ts` declares what they need from outside.   | `domain/`, `shared/`                 |
+| `infra/`  | Port implementations: R2 binding, presigned URLs, GitHub API, token directory                             | `app/ports.ts`, `domain/`, `shared/` |
+| `http/`   | Routing, Request/Response mapping, composition of infra per request                                       | everything above                     |
+| `routes/` | The admin UI under `/_admin` (TanStack Start), and `server.ts`, which routes requests to it or to the API | everything above                     |
 
 Use cases return `Result` values with the HTTP status the LFS spec prescribes, so `http/` only maps
 them to responses.

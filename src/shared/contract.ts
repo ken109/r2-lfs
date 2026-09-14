@@ -13,6 +13,8 @@ export const TRASH_PREFIX = "_trash/";
 export const TOKENS_KEY = "_meta/tokens.json";
 
 export const INFO_PATH = "/_r2-lfs/info";
+/** The admin UI. GitHub logins never start with `_`, so no repository path can collide with it. */
+export const ADMIN_PATH = "/_admin";
 
 export type StorageLayout = "per-repo" | "shared";
 export type AuthMode = "github" | "token";

@@ -60,6 +60,8 @@ describe("contract", () => {
     // setup deploys the same defaults as the Deploy to Cloudflare button, apart from what its options choose.
     const jsonc = JSON.parse(wrangler.replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1")) as {
       observability: unknown;
+      compatibility_flags: string[];
+      assets: { run_worker_first: string[] };
       vars: Record<string, string>;
     };
     const config = workerConfig({
@@ -73,6 +75,8 @@ describe("contract", () => {
       deploy: true,
     });
     expect(config.observability).toEqual(jsonc.observability);
+    expect(config.compatibility_flags).toEqual(jsonc.compatibility_flags);
+    expect((config.assets as { run_worker_first: string[] }).run_worker_first).toEqual(jsonc.assets.run_worker_first);
     const { R2_ACCOUNT_ID: _account, ...deployedVars } = jsonc.vars;
     expect(config.vars).toEqual(deployedVars);
   });
@@ -99,7 +103,8 @@ describe("contract", () => {
       deploy: true,
     });
     expect(config).toMatchObject({
-      main: "worker.js",
+      main: "worker/index.js",
+      assets: { directory: "public" },
       r2_buckets: [{ binding: "BUCKET", bucket_name: "b" }],
       vars: { ALLOWED_REPOS: "acme/*" },
     });
