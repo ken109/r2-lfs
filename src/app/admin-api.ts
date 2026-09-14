@@ -18,7 +18,7 @@ export interface Overview {
   maxObjectBytes?: number;
   quotaBytes?: number;
   staticTokens: number;
-  actionsOidc?: { permission: "read" | "write"; audience: string };
+  actionsOidc?: { permission: "read" | "write" | "admin"; audience: string };
   warnings: string[];
 }
 

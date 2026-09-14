@@ -57,7 +57,8 @@ export interface AccessSettings {
 
 /** GitHub Actions workflows authenticating with their OIDC token, for their own repository only. */
 export interface ActionsOidcSettings {
-  permission: "read" | "write";
+  /** `admin` lets a scheduled workflow run gc through the server. */
+  permission: "read" | "write" | "admin";
   /** The `aud` workflows request the token for. */
   audience: string;
 }
@@ -245,7 +246,7 @@ export function parseConfig(vars: ConfigVars): Config {
   const tokens = parseStaticTokens(vars.AUTH_TOKENS, problems);
 
   const verifyUploads = oneOf("VERIFY_UPLOADS", vars.VERIFY_UPLOADS, ["on", "off"], "on", problems) === "on";
-  const actionsMode = oneOf("ACTIONS_OIDC", vars.ACTIONS_OIDC, ["off", "read", "write"], "off", problems);
+  const actionsMode = oneOf("ACTIONS_OIDC", vars.ACTIONS_OIDC, ["off", "read", "write", "admin"], "off", problems);
   const actionsAudience = value(vars.ACTIONS_OIDC_AUDIENCE) ?? "r2-lfs";
 
   const teamDomain = value(vars.ACCESS_TEAM_DOMAIN)

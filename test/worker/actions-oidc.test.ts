@@ -134,6 +134,6 @@ describe("GitHub Actions OIDC", () => {
     const res = await handle(new Request("https://lfs.example.com/_r2-lfs/info"), makeEnv(), { fetch: fetch });
     expect(await res.json()).toMatchObject({ actionsOidcAudience: "r2-lfs" });
     const invalid = await handle(new Request("https://lfs.example.com/_r2-lfs/info"), makeEnv({ ACTIONS_OIDC: "yes" }), { fetch: fetch });
-    expect(await invalid.text()).toContain("ACTIONS_OIDC must be one of off, read, write");
+    expect(await invalid.text()).toContain("ACTIONS_OIDC must be one of off, read, write, admin");
   });
 });

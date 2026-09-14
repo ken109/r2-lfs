@@ -129,6 +129,23 @@ export interface Credentials {
   password: string;
 }
 
+/** The bucket as gc through the server needs it: list, copy with a hash check, and delete. */
+export interface RepositoryStorage {
+  list(
+    prefix: string,
+    cursor?: string,
+  ): Promise<{ objects: { key: string; size: number; uploaded: Date; storageClass: string }[]; cursor?: string }>;
+  head(key: string): Promise<{ size: number; storageClass: string } | null>;
+  /** Copies only content that hashes to `sha256`; `locked` when a bucket lock rule refuses to overwrite the target. */
+  copy(
+    source: string,
+    target: string,
+    opts: { sha256: string; storageClass?: "Standard" | "InfrequentAccess" },
+  ): Promise<"copied" | "missing" | "checksum-mismatch" | "locked">;
+  /** `locked` when a bucket lock rule still protects the object. */
+  delete(key: string): Promise<"deleted" | "locked">;
+}
+
 /** What a token the Worker issued stands for. */
 export interface SessionClaims {
   /** `owner/repo`, lowercased. */

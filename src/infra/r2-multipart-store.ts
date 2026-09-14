@@ -1,6 +1,6 @@
 import type { MultipartStore } from "../app/ports.ts";
 import { R2_MAX_SINGLE_UPLOAD_BYTES } from "../domain/batch.ts";
-import { toHex } from "./crypto.ts";
+import { streamCopy } from "./r2-copy.ts";
 
 /** R2's error for an upload id that does not exist, or belongs to another key. */
 const NO_SUCH_UPLOAD = /\(10024\)|does not exist/;
@@ -51,57 +51,12 @@ export class R2MultipartStore implements MultipartStore {
   async promote(source: string, target: string, sha256: string, size: number) {
     const object = await this.bucket.get(source, this.keyOptions);
     if (!object) return "checksum-mismatch" as const;
-
-    if (size <= this.singleUploadBytes) {
-      try {
-        // R2 refuses the write unless the body hashes to the oid.
-        await this.bucket.put(target, object.body.pipeThrough(new FixedLengthStream(size)), { sha256, ...this.keyOptions });
-        return "stored" as const;
-      } catch (err) {
-        if (/sha-?256|digest|checksum/i.test(err instanceof Error ? err.message : String(err))) return "checksum-mismatch" as const;
-        throw err;
-      }
-    }
-
-    // Too big for one request: copy in parts and hash along the way, completing only if the hash matches.
-    const upload = await this.bucket.createMultipartUpload(target, this.keyOptions);
-    const digest = new crypto.DigestStream("SHA-256");
-    const hasher = digest.getWriter();
-    const parts: R2UploadedPart[] = [];
-    const reader = object.body.getReader();
-    let buffered: Uint8Array[] = [];
-    let bufferedBytes = 0;
-    const flush = async () => {
-      const part = new Uint8Array(bufferedBytes);
-      let offset = 0;
-      for (const chunk of buffered) {
-        part.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      buffered = [];
-      bufferedBytes = 0;
-      parts.push(await upload.uploadPart(parts.length + 1, part, this.keyOptions));
-    };
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        await hasher.write(value);
-        buffered.push(value);
-        bufferedBytes += value.byteLength;
-        if (bufferedBytes >= this.copyPartBytes) await flush();
-      }
-      if (bufferedBytes > 0) await flush();
-      await hasher.close();
-      if (toHex(await digest.digest) !== sha256) {
-        await upload.abort();
-        return "checksum-mismatch" as const;
-      }
-      await upload.complete(parts);
-      return "stored" as const;
-    } catch (err) {
-      await upload.abort().catch(() => {});
-      throw err;
-    }
+    return streamCopy(this.bucket, object.body, target, {
+      size,
+      sha256,
+      singleUploadBytes: this.singleUploadBytes,
+      copyPartBytes: this.copyPartBytes,
+      put: this.keyOptions,
+    });
   }
 }

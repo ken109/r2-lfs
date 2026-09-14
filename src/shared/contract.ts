@@ -63,6 +63,32 @@ export interface ServerInfo {
 /** Appended to a repository's LFS URL: POST with Git host credentials for a short-lived token. */
 export const SESSION_ENDPOINT = "r2-lfs/session";
 
+/**
+ * Appended to a repository's LFS URL: GET lists its objects (`?in=live|trash`, `&cursor=`), POST `/trash`, `/restore` or
+ * `/tier` with `{ oids }` changes them. This lets gc and restore run without R2 API credentials, per-repo layout only.
+ */
+export const STORAGE_ENDPOINT = "r2-lfs/objects";
+/** Objects one change request may name, so a request stays within a Worker's subrequest limit. */
+export const MAX_STORAGE_CHANGES = 10;
+
+export type StorageAction = "trash" | "restore" | "tier";
+
+/** One page of `GET <repository>/r2-lfs/objects`. */
+export interface StorageListing {
+  objects: { oid: string; size: number; uploaded: string; storage_class: "STANDARD" | "STANDARD_IA" }[];
+  cursor?: string;
+}
+
+/** What `POST <repository>/r2-lfs/objects/<action>` did to each object. */
+export interface StorageChanges {
+  results: {
+    oid: string;
+    /** `locked`: a bucket lock rule still protects the object; `missing`: there was nothing to act on. */
+    outcome: "trashed" | "restored" | "tiered" | "locked" | "missing" | "failed";
+    message?: string;
+  }[];
+}
+
 /** What the session endpoint answers with status 200. */
 export interface SessionResponse {
   token: string;

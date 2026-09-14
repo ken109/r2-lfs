@@ -2,6 +2,7 @@ import { authorize } from "../app/authorize.ts";
 import * as lfs from "../app/lfs.ts";
 import { createLock, listLocks, type LockResponse, type LocksContext, unlock, verifyLocks } from "../app/locks.ts";
 import * as multipart from "../app/multipart.ts";
+import { changeObjects, listObjects } from "../app/repository-storage.ts";
 import { hasPermission } from "../domain/access.ts";
 import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
@@ -13,6 +14,7 @@ import { looksLikeJwt } from "../infra/jwt.ts";
 import { R2MultipartStore } from "../infra/r2-multipart-store.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { R2RepositoryIdentities } from "../infra/r2-repository-identities.ts";
+import { R2RepositoryStorage } from "../infra/r2-repository-storage.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 import { S3Copier } from "../infra/s3-copier.ts";
 import { HmacSessionTokens } from "../infra/session-tokens.ts";
@@ -189,6 +191,16 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
   };
 
   switch (matched.kind) {
+    case "storage": {
+      const storage = { config, repo, permission: auth.permission, storage: new R2RepositoryStorage(env.BUCKET, config.encryptionKey) };
+      if (matched.action === undefined) {
+        if (request.method !== "GET") return lfsError(405, "Method not allowed");
+        const listed = await listObjects(storage, url.searchParams.get("in"), url.searchParams.get("cursor"));
+        return toResponse(listed, (body) => lfsJson(200, body));
+      }
+      if (request.method !== "POST") return lfsError(405, "Method not allowed");
+      return toResponse(await changeObjects(storage, matched.action, await readJson(request)), (body) => lfsJson(200, body));
+    }
     case "session": {
       if (request.method !== "POST") return lfsError(405, "Method not allowed");
       // Trading a token for another would let a session outlive the permission it was issued for.
