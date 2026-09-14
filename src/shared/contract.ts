@@ -59,7 +59,7 @@ export interface MisconfiguredInfo {
 export interface StoredToken {
   id: string;
   label: string;
-  /** `owner/repo`, `owner/*` or `*`, lowercased. */
+  /** A REPO_PATTERN, lowercased. */
   scope: string;
   permission: "read" | "write";
   /** Hex SHA-256 of the token; the token itself is never stored. */
@@ -94,15 +94,27 @@ export const OID_PATTERN = /^[0-9a-f]{64}$/;
  */
 export const OWNER_NAME = "[A-Za-z0-9][A-Za-z0-9_-]*";
 export const REPO_NAME = "[A-Za-z0-9._-]+";
-/** A token scope: `owner/repo`, `owner/*` or `*`. */
-export const SCOPE_PATTERN = new RegExp(`^(\\*|${OWNER_NAME}/(\\*|${REPO_NAME}))$`);
+/**
+ * Repositories in ALLOWED_REPOS and token scopes: `owner/repo`, where `*` stands for any characters within a
+ * name, as in `my-org/*` or `me/blender-*`, or `*` alone for every repository.
+ */
+export const REPO_PATTERN = /^(\*|[A-Za-z0-9*][A-Za-z0-9_*-]*\/[A-Za-z0-9._*-]+)$/;
 
 /** GitHub names are case-insensitive, so keys are lowercased to keep one prefix per repository. */
 export function repoPrefix(layout: StorageLayout, owner: string, repo: string): string {
   return layout === "shared" ? SHARED_PREFIX : `${owner.toLowerCase()}/${repo.toLowerCase()}/`;
 }
 
-export function scopeCovers(scope: string, owner: string, repo: string): boolean {
-  const o = owner.toLowerCase();
-  return scope === "*" || scope === `${o}/*` || scope === `${o}/${repo.toLowerCase()}`;
+const patternCache = new Map<string, RegExp>();
+
+/** Whether a REPO_PATTERN covers the repository. GitHub names are case-insensitive, and so is this. */
+export function repoPatternMatches(pattern: string, owner: string, repo: string): boolean {
+  if (pattern === "*") return true;
+  let regex = patternCache.get(pattern);
+  if (!regex) {
+    const source = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", "[^/]*");
+    regex = new RegExp(`^${source}$`, "i");
+    patternCache.set(pattern, regex);
+  }
+  return regex.test(`${owner}/${repo}`);
 }

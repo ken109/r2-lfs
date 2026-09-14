@@ -79,7 +79,7 @@
         "description": "Only for presigned URLs. The secret that pairs with `R2_ACCESS_KEY_ID`."
       },
       "AUTH_TOKENS": {
-        "description": "Only for `AUTH_MODE=token`. Comma- or newline-separated `<owner/repo|owner/*|*>:<r|rw>:<token>` entries with tokens of 16 or more characters, e.g. `my-name/*:rw:<random>`. May stay empty when you create tokens with `r2-lfs token`."
+        "description": "Only for `AUTH_MODE=token`. Comma- or newline-separated `<owner/repo>:<r|rw>:<token>` entries, where `*` may stand for any characters within a name (or be the whole scope), with tokens of 16 or more characters, e.g. `my-name/blender-*:rw:<random>`. May stay empty when you create tokens with `r2-lfs token`."
       }
     }
   },

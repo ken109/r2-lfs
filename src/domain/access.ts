@@ -1,4 +1,4 @@
-import { scopeCovers } from "../shared/contract.ts";
+import { repoPatternMatches } from "../shared/contract.ts";
 import type { Config } from "./config.ts";
 import type { Repo } from "./repo.ts";
 
@@ -23,7 +23,7 @@ export interface Grant {
 export function permissionFromGrants(grants: readonly Grant[], repo: Repo): Permission | undefined {
   let best: Permission | undefined;
   for (const grant of grants) {
-    if (!scopeCovers(grant.scope, repo.owner, repo.name)) continue;
+    if (!repoPatternMatches(grant.scope, repo.owner, repo.name)) continue;
     if (best === undefined || RANK[grant.permission] > RANK[best]) best = grant.permission;
   }
   return best;

@@ -166,18 +166,18 @@ a minor release may change what gc deletes, so pin an exact tag, as above, when 
 
 These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare page, or by `setup`.
 
-| Name                   | Kind   | Default    | Meaning                                                                                                                                                          |
-| ---------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ALLOWED_OWNERS`       | var    | (required) | Comma-separated GitHub users or orgs allowed to use the server. `*` allows anyone.                                                                               |
-| `AUTH_MODE`            | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                                                                      |
-| `STORAGE_LAYOUT`       | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                              |
-| `TRANSFER_MODE`        | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                  |
-| `PROXY_MAX_UPLOAD_MB`  | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                           |
-| `R2_ACCOUNT_ID`        | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                      |
-| `R2_BUCKET_NAME`       | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                         |
-| `R2_ACCESS_KEY_ID`     | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                          |
-| `R2_SECRET_ACCESS_KEY` | secret |            | Presigned mode: its secret.                                                                                                                                      |
-| `AUTH_TOKENS`          | secret |            | Token mode: comma- or newline-separated `<owner/repo\|owner/*\|*>:<r\|rw>:<token>` entries, tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
+| Name                   | Kind   | Default    | Meaning                                                                                                                                                                                                                                  |
+| ---------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALLOWED_OWNERS`       | var    | (required) | Comma-separated GitHub users or orgs allowed to use the server. `*` allows anyone.                                                                                                                                                       |
+| `AUTH_MODE`            | var    | `github`   | `github` or `token`; see [Authentication](#authentication).                                                                                                                                                                              |
+| `STORAGE_LAYOUT`       | var    | `per-repo` | `per-repo` stores objects under `<owner>/<repo>/`. `shared` stores them once under `_shared/` for all repositories.                                                                                                                      |
+| `TRANSFER_MODE`        | var    | `auto`     | `presigned`, `proxy`, or `auto` (presigned when the R2 credentials below are set). See [Transfers](#transfers).                                                                                                                          |
+| `PROXY_MAX_UPLOAD_MB`  | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                                                                                                   |
+| `R2_ACCOUNT_ID`        | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                                                                                              |
+| `R2_BUCKET_NAME`       | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                                                                                                 |
+| `R2_ACCESS_KEY_ID`     | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                                                                                                  |
+| `R2_SECRET_ACCESS_KEY` | secret |            | Presigned mode: its secret.                                                                                                                                                                                                              |
+| `AUTH_TOKENS`          | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
 
 If a setting is invalid, LFS requests fail with a message listing every problem, and `r2-lfs doctor` shows it too.
 
@@ -190,7 +190,14 @@ token's scopes, so a read-only token that belongs to a collaborator can still up
 for renamed or transferred repositories are not followed, so update `lfs.url` after moving a repository.
 
 **`token`.** Tokens created with `r2-lfs token create --scope owner/* --label laptop` (stored hashed
-in the bucket, revocable within 30 seconds), plus any in the `AUTH_TOKENS` secret.
+in the bucket, revocable within 30 seconds), plus any in the `AUTH_TOKENS` secret. A scope is a
+[repository pattern](#repository-patterns), so `--scope me/blender-*` limits a token to those repositories.
+
+### Repository patterns
+
+Token scopes are written as `owner/repo`, case-insensitive. `*` stands for any characters within the owner
+or the repository name but never crosses the `/`: `my-org/*` is every repository of `my-org`,
+`me/blender-*` covers `me/blender-cube` but not `me/my-blender`, and `*` alone covers every repository.
 
 `ALLOWED_OWNERS` applies in both modes, so nobody can point their own repository at your bucket.
 

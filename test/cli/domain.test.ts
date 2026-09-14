@@ -319,6 +319,8 @@ describe("tokens", () => {
     expect(() => addToken(file, { ...input, label: "x", scope: "acme" })).toThrow(/scope/);
     expect(() => addToken(file, { ...input, label: "x", scope: "_meta/*" })).toThrow(/scope/);
     expect(addToken(file, { ...input, label: "emu", scope: "alice_acme/*" }).entry.scope).toBe("alice_acme/*");
+    expect(addToken(file, { ...input, label: "blender", scope: "Me/Blender-*" }).entry.scope).toBe("me/blender-*");
+    expect(() => addToken(file, { ...input, label: "x", scope: "acme/a/b" })).toThrow(/scope/);
     expect(revokeToken(file, "ci").file.tokens).toEqual([]);
     expect(() => revokeToken(file, "nope")).toThrow(/no token/);
   });

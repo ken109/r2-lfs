@@ -9,7 +9,11 @@ import { jsonArg } from "./shared.ts";
 const create = defineCommand({
   meta: { name: "create", description: "Create a token for a server with AUTH_MODE=token (shown once)" },
   args: {
-    scope: { type: "string", description: "owner/repo, owner/* or *", required: true },
+    scope: {
+      type: "string",
+      description: "Repositories it may use: owner/repo, with * within names (my-org/*, me/blender-*), or *",
+      required: true,
+    },
     label: { type: "string", description: "A name to recognise it by, such as laptop or ci", required: true },
     "read-only": { type: "boolean", description: "Allow downloads only" },
     ...jsonArg,

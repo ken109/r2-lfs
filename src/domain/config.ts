@@ -1,4 +1,4 @@
-import { type AuthMode, SCOPE_PATTERN, type StorageLayout } from "../shared/contract.ts";
+import { type AuthMode, REPO_PATTERN, type StorageLayout } from "../shared/contract.ts";
 
 /** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
 export interface ConfigVars {
@@ -15,7 +15,7 @@ export interface ConfigVars {
 }
 
 export interface StaticToken {
-  /** `owner/repo`, `owner/*` or `*`, lowercased. */
+  /** A REPO_PATTERN, lowercased. */
   scope: string;
   permission: "read" | "write";
   token: string;
@@ -71,10 +71,10 @@ export function parseStaticTokens(raw: string | undefined, problems: string[]): 
     index++;
     const [scope, perm, ...rest] = trimmed.split(":");
     const token = rest.join(":");
-    const validScope = scope !== undefined && SCOPE_PATTERN.test(scope);
+    const validScope = scope !== undefined && REPO_PATTERN.test(scope);
     if (!validScope || (perm !== "r" && perm !== "rw") || token.length < 16) {
       // Never echo the entry: it contains the token.
-      problems.push(`AUTH_TOKENS entry #${index} must look like <owner/repo|owner/*|*>:<r|rw>:<token of 16+ chars>`);
+      problems.push(`AUTH_TOKENS entry #${index} must look like <owner/repo, * allowed within names>:<r|rw>:<token of 16+ chars>`);
       continue;
     }
     tokens.push({ scope: scope.toLowerCase(), permission: perm === "rw" ? "write" : "read", token });

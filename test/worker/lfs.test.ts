@@ -262,6 +262,15 @@ describe("authentication (token mode)", () => {
     expect(res.headers.get("LFS-Authenticate")).toBeNull();
   });
 
+  it("matches * within names in token scopes, case-insensitively", async () => {
+    const token = "b".repeat(32);
+    const e = makeEnv({ AUTH_TOKENS: `ACME/Blender-*:rw:${token}` });
+    expect((await batch(e, "/acme/blender-cube", "upload", [], { token })).status).toBe(200);
+    expect((await batch(e, "/Acme/BLENDER-", "upload", [], { token })).status).toBe(200);
+    expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(404);
+    expect((await batch(e, "/acme/my-blender-cube", "download", [], { token })).status).toBe(404);
+  });
+
   it("uses the strongest grant that covers the repository, and scopes stay within their owner", async () => {
     const token = "t".repeat(32);
     const e = makeEnv({ ALLOWED_OWNERS: "acme,beta", AUTH_TOKENS: `acme/app:r:${token},acme/*:rw:${token},*:r:${READ_TOKEN}` });
