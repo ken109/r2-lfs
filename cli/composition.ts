@@ -14,7 +14,8 @@ import { LocalFiles } from "./infra/local-files.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange, stdinLines } from "./infra/multipart-uploads.ts";
 import { findOnPath } from "./infra/proc.ts";
 import { R2Bucket, r2Configured } from "./infra/r2-bucket.ts";
-import { currentCli, joinPath, userConfigDir } from "./infra/user-dirs.ts";
+import { FileSessionCache } from "./infra/session-cache.ts";
+import { currentCli, joinPath, userCacheDir, userConfigDir } from "./infra/user-dirs.ts";
 import { NpxWrangler } from "./infra/wrangler-cli.ts";
 
 export const gitConfig = new UserGitConfig();
@@ -50,14 +51,8 @@ export function actionsIdTokens(): ActionsIdTokens {
   return new GithubActionsIdTokens();
 }
 
-/** How git runs `r2-lfs credential`: this Node.js and this CLI, quoted for the shell git uses. */
-export function credentialHelperCommand(): string {
-  return `!"${process.execPath}" "${process.argv[1] ?? ""}" credential`;
-}
-
-/** How git-lfs runs `r2-lfs transfer-agent`: git-lfs splits the args itself, without a shell. */
-/** What `transfer-agent --install` needs: this Node and CLI to fall back to, and where to write the launcher. */
-export function transferAgentInstall() {
+/** What installing a launcher needs: this Node and CLI to fall back to, and where to write it. */
+export function launcherInstall() {
   return {
     deps: { files, gitConfig, platform: process.platform, configDir: userConfigDir(), join: joinPath },
     target: currentCli(),
@@ -65,6 +60,11 @@ export function transferAgentInstall() {
 }
 
 export { findOnPath };
+
+/** Short-lived tokens the credential helper traded for. */
+export function sessionCache(): FileSessionCache {
+  return new FileSessionCache(joinPath(userCacheDir(), "sessions"));
+}
 
 export function multipartUploads(): HttpMultipartUploads {
   return new HttpMultipartUploads();

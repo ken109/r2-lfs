@@ -224,4 +224,42 @@ describe("git-lfs through a local r2-lfs server", () => {
     expect(body.objects[0]).toMatchObject({ actions: expect.anything() });
     expect(body.objects[0]?.error).toBeUndefined();
   });
+
+  it("trades the gh login for a short-lived token through the credential launcher", async () => {
+    // A stand-in gh whose token the server accepts, since this server checks its own tokens.
+    const bin = join(work, "fake-gh");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "gh"), `#!/bin/sh\n[ "$1 $2" = "auth token" ] && echo ${TOKEN}\n`, { mode: 0o755 });
+    const saved = { PATH: process.env.PATH, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME };
+    process.env.PATH = `${bin}:${process.env.PATH}`;
+    process.env.XDG_CACHE_HOME = join(work, "cache");
+    try {
+      const origin = join(work, "session-origin.git");
+      git(work, "init", "-q", "--bare", origin);
+      const repo = join(work, "session");
+      mkdirSync(repo);
+      git(repo, "init", "-q");
+      git(repo, "remote", "add", "origin", origin);
+      cli(repo, "init", "--server", SERVER, "--repo", "acme/sessions", "--track", "blender", "--credential", "none");
+      cli(repo, "credential", "--install", "--server", SERVER);
+      expect(git(repo, "config", "--global", "--get", `credential.${SERVER}.useHttpPath`).trim()).toBe("true");
+
+      writeFileSync(join(repo, "hero.blend"), randomBytes(64 * 1024));
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "hero");
+      git(repo, "push", "-q", "origin", "main");
+      git(repo, "lfs", "lock", "hero.blend");
+
+      // git-lfs sent the traded token, which the helper keeps for the next command.
+      const cached = JSON.parse(readFileSync(join(work, "cache", "r2-lfs", "sessions", "127.0.0.1_8787", "acme", "sessions.json"), "utf8"));
+      expect(cached.token).toMatch(/^r2lfs-s1\./);
+      const locks = JSON.parse(git(repo, "lfs", "locks", "--json")) as { owner: { name: string } }[];
+      expect(locks).toEqual([expect.objectContaining({ owner: { name: "AUTH_TOKENS #1" } })]);
+      git(repo, "lfs", "unlock", "hero.blend");
+    } finally {
+      process.env.PATH = saved.PATH;
+      if (saved.XDG_CACHE_HOME === undefined) delete process.env.XDG_CACHE_HOME;
+      else process.env.XDG_CACHE_HOME = saved.XDG_CACHE_HOME;
+    }
+  });
 });

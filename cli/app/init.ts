@@ -1,11 +1,12 @@
 import type { ServerInfo } from "../../src/shared/contract.ts";
-import type { AgentTarget } from "../domain/agent-launcher.ts";
 import { UsageError } from "../domain/errors.ts";
+import type { AgentTarget } from "../domain/launchers.ts";
 import { expandTracks } from "../domain/presets.ts";
 import { type LfsLocation, parseLfsUrl, parseRemote } from "../domain/remote.ts";
 import { requireServerInfo } from "./common.ts";
+import { installCredentialHelper } from "./credential.ts";
 import { BatchRequestError, type GitHubCli, type GitRepository, type GlobalGitConfig, type LfsClient, type Reporter } from "./ports.ts";
-import { type AgentInstallDeps, installTransferAgent } from "./transfer-agent.ts";
+import { installTransferAgent, type LauncherDeps } from "./transfer-agent.ts";
 
 export const SERVER_CONFIG_KEY = "r2-lfs.server";
 
@@ -15,6 +16,8 @@ export interface InitDeps {
   gh: GitHubCli;
   reporter: Reporter;
   connect: (location: LfsLocation, token: string | undefined) => LfsClient;
+  /** Writes the credential helper's launcher; without it, git asks gh directly as older versions did. */
+  launchers?: { deps: LauncherDeps; target: AgentTarget };
 }
 
 export interface InitOptions {
@@ -27,7 +30,7 @@ export interface InitOptions {
   /** Defaults to "gh" when the server uses GitHub auth and gh is logged in. */
   credential?: "gh" | "none";
   /** Registers `r2-lfs transfer-agent` for uploads past the Worker's request limit. */
-  transferAgent?: { deps: AgentInstallDeps; target: AgentTarget };
+  transferAgent?: { deps: LauncherDeps; target: AgentTarget };
 }
 
 export interface InitResult {
@@ -100,8 +103,13 @@ export async function initRepository(deps: InitDeps, opts: InitOptions): Promise
         `The server checks ${info.authMode === "token" ? "its own tokens" : info.authHost}, so it will not accept a github.com login`,
       );
     if (!gh.loggedIn()) throw new UsageError("--credential gh needs the GitHub CLI to be logged in (gh auth login)");
-    gitConfig.useGhCredentials(location.origin);
-    reporter.success(`Git will use your gh login for ${location.host}`);
+    if (deps.launchers) {
+      installCredentialHelper(deps.launchers.deps, deps.launchers.target, location.origin);
+      reporter.success(`Git will trade your gh login for short-lived tokens for ${location.host}`);
+    } else {
+      gitConfig.useGhCredentials(location.origin);
+      reporter.success(`Git will use your gh login for ${location.host}`);
+    }
   }
 
   if (opts.transferAgent) {

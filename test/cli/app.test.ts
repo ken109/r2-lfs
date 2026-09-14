@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { archiveTag } from "../../cli/app/archive.ts";
-import { parseCredentialRequest, passwordFor } from "../../cli/app/credential.ts";
+import { forgetSession, installCredentialHelper, parseCredentialRequest, passwordFor } from "../../cli/app/credential.ts";
 import { diagnose } from "../../cli/app/doctor.ts";
 import { applyGc, applyPlan, gcMode, planGc, recheckPlan, trashObject } from "../../cli/app/gc.ts";
 import { initRepository } from "../../cli/app/init.ts";
@@ -18,6 +18,8 @@ import {
   type LfsClient,
   type MultipartUploads,
   type SavedUpload,
+  type Session,
+  type SessionCache,
   TransferError,
   type UploadedPart,
   type Wrangler,
@@ -29,8 +31,9 @@ import { runTransferAgent } from "../../cli/app/transfer-agent.ts";
 import { usageReport } from "../../cli/app/usage.ts";
 import { verifyObjects } from "../../cli/app/verify.ts";
 import { explain } from "../../cli/app/why.ts";
-import { launcherScript, parseLauncher } from "../../cli/domain/agent-launcher.ts";
 import { UsageError } from "../../cli/domain/errors.ts";
+import { launcherScript, parseLauncher } from "../../cli/domain/launchers.ts";
+import type { LfsLocation } from "../../cli/domain/remote.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { LocalFiles } from "../../cli/infra/local-files.ts";
 import { TOKENS_KEY } from "../../src/shared/contract.ts";
@@ -46,21 +49,35 @@ class FakeGitConfig implements GlobalGitConfig {
   set(key: string, value: string) {
     this.values.set(key, value);
   }
-  helpersFor() {
+  helpersFor(_origin: string): string[] {
     return [];
   }
   useGhCredentials(origin: string) {
     this.ghOrigins.push(origin);
   }
-  useCredentialHelper() {}
+  useCredentialHelper(_origin: string, _helper: string) {}
   credentialFor() {
     return this.token;
+  }
+}
+
+class MemorySessionCache implements SessionCache {
+  readonly sessions = new Map<string, Session>();
+  get(location: LfsLocation) {
+    return this.sessions.get(`${location.owner}/${location.repo}`);
+  }
+  set(location: LfsLocation, session: Session) {
+    this.sessions.set(`${location.owner}/${location.repo}`, session);
+  }
+  delete(location: LfsLocation) {
+    this.sessions.delete(`${location.owner}/${location.repo}`);
   }
 }
 
 const noGh: GitHubCli = {
   available: () => false,
   loggedIn: () => false,
+  token: () => undefined,
   releaseState: () => undefined,
   createDraftRelease: () => {},
   uploadAssets: async () => 0,
@@ -703,6 +720,7 @@ describe("archive", () => {
     const gh: GitHubCli = {
       available: () => true,
       loggedIn: () => true,
+      token: () => "gho_release",
       releaseState: () => state,
       createDraftRelease: (target, tag) => {
         events.push(`draft ${target} ${tag}`);
@@ -802,21 +820,74 @@ describe("credential helper", () => {
     const client = new FakeLfsClient();
     const origins: string[] = [];
     const connect = (location: { origin: string }) => (origins.push(location.origin), client);
+    const rest = { ghToken: () => "gho_never", sessions: new MemorySessionCache(), now: () => new Date() };
 
-    expect(await passwordFor({ token: "from-env", actions, connect }, "https://lfs.example.com")).toBe("from-env");
+    expect(await passwordFor({ token: "from-env", actions, connect, ...rest }, "https://lfs.example.com")).toBe("from-env");
     expect(requested).toEqual([]);
 
-    expect(await passwordFor({ token: undefined, actions, connect }, "https://lfs.example.com")).toBeUndefined();
+    expect(await passwordFor({ token: undefined, actions, connect, ...rest }, "https://lfs.example.com")).toBeUndefined();
     client.serverInfo = { ...client.serverInfo, actionsOidcAudience: "r2-lfs" };
-    expect(await passwordFor({ token: undefined, actions, connect }, "https://lfs.example.com")).toBe("oidc-for-r2-lfs");
+    expect(await passwordFor({ token: undefined, actions, connect, ...rest }, "https://lfs.example.com")).toBe("oidc-for-r2-lfs");
     expect(origins).toEqual(["https://lfs.example.com", "https://lfs.example.com"]);
 
     const outside = { available: () => false, request: async () => "never" };
-    expect(await passwordFor({ token: undefined, actions: outside, connect }, "https://lfs.example.com")).toBeUndefined();
+    expect(
+      await passwordFor({ token: undefined, actions: outside, connect, ...rest, ghToken: () => undefined }, "https://lfs.example.com"),
+    ).toBeUndefined();
     client.info = async () => {
       throw new Error("offline");
     };
-    expect(await passwordFor({ token: undefined, actions, connect }, "https://lfs.example.com")).toBeUndefined();
+    expect(await passwordFor({ token: undefined, actions, connect, ...rest }, "https://lfs.example.com")).toBeUndefined();
+  });
+
+  it("trades the gh login for a short-lived token for the repository git names, and reuses it until it nearly expires", async () => {
+    const outside = { available: () => false, request: async () => "never" };
+    const client = new FakeLfsClient();
+    const traded: { url: string; token: string | undefined }[] = [];
+    const connect = (location: { url: string }, token: string | undefined) => (traded.push({ url: location.url, token }), client);
+    const sessions = new MemorySessionCache();
+    let now = new Date("2026-09-14T00:00:00Z");
+    const deps = { token: undefined, actions: outside, connect, ghToken: () => "gho_login", sessions, now: () => now };
+    const origin = "https://lfs.example.com";
+
+    // An older server has no session endpoint, and git without useHttpPath names no repository: the gh token goes as is.
+    expect(await passwordFor(deps, origin, "acme/assets.git/info/lfs")).toBe("gho_login");
+    expect(await passwordFor(deps, origin)).toBe("gho_login");
+
+    client.sessionAnswer = { token: "r2lfs-s1.first", expiresAt: new Date("2026-09-14T01:00:00Z") };
+    expect(await passwordFor(deps, origin, "acme/assets.git/info/lfs")).toBe("r2lfs-s1.first");
+    expect(traded.at(-1)).toEqual({ url: "https://lfs.example.com/acme/assets.git/info/lfs", token: "gho_login" });
+    const calls = traded.length;
+    now = new Date("2026-09-14T00:45:00Z");
+    expect(await passwordFor(deps, origin, "acme/assets")).toBe("r2lfs-s1.first");
+    expect(traded).toHaveLength(calls);
+
+    // Within ten minutes of expiring, or after git erased it for a rejection, it trades again.
+    now = new Date("2026-09-14T00:55:00Z");
+    client.sessionAnswer = { token: "r2lfs-s1.second", expiresAt: new Date("2026-09-14T01:55:00Z") };
+    expect(await passwordFor(deps, origin, "acme/assets")).toBe("r2lfs-s1.second");
+    forgetSession(sessions, origin, "acme/assets/info/lfs");
+    client.sessionAnswer = { token: "r2lfs-s1.third", expiresAt: new Date("2026-09-14T01:55:00Z") };
+    expect(await passwordFor(deps, origin, "acme/assets")).toBe("r2lfs-s1.third");
+
+    expect(await passwordFor({ ...deps, ghToken: () => undefined }, origin, "acme/assets")).toBeUndefined();
+  });
+
+  it("installs a launcher that git runs with sh, sending the repository's path", () => {
+    const files = new LocalFiles();
+    const configDir = join(files.tempDir("r2-lfs-credential-"), "r2-lfs");
+    cleanup.push(() => rmSync(configDir, { recursive: true, force: true }));
+    const helpers: [string, string][] = [];
+    const gitConfig = new FakeGitConfig();
+    gitConfig.useCredentialHelper = (origin: string, helper: string) => void helpers.push([origin, helper]);
+    const launcher = installCredentialHelper(
+      { files, gitConfig, platform: "linux", configDir, join },
+      { node: "/usr/bin/node", cli: "/opt/r2-lfs/cli.js" },
+      "https://lfs.example.com",
+    );
+    expect(helpers).toEqual([["https://lfs.example.com", `!sh '${launcher.replaceAll("\\", "/")}'`]]);
+    expect(gitConfig.get("credential.https://lfs.example.com.useHttpPath")).toBe("true");
+    expect(files.readText(launcher)).toContain('exec r2-lfs credential "$@"');
   });
 
   it("reads git's credential request", () => {
@@ -1098,6 +1169,20 @@ describe("init and doctor", () => {
     const locking = await diagnose({ ...base, connect: (): LfsClient => readOnly });
     expect(locking.find((c) => c.name === "locking")).toMatchObject({ status: "ok" });
     expect(locking.find((c) => c.name === "transfer agent")).toBeUndefined();
+
+    // A gh login sent as is shows up in logs; the launcher trades it for short-lived tokens.
+    const helpers = new FakeGitConfig();
+    let configured: string[] = [];
+    helpers.helpersFor = () => configured;
+    configured = ["!f() { gh; }; f"];
+    const oldHelper = await diagnose({ ...base, gitConfig: helpers, ghHelper: "!f() { gh; }; f", connect: (): LfsClient => readOnly });
+    expect(oldHelper.find((c) => c.name === "credentials")).toMatchObject({ status: "warn", fix: "r2-lfs credential --install" });
+    configured = ["", "!sh '/home/me/.config/r2-lfs/credential'"];
+    const traded = await diagnose({ ...base, gitConfig: helpers, ghHelper: "!f() { gh; }; f", connect: (): LfsClient => readOnly });
+    expect(traded.find((c) => c.name === "credentials")).toMatchObject({
+      status: "ok",
+      detail: "your gh login, traded for short-lived tokens",
+    });
   });
 
   it("checks that git-lfs can still start the transfer agent", async () => {

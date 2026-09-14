@@ -14,6 +14,7 @@ import {
   type LfsClient,
   type Progress,
   type Reporter,
+  type Session,
   type WriteResult,
 } from "../../cli/app/ports.ts";
 import type { ObjectRef, StoredObject } from "../../cli/domain/objects.ts";
@@ -130,6 +131,13 @@ export class FakeLfsClient implements LfsClient {
 
   async info(): Promise<InfoResult> {
     return { kind: "ok", info: this.serverInfo };
+  }
+
+  /** What the session endpoint answers; undefined like a server without one. */
+  sessionAnswer: Session | undefined;
+
+  async session(): Promise<Session | undefined> {
+    return this.sessionAnswer;
   }
 
   async batch(_operation: "upload" | "download", objects: ObjectRef[]): Promise<BatchObject[]> {

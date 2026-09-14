@@ -1,5 +1,5 @@
 import { MULTIPART_TRANSFER } from "../../src/shared/contract.ts";
-import { parseLauncher } from "../domain/agent-launcher.ts";
+import { isCredentialLauncherCommand, parseLauncher } from "../domain/launchers.ts";
 import { MAX_POINTER_SIZE } from "../domain/pointer.ts";
 import { type LfsLocation, parseLfsUrl } from "../domain/remote.ts";
 import { probeAccess } from "./init.ts";
@@ -124,8 +124,16 @@ export async function diagnose(deps: DoctorDeps): Promise<Check[]> {
       info.info.authMode === "github" && deps.gh.loggedIn() ? "r2-lfs init --credential gh" : "Push once and enter a token when git asks";
     add("credentials", "warn", `no stored credentials for ${location.host}`, fix);
   } else {
-    const fromGh = deps.gitConfig.helpersFor(location.origin).includes(deps.ghHelper);
-    add("credentials", "ok", fromGh ? "from your gh login" : "found by git's credential helper");
+    const helpers = deps.gitConfig.helpersFor(location.origin);
+    if (helpers.some(isCredentialLauncherCommand)) add("credentials", "ok", "your gh login, traded for short-lived tokens");
+    else if (helpers.includes(deps.ghHelper)) {
+      add(
+        "credentials",
+        "warn",
+        "git sends your GitHub token itself on every request, where logs such as git-lfs traces can show it",
+        "r2-lfs credential --install",
+      );
+    } else add("credentials", "ok", "found by git's credential helper");
     try {
       const access = await probeAccess(client);
       if (access === "write") add("access", "ok", "read and write");

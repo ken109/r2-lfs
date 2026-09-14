@@ -15,7 +15,12 @@ export class GhCli implements GitHubCli {
   }
 
   loggedIn(): boolean {
-    return this.available() && runSync("gh", ["auth", "token"]).code === 0;
+    return this.token() !== undefined;
+  }
+
+  token(): string | undefined {
+    const result = runSync("gh", ["auth", "token"]);
+    return result.code === 0 ? result.stdout.toString().trim() || undefined : undefined;
   }
 
   releaseState(repo: string | undefined, tag: string): "draft" | "published" | undefined {

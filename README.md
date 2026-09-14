@@ -49,7 +49,9 @@ git push
 ```
 
 With the GitHub CLI logged in, `init` configures git to answer the server's password prompt with your
-`gh` login, so there is no token to create or paste.
+`gh` login, so there is no token to create or paste. The helper does not send the gh token itself with every
+request: it trades it with the server for a one-hour token for that repository and keeps that in
+`~/.cache/r2-lfs`. Without r2-lfs installed, the helper falls back to the gh token, which the server also accepts.
 
 **3. Check everything works.**
 
@@ -315,9 +317,11 @@ steps:
   - run: git lfs pull
 ```
 
-`r2-lfs credential` is a git credential helper: it answers with `R2_LFS_TOKEN` when set, and inside
-GitHub Actions with an OIDC token for the audience the server announces. File locks taken this way are
-held by `<actor> (GitHub Actions)`.
+`r2-lfs credential` is a git credential helper: it answers with `R2_LFS_TOKEN` when set, inside
+GitHub Actions with an OIDC token for the audience the server announces, and otherwise with your gh login
+traded for a short-lived token. `--install` writes a launcher to `~/.config/r2-lfs/credential` and turns on
+`credential.useHttpPath` for the server, so git tells the helper which repository it needs. File locks
+taken with an Actions token are held by `<actor> (GitHub Actions)`.
 
 ## File locking
 
@@ -375,6 +379,11 @@ admin UI's own `Origin`.
 - Stored content always hashes to its oid: R2 checks proxy uploads and the Worker checks presigned ones,
   unless `VERIFY_UPLOADS=off`.
 - Access follows the repository, not just its name: a repository that reuses a recorded name is refused.
+- Git host tokens do not travel further than they must. Each transfer action in a batch response carries a
+  token the Worker signs for that one object, valid for 12 hours, rather than the client's credentials, and
+  `POST <repository>/r2-lfs/session` trades host credentials for a one-hour token for the repository, which
+  `r2-lfs credential` does for you. Such a token keeps the permission it was issued with until it expires;
+  delete `_meta/session-key` from the bucket to revoke every token at once.
 - In the `shared` layout an object is stored once, but a repository can read it only after uploading its
   content itself, so knowing an oid is not enough. With `VERIFY_UPLOADS=off` in presigned mode, a
   writer can claim an object by its oid and size; use `per-repo` if that matters.

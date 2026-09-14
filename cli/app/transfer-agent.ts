@@ -2,7 +2,7 @@
 // https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md
 
 import { type LfsAction, MULTIPART_TRANSFER } from "../../src/shared/contract.ts";
-import { type AgentTarget, launcherFileName, launcherScript } from "../domain/agent-launcher.ts";
+import { type AgentTarget, launcherFileName, launcherScript } from "../domain/launchers.ts";
 import { type Files, type GlobalGitConfig, type MultipartUploads, type SavedUpload, TransferError, type UploadStates } from "./ports.ts";
 
 export interface AgentDeps {
@@ -126,18 +126,19 @@ export async function runTransferAgent(deps: AgentDeps, lines: AsyncIterable<str
 }
 
 /** The git config that makes git-lfs offer the agent to servers; servers that do not know it keep using basic. */
-export interface AgentInstallDeps {
+/** Where and how launchers are written; see domain/launchers.ts. */
+export interface LauncherDeps {
   files: Files;
   gitConfig: GlobalGitConfig;
   platform: string;
-  /** Where the launcher is written, e.g. ~/.config/r2-lfs. */
+  /** Where launchers are written, e.g. ~/.config/r2-lfs. */
   configDir: string;
   /** Joins path segments the platform's way. */
   join(...parts: string[]): string;
 }
 
 /** Writes the launcher and points git-lfs at it. Returns the launcher's path. */
-export function installTransferAgent(deps: AgentInstallDeps, target: AgentTarget): string {
+export function installTransferAgent(deps: LauncherDeps, target: AgentTarget): string {
   deps.files.mkdirp(deps.configDir);
   const launcher = deps.join(deps.configDir, launcherFileName(deps.platform));
   deps.files.writeExecutable(launcher, launcherScript(deps.platform, target));

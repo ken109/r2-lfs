@@ -63,14 +63,21 @@ export default defineCommand({
     }
 
     const result = await initRepository(
-      { repo, gitConfig: compose.gitConfig, gh: compose.gh(repo.dir), reporter: term, connect: compose.connect },
+      {
+        repo,
+        gitConfig: compose.gitConfig,
+        gh: compose.gh(repo.dir),
+        reporter: term,
+        connect: compose.connect,
+        launchers: compose.launcherInstall(),
+      },
       {
         server,
         ...(args.repo ? { repo: args.repo } : {}),
         track,
         ...(args.lockable ? { lockable: true } : {}),
         ...(args.credential ? { credential: args.credential as "gh" | "none" } : {}),
-        ...(args["transfer-agent"] ? { transferAgent: compose.transferAgentInstall() } : {}),
+        ...(args["transfer-agent"] ? { transferAgent: compose.launcherInstall() } : {}),
       },
     );
 

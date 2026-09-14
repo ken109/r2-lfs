@@ -94,6 +94,8 @@ export interface ActionsIdTokens {
 export interface GitHubCli {
   available(): boolean;
   loggedIn(): boolean;
+  /** `gh auth token`, or undefined when gh is missing or logged out. */
+  token(): string | undefined;
   /** `undefined` when the release does not exist. */
   releaseState(repo: string | undefined, tag: string): "draft" | "published" | undefined;
   createDraftRelease(repo: string | undefined, tag: string, title: string, notes: string): void;
@@ -138,10 +140,24 @@ export type InfoResult =
   | { kind: "misconfigured"; problems: string[] }
   | { kind: "not-r2-lfs"; status: number };
 
+export interface Session {
+  token: string;
+  expiresAt: Date;
+}
+
+/** Short-lived tokens from servers' session endpoints, kept between git's calls to the credential helper. */
+export interface SessionCache {
+  get(location: LfsLocation): Session | undefined;
+  set(location: LfsLocation, session: Session): void;
+  delete(location: LfsLocation): void;
+}
+
 export interface LfsClient {
   readonly location: LfsLocation;
   readonly hasCredentials: boolean;
   info(): Promise<InfoResult>;
+  /** Trades this client's credentials for a short-lived token for the repository; undefined when the server will not. */
+  session(): Promise<Session | undefined>;
   /** Throws `BatchRequestError` when the whole request is refused. */
   batch(operation: "upload" | "download", objects: ObjectRef[]): Promise<BatchObject[]>;
   download(object: BatchObject): Promise<AsyncIterable<Uint8Array>>;

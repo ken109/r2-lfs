@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { launcherScript, parseLauncher } from "../../cli/domain/agent-launcher.ts";
 import { UsageError } from "../../cli/domain/errors.ts";
 import { buildHistory } from "../../cli/domain/history.ts";
+import { launcherScript, parseLauncher } from "../../cli/domain/launchers.ts";
 import { combinePlans, type Facts, planObjects } from "../../cli/domain/plan.ts";
 import { parsePointer } from "../../cli/domain/pointer.ts";
 import { checkKeepVersions, effectiveFor, globMatch, keepDayWindows, parsePolicy } from "../../cli/domain/policy.ts";

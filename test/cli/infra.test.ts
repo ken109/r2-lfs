@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ConflictError, TransferError } from "../../cli/app/ports.ts";
-import { launcherFileName, launcherScript } from "../../cli/domain/agent-launcher.ts";
+import { credentialLauncherScript, launcherFileName, launcherScript } from "../../cli/domain/launchers.ts";
 import { parseLfsUrl } from "../../cli/domain/remote.ts";
 import { GithubActionsIdTokens } from "../../cli/infra/actions-id-token.ts";
 import { Git } from "../../cli/infra/git.ts";
@@ -17,6 +17,7 @@ import { LocalFiles } from "../../cli/infra/local-files.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange } from "../../cli/infra/multipart-uploads.ts";
 import { findOnPath } from "../../cli/infra/proc.ts";
 import { parseListObjects, R2Bucket, ssecHeaders } from "../../cli/infra/r2-bucket.ts";
+import { FileSessionCache } from "../../cli/infra/session-cache.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { parseWhoami } from "../../cli/infra/wrangler-cli.ts";
 import { TempRepo } from "./helpers.ts";
@@ -387,6 +388,48 @@ describe("HttpLfsClient", () => {
       server.close();
     }
   });
+
+  it("trades its credentials at the session endpoint, and answers undefined when the server has none", async () => {
+    const seen: { url?: string; authorization?: string }[] = [];
+    const server = createServer((req, res) => {
+      seen.push({ url: req.url, authorization: req.headers.authorization });
+      if (req.url === "/acme/assets/r2-lfs/session") {
+        res.writeHead(200).end(JSON.stringify({ token: "r2lfs-s1.x", expires_at: "2026-09-14T01:00:00.000Z", permission: "write" }));
+      } else res.writeHead(404).end("{}");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, "gho_login");
+      expect(await client.session()).toEqual({ token: "r2lfs-s1.x", expiresAt: new Date("2026-09-14T01:00:00.000Z") });
+      expect(seen[0]?.authorization).toBe(`Basic ${Buffer.from("r2-lfs:gho_login").toString("base64")}`);
+      expect(await new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/old`)!, "gho_login").session()).toBeUndefined();
+      expect(await new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, undefined).session()).toBeUndefined();
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("FileSessionCache", () => {
+  it("keeps one token per repository, whatever the case, and forgets it on delete", () => {
+    const dir = mkdtempSync(join(tmpdir(), "r2-lfs-sessions-"));
+    try {
+      const cache = new FileSessionCache(dir);
+      const location = parseLfsUrl("https://lfs.example.com:8443/Acme/Assets")!;
+      expect(cache.get(location)).toBeUndefined();
+      const session = { token: "r2lfs-s1.x", expiresAt: new Date("2026-09-14T01:00:00Z") };
+      cache.set(location, session);
+      expect(cache.get(parseLfsUrl("https://lfs.example.com:8443/acme/assets.git/info/lfs")!)).toEqual(session);
+      expect(readFileSync(join(dir, "lfs.example.com_8443", "acme", "assets.json"), "utf8")).toContain("r2lfs-s1.x");
+      cache.delete(location);
+      expect(cache.get(location)).toBeUndefined();
+      writeFileSync(join(dir, "lfs.example.com_8443", "acme", "assets.json"), "not json");
+      expect(cache.get(location)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("transfer agent adapters", () => {
@@ -495,6 +538,13 @@ describe("transfer agent launcher", () => {
 
     expect(start(launcher, [])).toEqual({ code: 0, out: "fallback transfer-agent" });
 
+    // A version manager's shim that is on PATH but fails, as mise's does outside a configured directory.
+    const broken = join(dir, "broken shim");
+    mkdirSync(broken);
+    if (windows) writeFileSync(join(broken, "r2-lfs.cmd"), "@exit /b 1\r\n");
+    else files.writeExecutable(join(broken, "r2-lfs"), "#!/bin/sh\nexit 1\n");
+    expect(start(launcher, [broken])).toEqual({ code: 0, out: "fallback transfer-agent" });
+
     if (windows) writeFileSync(join(bin, "r2-lfs.cmd"), "@echo on path %*\r\n");
     else files.writeExecutable(join(bin, "r2-lfs"), '#!/bin/sh\necho "on path $*"\n');
     expect(start(launcher, [bin])).toEqual({ code: 0, out: "on path transfer-agent" });
@@ -503,6 +553,28 @@ describe("transfer agent launcher", () => {
     const gone = start(launcher, []);
     expect(gone.code).toBe(1);
     expect(gone.out).toContain("r2-lfs transfer-agent --install");
+  });
+
+  // git runs credential helpers with its own sh; Windows runners have no sh on PATH, and ken109-windows was checked by hand.
+  it.skipIf(windows)("answers git through r2-lfs when it can, and with the gh login when r2-lfs is gone", () => {
+    const files = new LocalFiles();
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    const launcher = join(dir, "credential");
+    const answer = (path: string[]) =>
+      execFileSync("sh", [launcher, "get"], {
+        env: { ...process.env, PATH: [...path, "/usr/bin", "/bin"].join(":") },
+        encoding: "utf8",
+        input: "protocol=https\nhost=lfs.example.com\n\n",
+      });
+    files.writeExecutable(launcher, credentialLauncherScript({ node: join(dir, "gone", "node"), cli: join(dir, "gone", "cli.js") }));
+    expect(answer([])).toBe("");
+    files.writeExecutable(join(bin, "gh"), '#!/bin/sh\n[ "$1 $2" = "auth token" ] && echo gho_login\n');
+    expect(answer([bin])).toBe("username=r2-lfs\npassword=gho_login\n");
+    files.writeExecutable(join(bin, "r2-lfs"), "#!/bin/sh\nexit 1\n");
+    expect(answer([bin])).toBe("username=r2-lfs\npassword=gho_login\n");
+    files.writeExecutable(join(bin, "r2-lfs"), '#!/bin/sh\necho "username=r2-lfs"; echo "password=from-r2-lfs-$1-$2"\n');
+    expect(answer([bin])).toBe("username=r2-lfs\npassword=from-r2-lfs-credential-get\n");
   });
 
   it("finds commands on PATH as a shell would", () => {

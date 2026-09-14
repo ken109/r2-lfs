@@ -1,5 +1,5 @@
-import { INFO_PATH, type MisconfiguredInfo, type ServerInfo } from "../../src/shared/contract.ts";
-import { type BatchObject, BatchRequestError, type InfoResult, type LfsClient } from "../app/ports.ts";
+import { INFO_PATH, type MisconfiguredInfo, type ServerInfo, SESSION_ENDPOINT, type SessionResponse } from "../../src/shared/contract.ts";
+import { type BatchObject, BatchRequestError, type InfoResult, type LfsClient, type Session } from "../app/ports.ts";
 import type { ObjectRef } from "../domain/objects.ts";
 import type { LfsLocation } from "../domain/remote.ts";
 
@@ -34,6 +34,15 @@ export class HttpLfsClient implements LfsClient {
     if (body?.name !== "r2-lfs") return { kind: "not-r2-lfs", status: res.status };
     if (!res.ok) return { kind: "misconfigured", problems: "problems" in body ? body.problems : [`status ${res.status}`] };
     return { kind: "ok", info: body as ServerInfo };
+  }
+
+  async session(): Promise<Session | undefined> {
+    if (!this.token) return undefined;
+    const res = await fetch(`${this.location.url}/${SESSION_ENDPOINT}`, { method: "POST", headers: this.headers() });
+    if (!res.ok) return undefined;
+    const body = (await res.json().catch(() => undefined)) as Partial<SessionResponse> | undefined;
+    const expiresAt = new Date(body?.expires_at ?? Number.NaN);
+    return typeof body?.token === "string" && !Number.isNaN(expiresAt.getTime()) ? { token: body.token, expiresAt } : undefined;
   }
 
   private async batchOnce(operation: "upload" | "download", objects: ObjectRef[]): Promise<BatchObject[]> {

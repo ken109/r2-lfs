@@ -13,7 +13,7 @@ export default defineCommand({
   },
   async run({ args }) {
     if (args.install) {
-      const { deps, target } = compose.transferAgentInstall();
+      const { deps, target } = compose.launcherInstall();
       const launcher = installTransferAgent(deps, target);
       console.error(`git-lfs now offers r2-lfs servers multipart uploads, through ${launcher}`);
       if (inNpxCache(target.cli) && !compose.findOnPath("r2-lfs")) {
