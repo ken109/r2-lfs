@@ -110,6 +110,41 @@ export function storedTokensIn(value: unknown): StoredToken[] | undefined {
   return valid ? file.tokens : undefined;
 }
 
+export interface NewStoredToken {
+  label: string;
+  scope: string;
+  permission: StoredToken["permission"];
+  id: string;
+  sha256: string;
+  created: Date;
+}
+
+/** An edit of the tokens file, which the CLI and the admin UI both make. */
+export type TokenEdit = { ok: true; file: TokensFile; entry: StoredToken } | { ok: false; message: string };
+
+export function addStoredToken(file: TokensFile, input: NewStoredToken): TokenEdit {
+  if (!REPO_PATTERN.test(input.scope)) {
+    return { ok: false, message: "scope must be owner/repo, with * allowed within names (my-org/*, me/blender-*), or *" };
+  }
+  if (!input.label.trim()) return { ok: false, message: "label must not be empty" };
+  if (file.tokens.some((t) => t.label === input.label)) return { ok: false, message: `a token labelled ${input.label} already exists` };
+  const entry: StoredToken = {
+    id: input.id,
+    label: input.label,
+    scope: input.scope.toLowerCase(),
+    permission: input.permission,
+    sha256: input.sha256,
+    created: input.created.toISOString(),
+  };
+  return { ok: true, file: { ...file, tokens: [...file.tokens, entry] }, entry };
+}
+
+export function revokeStoredToken(file: TokensFile, idOrLabel: string): TokenEdit {
+  const entry = file.tokens.find((t) => t.id === idOrLabel || t.label === idOrLabel);
+  if (!entry) return { ok: false, message: `no token with id or label ${idOrLabel}` };
+  return { ok: true, file: { ...file, tokens: file.tokens.filter((t) => t !== entry) }, entry };
+}
+
 export const OID_PATTERN = /^[0-9a-f]{64}$/;
 
 /** The custom transfer `r2-lfs transfer-agent` implements: resumable multipart uploads through the Worker. */

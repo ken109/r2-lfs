@@ -1,4 +1,13 @@
-import { REPO_PATTERN, type StoredToken, storedTokensIn, TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
+import {
+  addStoredToken,
+  type NewStoredToken,
+  revokeStoredToken,
+  type StoredToken,
+  storedTokensIn,
+  type TokenEdit,
+  TOKENS_KEY,
+  type TokensFile,
+} from "../../src/shared/contract.ts";
 import { UsageError } from "./errors.ts";
 
 export function emptyTokensFile(): TokensFile {
@@ -17,33 +26,17 @@ export function parseTokensFile(text: string): TokensFile {
   return { version: 1, tokens };
 }
 
-export interface NewToken {
-  label: string;
-  scope: string;
-  permission: StoredToken["permission"];
-  id: string;
-  sha256: string;
-  created: Date;
+export type NewToken = NewStoredToken;
+
+function unwrap(edit: TokenEdit): { file: TokensFile; entry: StoredToken } {
+  if (!edit.ok) throw new UsageError(edit.message);
+  return { file: edit.file, entry: edit.entry };
 }
 
 export function addToken(file: TokensFile, input: NewToken): { file: TokensFile; entry: StoredToken } {
-  if (!REPO_PATTERN.test(input.scope))
-    throw new UsageError("scope must be owner/repo, with * allowed within names (my-org/*, me/blender-*), or *");
-  if (!input.label.trim()) throw new UsageError("label must not be empty");
-  if (file.tokens.some((t) => t.label === input.label)) throw new UsageError(`a token labelled ${input.label} already exists`);
-  const entry: StoredToken = {
-    id: input.id,
-    label: input.label,
-    scope: input.scope.toLowerCase(),
-    permission: input.permission,
-    sha256: input.sha256,
-    created: input.created.toISOString(),
-  };
-  return { file: { ...file, tokens: [...file.tokens, entry] }, entry };
+  return unwrap(addStoredToken(file, input));
 }
 
 export function revokeToken(file: TokensFile, idOrLabel: string): { file: TokensFile; entry: StoredToken } {
-  const entry = file.tokens.find((t) => t.id === idOrLabel || t.label === idOrLabel);
-  if (!entry) throw new UsageError(`no token with id or label ${idOrLabel}`);
-  return { file: { ...file, tokens: file.tokens.filter((t) => t !== entry) }, entry };
+  return unwrap(revokeStoredToken(file, idOrLabel));
 }
