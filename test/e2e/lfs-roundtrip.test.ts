@@ -21,6 +21,19 @@ const run = (cmd: string, args: string[], cwd?: string) =>
 const git = (cwd: string, ...args: string[]) => run("git", args, cwd);
 const cli = (cwd: string, ...args: string[]) => run("node", [CLI, ...args], cwd);
 
+/**
+ * fetch against wrangler dev, trying once more when a kept-alive connection was closed by the server just as it
+ * was reused; the request never reached the Worker then.
+ */
+async function serverFetch(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${SERVER}${path}`, init);
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    return fetch(`${SERVER}${path}`, init);
+  }
+}
+
 describe("git-lfs through a local r2-lfs server", () => {
   let work: string;
   let server: ChildProcess;
@@ -103,10 +116,10 @@ describe("git-lfs through a local r2-lfs server", () => {
   });
 
   it("keeps the admin UI closed while Cloudflare Access is not configured", async () => {
-    const res = await fetch(`${SERVER}/_admin`);
+    const res = await serverFetch("/_admin");
     expect(res.status).toBe(404);
     expect(await res.text()).toContain("Cloudflare Access");
-    expect((await fetch(`${SERVER}/_admin/_serverFn/anything`, { method: "POST" })).status).toBe(404);
+    expect((await serverFetch("/_admin/_serverFn/anything", { method: "POST" })).status).toBe(404);
   });
 
   it("sets a repository up with init, pushes LFS files and clones them back", () => {
@@ -196,7 +209,7 @@ describe("git-lfs through a local r2-lfs server", () => {
     cli(clone, "migrate", "--server", SERVER, "--repo", "acme/new", "--from", `${SERVER}/acme/old`, "--credential", "none");
 
     const oid = createHash("sha256").update(feature).digest("hex");
-    const res = await fetch(`${SERVER}/acme/new/objects/batch`, {
+    const res = await serverFetch("/acme/new/objects/batch", {
       method: "POST",
       headers: { Authorization: `Basic ${btoa(`e2e:${TOKEN}`)}`, "Content-Type": "application/vnd.git-lfs+json" },
       body: JSON.stringify({ operation: "download", objects: [{ oid, size: feature.length }] }),
