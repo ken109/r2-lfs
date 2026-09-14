@@ -1,13 +1,12 @@
-import { TRASH_PREFIX } from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
 import { oidOfKey, type StoredObject } from "../domain/objects.ts";
 import { readHistory, requireKeyIfEncrypted, resolveLayout, trashPrefix } from "./common.ts";
-import type { Bucket, GitRepository, LfsClient, Reporter } from "./ports.ts";
+import type { GitRepository, LfsClient, ObjectStorage, Reporter } from "./ports.ts";
 
 export interface RestoreDeps {
   repo: GitRepository;
   client: LfsClient;
-  bucket: Bucket;
+  storage: ObjectStorage;
   reporter: Reporter;
 }
 
@@ -24,11 +23,15 @@ export interface TrashedObject {
 }
 
 export async function listTrash(deps: RestoreDeps, layout?: string): Promise<TrashedObject[]> {
-  const { repo, client, bucket, reporter } = deps;
-  const prefix = trashPrefix(client, await resolveLayout(client, layout));
+  const { repo, client, storage, reporter } = deps;
+  const resolved = await resolveLayout(client, layout);
+  if (resolved === "shared" && storage.throughServer) {
+    throw new UsageError("restore in the shared layout needs R2 API credentials; set the R2_* variables");
+  }
+  const prefix = trashPrefix(client, resolved);
   const trash = await reporter.task(
     "Listing the trash",
-    () => bucket.list(prefix),
+    () => storage.list(prefix),
     (t) => `${t.length} objects in the trash`,
   );
   const history = readHistory(repo);
@@ -66,24 +69,19 @@ export interface RestoreOutcome {
 }
 
 export async function restoreObjects(
-  deps: { bucket: Bucket; reporter: Reporter; client?: LfsClient },
+  deps: { storage: ObjectStorage; reporter: Reporter; client?: LfsClient },
   selected: TrashedObject[],
 ): Promise<RestoreOutcome[]> {
-  if (deps.client) await requireKeyIfEncrypted(deps.client, deps.bucket);
-  const outcomes: RestoreOutcome[] = [];
+  if (deps.client) await requireKeyIfEncrypted(deps.client, deps.storage);
   const bar = deps.reporter.progress(selected.length, "Restoring");
-  for (const { object, oid } of selected) {
-    const copied = await deps.bucket.copy(object.key, object.key.slice(TRASH_PREFIX.length));
-    if (!copied.ok) outcomes.push({ oid, ok: false, message: `copy failed: ${copied.status} ${copied.message}` });
-    else {
-      const removed = await deps.bucket.delete(object.key);
-      // The object is back either way; a leftover trash copy expires with the lifecycle rule.
-      outcomes.push(
-        removed.ok ? { oid, ok: true } : { oid, ok: true, message: "restored, but the trash copy could not be removed and will expire" },
-      );
-    }
-    bar.advance(1, oid.slice(0, 10));
-  }
+  const restored = await deps.storage.restore(
+    selected.map((t) => t.object),
+    (done) => bar.advance(done),
+  );
   bar.stop(`Processed ${selected.length} objects`);
-  return outcomes;
+  const byKey = new Map(restored.map((r) => [r.key, r]));
+  return selected.map(({ object, oid }) => {
+    const { ok, message } = byKey.get(object.key) ?? { ok: false, message: "no answer for this object" };
+    return { oid, ok, ...(message ? { message } : {}) };
+  });
 }

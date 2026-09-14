@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 
 import { oidOfKey } from "../domain/objects.ts";
 import { presence, readHistory, resolveLayout, trashPrefix } from "./common.ts";
-import type { Bucket, GitRepository, LfsClient, Reporter } from "./ports.ts";
+import type { ObjectStorage, GitRepository, LfsClient, Reporter } from "./ports.ts";
 
 export interface VerifyDeps {
   repo: GitRepository;
   client: LfsClient;
   reporter: Reporter;
   /** Optional; lets missing objects be looked up in the trash. */
-  bucket?: Bucket;
+  storage?: ObjectStorage;
 }
 
 export interface VerifyOptions {
@@ -73,9 +73,9 @@ export async function verifyObjects(deps: VerifyDeps, opts: VerifyOptions): Prom
 
   const missingRefs = objects.filter((o) => state.get(o.oid) !== "stored");
   const trashed = new Set<string>();
-  if (missingRefs.length > 0 && deps.bucket) {
+  if (missingRefs.length > 0 && deps.storage) {
     const prefix = trashPrefix(client, await resolveLayout(client, opts.layout));
-    for (const object of await deps.bucket.list(prefix)) trashed.add(oidOfKey(object.key) ?? "");
+    for (const object of await deps.storage.list(prefix)) trashed.add(oidOfKey(object.key) ?? "");
   }
 
   return {

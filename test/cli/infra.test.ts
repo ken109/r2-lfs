@@ -17,6 +17,7 @@ import { LocalFiles } from "../../cli/infra/local-files.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange } from "../../cli/infra/multipart-uploads.ts";
 import { findOnPath } from "../../cli/infra/proc.ts";
 import { parseListObjects, R2Bucket, ssecHeaders } from "../../cli/infra/r2-bucket.ts";
+import { ServerStorage } from "../../cli/infra/server-storage.ts";
 import { FileSessionCache } from "../../cli/infra/session-cache.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { parseWhoami } from "../../cli/infra/wrangler-cli.ts";
@@ -405,6 +406,74 @@ describe("HttpLfsClient", () => {
       expect(seen[0]?.authorization).toBe(`Basic ${Buffer.from("r2-lfs:gho_login").toString("base64")}`);
       expect(await new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/old`)!, "gho_login").session()).toBeUndefined();
       expect(await new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, undefined).session()).toBeUndefined();
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("ServerStorage", () => {
+  it("pages through listings, sends changes ten at a time and explains refusals", async () => {
+    const requests: { method?: string; url?: string; body: string }[] = [];
+    const oids = Array.from({ length: 12 }, (_, i) => i.toString(16).padStart(64, "0"));
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = Buffer.concat(chunks).toString();
+        requests.push({ method: req.method, url: req.url, body });
+        const url = new URL(req.url ?? "", "http://x");
+        if (url.pathname === "/acme/old/r2-lfs/objects") return void res.writeHead(404).end("");
+        if (url.pathname === "/acme/denied/r2-lfs/objects/trash") {
+          return void res.writeHead(403).end(JSON.stringify({ message: "You do not have admin access to this repository" }));
+        }
+        if (req.method === "GET") {
+          const first = !url.searchParams.has("cursor");
+          const page = first ? oids.slice(0, 2) : oids.slice(2, 3);
+          return void res.end(
+            JSON.stringify({
+              objects: page.map((oid) => ({ oid, size: 5, uploaded: "2026-01-01T00:00:00.000Z", storage_class: "STANDARD" })),
+              ...(first ? { cursor: "next" } : {}),
+            }),
+          );
+        }
+        const asked = (JSON.parse(body) as { oids: string[] }).oids;
+        const outcome = url.pathname.endsWith("/trash") ? "trashed" : url.pathname.endsWith("/restore") ? "restored" : "tiered";
+        res.end(JSON.stringify({ results: asked.map((oid, i) => ({ oid, outcome: i === 0 ? "locked" : outcome })) }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const storage = new ServerStorage(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, "admin-token");
+      const live = await storage.list("acme/assets/");
+      expect(live.map((o) => o.key)).toEqual(oids.slice(0, 3).map((oid) => `acme/assets/${oid}`));
+      expect(requests.map((r) => r.url)).toEqual([
+        "/acme/assets/r2-lfs/objects?in=live",
+        "/acme/assets/r2-lfs/objects?in=live&cursor=next",
+      ]);
+      await storage.list("_trash/acme/assets/");
+      expect(requests.at(-2)?.url).toBe("/acme/assets/r2-lfs/objects?in=trash");
+
+      requests.length = 0;
+      const objects = oids.map((oid) => ({ key: `acme/assets/${oid}`, size: 5, lastModified: new Date(), storageClass: "STANDARD" }));
+      let progressed = 0;
+      const outcomes = await storage.trash(objects, (done) => (progressed += done));
+      expect(requests.map((r) => (JSON.parse(r.body) as { oids: string[] }).oids.length)).toEqual([10, 2]);
+      expect(progressed).toBe(12);
+      expect(outcomes[0]).toEqual({ key: objects[0]!.key, action: "locked", ok: true });
+      expect(outcomes[1]).toEqual({ key: objects[1]!.key, action: "trashed", ok: true });
+      const restored = await storage.restore(
+        objects.slice(1, 2).map((o) => ({ ...o, key: `_trash/${o.key}` })),
+        () => {},
+      );
+      expect(restored).toEqual([{ key: `_trash/${objects[1]!.key}`, ok: false, message: "locked" }]);
+      await expect(storage.delete()).rejects.toThrow(/--no-trash needs the R2_\* variables/);
+
+      const old = new ServerStorage(parseLfsUrl(`http://127.0.0.1:${port}/acme/old`)!, "t");
+      await expect(old.list("acme/old/")).rejects.toThrow(/upgrade the server, or set the R2_\* variables/);
+      const denied = new ServerStorage(parseLfsUrl(`http://127.0.0.1:${port}/acme/denied`)!, "t");
+      await expect(denied.trash(objects.slice(0, 1), () => {})).rejects.toThrow(/403: You do not have admin access/);
     } finally {
       server.close();
     }

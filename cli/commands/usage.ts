@@ -21,9 +21,9 @@ export default defineCommand({
     const term = new Terminal({ quiet: args.json });
     term.intro("r2-lfs usage");
     const repo = compose.openRepo();
-    const bucket = compose.optionalBucket();
+    const storage = args.offline ? undefined : await compose.optionalStorage(repo);
     const report = await usageReport(
-      { repo, client: compose.clientFor(repo), reporter: term, ...(bucket ? { bucket } : {}) },
+      { repo, client: compose.clientFor(repo), reporter: term, ...(storage ? { storage } : {}) },
       { offline: Boolean(args.offline), ...(args.layout ? { layout: args.layout } : {}) },
     );
 
@@ -55,7 +55,9 @@ export default defineCommand({
       if (b.trashBytes) lines.push(`${formatBytes(b.trashBytes)} in the trash, expiring on its own`);
       lines.push(`About $${b.monthlyUsd.toFixed(2)}/month before the 10 GB free tier`);
     } else {
-      lines.push(dim("Set the R2_* variables to add bucket totals, orphans, trash and cost."));
+      lines.push(
+        dim("Push once so git has credentials for the server, or set the R2_* variables, to add bucket totals, orphans, trash and cost."),
+      );
     }
     term.note(lines.join("\n"), "Totals");
     term.outro("Done");

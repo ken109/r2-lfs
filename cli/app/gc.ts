@@ -1,17 +1,15 @@
-import { TRASH_PREFIX } from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
-import type { StoredObject } from "../domain/objects.ts";
 import { combinePlans, type Planned, planObjects } from "../domain/plan.ts";
 import type { Policy } from "../domain/policy.ts";
 import { collectFacts, livePrefix, loadPolicy, type PolicyOverrides, requireKeyIfEncrypted, resolveLayout } from "./common.ts";
-import type { Bucket, GitRepository, LfsClient, Reporter } from "./ports.ts";
+import type { GitRepository, LfsClient, ObjectStorage, Outcome, Reporter } from "./ports.ts";
 
 export interface GcDeps {
   repo: GitRepository;
   /** Shared layout only: every other repository that stores objects in the bucket. */
   otherRepos: GitRepository[];
   client: LfsClient;
-  bucket: Bucket;
+  storage: ObjectStorage;
   reporter: Reporter;
 }
 
@@ -47,10 +45,15 @@ export interface GcPlan {
 const refsOf = (repos: readonly GitRepository[]) => repos.map((r) => r.refTips().toSorted().join(",")).join("|");
 
 export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan> {
-  const { client, bucket, reporter } = deps;
+  const { client, storage, reporter } = deps;
   const layout = await resolveLayout(client, opts.layout);
-  if (opts.mode !== "dry-run") await requireKeyIfEncrypted(client, bucket);
+  if (opts.mode !== "dry-run") await requireKeyIfEncrypted(client, storage);
   if (layout === "per-repo" && deps.otherRepos.length > 0) throw new UsageError("--repos only applies to the shared layout");
+  if (layout === "shared" && storage.throughServer) {
+    throw new UsageError(
+      "gc in the shared layout needs R2 API credentials; set R2_ACCOUNT_ID, R2_BUCKET_NAME, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
+    );
+  }
   const sharedWithoutRepos = layout === "shared" && deps.otherRepos.length === 0;
   if (sharedWithoutRepos && opts.mode === "apply") {
     throw new UsageError("refusing to --apply in the shared layout without --repos; pick objects with -i or pass every repository");
@@ -88,9 +91,9 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
 
   const prefix = livePrefix(client, layout);
   const stored = await reporter.task(
-    `Listing ${bucket.name}/${prefix}`,
-    () => bucket.list(prefix),
-    (s) => `${s.length} objects in ${bucket.name}/${prefix}`,
+    `Listing ${storage.name}/${prefix}`,
+    () => storage.list(prefix),
+    (s) => `${s.length} objects in ${storage.name}/${prefix}`,
   );
   const planned = combinePlans(views.map((v, i) => planObjects(stored, facts.all[i]!, v.policy, now)));
   return {
@@ -124,38 +127,6 @@ export async function recheckPlan(deps: GcDeps, plan: GcPlan, chosen: Planned[],
   return kept;
 }
 
-export type Outcome =
-  | { key: string; action: "trashed" | "deleted" | "tiered"; ok: true }
-  /** A bucket lock rule still protects the object; a later gc collects it. */
-  | { key: string; action: "locked"; ok: true }
-  | { key: string; action: "trash" | "delete" | "tier"; ok: false; message: string };
-
-/** Copies to the trash before deleting, so a refused delete never loses data. */
-export async function trashObject(bucket: Bucket, object: StoredObject): Promise<Outcome> {
-  const key = object.key;
-  const target = `${TRASH_PREFIX}${key}`;
-  const copied = await bucket.copy(key, target);
-  if (!copied.ok) return { key, action: "trash", ok: false, message: `copy failed: ${copied.status} ${copied.message}` };
-  const deleted = await bucket.delete(key);
-  if (deleted.ok) return { key, action: "trashed", ok: true };
-  if (deleted.locked) {
-    await bucket.delete(target);
-    return { key, action: "locked", ok: true };
-  }
-
-  // An error response does not prove nothing was deleted, as with a timeout, so drop the copy only when the object is still there.
-  const refused = `delete refused: ${deleted.status} ${deleted.message}`;
-  let stillThere: boolean;
-  try {
-    stillThere = await bucket.exists(key);
-  } catch {
-    return { key, action: "trash", ok: false, message: `${refused}; kept the trash copy because the object could not be checked` };
-  }
-  if (!stillThere) return { key, action: "trashed", ok: true };
-  await bucket.delete(target);
-  return { key, action: "trash", ok: false, message: refused };
-}
-
 /** Checks the refs once more, then applies what is still a candidate. The only way the gc command changes the bucket. */
 export async function applyPlan(
   deps: GcDeps,
@@ -168,38 +139,20 @@ export async function applyPlan(
 }
 
 export async function applyGc(
-  deps: { bucket: Bucket; reporter: Reporter },
+  deps: { storage: ObjectStorage; reporter: Reporter },
   chosen: Planned[],
   opts: { trash: boolean },
 ): Promise<Outcome[]> {
-  const { bucket, reporter } = deps;
-  const outcomes: Outcome[] = [];
+  const { storage, reporter } = deps;
   const bar = reporter.progress(chosen.length, "Applying");
-  for (const item of chosen) {
-    const key = item.object.key;
-    if (item.decision.kind === "tier") {
-      const result = await bucket.copy(key, key, "STANDARD_IA");
-      outcomes.push(
-        result.ok
-          ? { key, action: "tiered", ok: true }
-          : result.locked
-            ? { key, action: "locked", ok: true }
-            : { key, action: "tier", ok: false, message: `${result.status} ${result.message}` },
-      );
-    } else if (opts.trash) {
-      outcomes.push(await trashObject(bucket, item.object));
-    } else {
-      const result = await bucket.delete(key);
-      outcomes.push(
-        result.ok
-          ? { key, action: "deleted", ok: true }
-          : result.locked
-            ? { key, action: "locked", ok: true }
-            : { key, action: "delete", ok: false, message: `${result.status} ${result.message}` },
-      );
-    }
-    bar.advance(1, item.oid?.slice(0, 10));
-  }
+  const advance = (done: number) => bar.advance(done);
+  const tiered = chosen.filter((p) => p.decision.kind === "tier").map((p) => p.object);
+  const removed = chosen.filter((p) => p.decision.kind !== "tier").map((p) => p.object);
+  const results = [
+    ...(tiered.length > 0 ? await storage.tier(tiered, advance) : []),
+    ...(removed.length === 0 ? [] : opts.trash ? await storage.trash(removed, advance) : await storage.delete(removed, advance)),
+  ];
   bar.stop(`Applied ${chosen.length} changes`);
-  return outcomes;
+  const byKey = new Map(results.map((o) => [o.key, o]));
+  return chosen.map((p) => byKey.get(p.object.key)!);
 }

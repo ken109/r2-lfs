@@ -2,10 +2,11 @@
 
 import { fileURLToPath } from "node:url";
 
-import type { ActionsIdTokens, Bucket, GitRepository, LfsClient } from "./app/ports.ts";
+import type { ActionsIdTokens, Bucket, GitRepository, LfsClient, ObjectStorage } from "./app/ports.ts";
 import { UsageError } from "./domain/errors.ts";
 import { type LfsLocation, parseLfsUrl } from "./domain/remote.ts";
 import { GithubActionsIdTokens } from "./infra/actions-id-token.ts";
+import { BucketStorage } from "./infra/bucket-storage.ts";
 import { Git, gitLfsInstalled } from "./infra/git.ts";
 import { GhCli } from "./infra/github-cli.ts";
 import { GH_CREDENTIAL_HELPER, UserGitConfig } from "./infra/global-git-config.ts";
@@ -14,6 +15,7 @@ import { LocalFiles } from "./infra/local-files.ts";
 import { FileUploadStates, HttpMultipartUploads, readFileRange, stdinLines } from "./infra/multipart-uploads.ts";
 import { findOnPath } from "./infra/proc.ts";
 import { R2Bucket, r2Configured } from "./infra/r2-bucket.ts";
+import { ServerStorage } from "./infra/server-storage.ts";
 import { FileSessionCache } from "./infra/session-cache.ts";
 import { currentCli, joinPath, userCacheDir, userConfigDir } from "./infra/user-dirs.ts";
 import { NpxWrangler } from "./infra/wrangler-cli.ts";
@@ -40,10 +42,7 @@ export function connect(location: LfsLocation, token: string | undefined): LfsCl
 
 /** A client for the server in the repository's lfs.url, with whatever credentials git has stored. */
 export function clientFor(repo: GitRepository): LfsClient {
-  const raw = repo.lfsUrl();
-  if (!raw) throw new UsageError("this repository has no lfs.url; run `r2-lfs init` first");
-  const location = parseLfsUrl(raw);
-  if (!location) throw new UsageError(`lfs.url "${raw}" does not look like https://<server>/<owner>/<repo>`);
+  const location = repositoryLocation(repo);
   return connect(location, gitConfig.credentialFor(location.origin));
 }
 
@@ -81,9 +80,37 @@ export function bucket(): Bucket {
   return R2Bucket.fromEnv();
 }
 
-/** The bucket when R2 credentials are set, for commands where bucket access only adds detail. */
-export function optionalBucket(): Bucket | undefined {
-  return r2Configured() ? R2Bucket.fromEnv() : undefined;
+function repositoryLocation(repo: GitRepository): LfsLocation {
+  const raw = repo.lfsUrl();
+  if (!raw) throw new UsageError("this repository has no lfs.url; run `r2-lfs init` first");
+  const location = parseLfsUrl(raw);
+  if (!location) throw new UsageError(`lfs.url "${raw}" does not look like https://<server>/<owner>/<repo>`);
+  return location;
+}
+
+/** The bucket directly when the R2_* variables are set, otherwise through the server with git's credentials for it. */
+export function storageFor(repo: GitRepository): ObjectStorage {
+  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv());
+  const location = repositoryLocation(repo);
+  const token = gitConfig.credentialFor(location.origin);
+  if (!token) {
+    throw new UsageError(
+      `no credentials for ${location.host}; push once so git stores them, or set the R2_* variables to use the bucket directly`,
+    );
+  }
+  return new ServerStorage(location, token);
+}
+
+/** Storage for commands where listing objects only adds detail: undefined when neither the bucket nor the server can list. */
+export async function optionalStorage(repo: GitRepository): Promise<ObjectStorage | undefined> {
+  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv());
+  const location = repositoryLocation(repo);
+  const token = gitConfig.credentialFor(location.origin);
+  if (!token) return undefined;
+  const info = await connect(location, token)
+    .info()
+    .catch(() => undefined);
+  return info?.kind === "ok" && info.info.storage ? new ServerStorage(location, token) : undefined;
 }
 
 export { r2Configured };

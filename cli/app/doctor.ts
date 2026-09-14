@@ -166,12 +166,12 @@ export async function diagnose(deps: DoctorDeps): Promise<Check[]> {
     // No commits yet; nothing to inspect.
   }
 
-  if (deps.r2Configured) add("R2 credentials", "ok", "set; gc, restore and token can run");
+  if (deps.r2Configured) add("R2 credentials", "ok", "set; gc, restore and token use the bucket directly");
   else
     add(
       "R2 credentials",
-      "warn",
-      "not set; gc, restore and token need R2_ACCOUNT_ID, R2_BUCKET_NAME, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
+      "ok",
+      "not set; gc and restore go through the server with your repository permissions, and token and gc --no-trash need them",
     );
   return checks;
 }

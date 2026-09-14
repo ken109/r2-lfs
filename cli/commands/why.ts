@@ -19,13 +19,13 @@ export default defineCommand({
     const term = new Terminal({ quiet: args.json });
     term.intro("r2-lfs why");
     const repo = compose.openRepo();
-    const bucket = compose.optionalBucket();
+    const storage = await compose.optionalStorage(repo);
     // Paths are given relative to where the user stands; history stores them relative to the root.
     const asPath = relative(repo.dir, resolve(process.cwd(), args.target)).split(sep).join("/");
     const target = /^[0-9a-f]{6,64}$/.test(args.target) ? args.target : asPath;
 
     const result = await explain(
-      { repo, client: compose.clientFor(repo), reporter: term, ...(bucket ? { bucket } : {}) },
+      { repo, client: compose.clientFor(repo), reporter: term, ...(storage ? { storage } : {}) },
       target,
       args.layout ? { layout: args.layout } : {},
     );
@@ -45,7 +45,8 @@ export default defineCommand({
     ]);
     term.message(table(["#", "oid", "size", "committed", "uploaded", "status"], rows, "__r"));
     if (!result.path) term.info(`Paths: ${result.objects[0]?.paths.join(", ") || "(none in history)"}`);
-    if (!bucket) term.info(dim("Set the R2_* variables to add upload dates and the trash."));
+    if (!storage)
+      term.info(dim("Push once so git has credentials for the server, or set the R2_* variables, to add upload dates and the trash."));
     term.outro("Done");
   },
 });

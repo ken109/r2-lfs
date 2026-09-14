@@ -18,9 +18,9 @@ export default defineCommand({
     const term = new Terminal({ quiet: args.json });
     term.intro("r2-lfs verify");
     const repo = compose.openRepo();
-    const bucket = compose.optionalBucket();
+    const storage = await compose.optionalStorage(repo);
     const result = await verifyObjects(
-      { repo, client: compose.clientFor(repo), reporter: term, ...(bucket ? { bucket } : {}) },
+      { repo, client: compose.clientFor(repo), reporter: term, ...(storage ? { storage } : {}) },
       { all: Boolean(args.all), deep: Boolean(args.deep), ...(args.layout ? { layout: args.layout } : {}) },
     );
 

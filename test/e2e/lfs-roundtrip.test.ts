@@ -15,6 +15,7 @@ const CLI = join(process.cwd(), "dist", "cli.js");
 const PORT = 8787;
 const SERVER = `http://127.0.0.1:${PORT}`;
 const TOKEN = "e2e-token-0123456789abcdef";
+const ADMIN_TOKEN = "e2e-admin-0123456789abcdef";
 
 const run = (cmd: string, args: string[], cwd?: string) =>
   execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -52,7 +53,7 @@ describe("git-lfs through a local r2-lfs server", () => {
     const envFile = join(work, "worker.env");
     writeFileSync(
       envFile,
-      `ALLOWED_REPOS=acme/*\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nPROXY_MAX_UPLOAD_MB=5\nAUTH_TOKENS=acme/*:rw:${TOKEN}\n`,
+      `ALLOWED_REPOS=acme/*\nAUTH_MODE=token\nTRANSFER_MODE=proxy\nPROXY_MAX_UPLOAD_MB=5\nAUTH_TOKENS=acme/*:rw:${TOKEN},acme/*:admin:${ADMIN_TOKEN}\n`,
     );
     // The Worker as the npm package ships it and `r2-lfs setup` deploys it.
     const site = join(work, "site");
@@ -223,6 +224,57 @@ describe("git-lfs through a local r2-lfs server", () => {
     const body = (await res.json()) as { objects: { error?: unknown; actions?: unknown }[] };
     expect(body.objects[0]).toMatchObject({ actions: expect.anything() });
     expect(body.objects[0]?.error).toBeUndefined();
+  });
+
+  it("runs gc and restore through the server, without R2 API credentials", async () => {
+    const origin = join(work, "gc-origin.git");
+    git(work, "init", "-q", "--bare", origin);
+    const repo = join(work, "gc");
+    mkdirSync(repo);
+    git(repo, "init", "-q");
+    git(repo, "remote", "add", "origin", origin);
+    cli(repo, "init", "--server", SERVER, "--repo", "acme/gc", "--track", "blender", "--credential", "none");
+    writeFileSync(join(repo, "keep.blend"), randomBytes(32 * 1024));
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "keep");
+    git(repo, "push", "-q", "origin", "main");
+
+    // An object only a deleted branch used: after the branch is gone, no commit uses it.
+    git(repo, "switch", "-q", "-c", "experiment");
+    const dropped = randomBytes(32 * 1024);
+    writeFileSync(join(repo, "experiment.blend"), dropped);
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "experiment");
+    git(repo, "push", "-q", "origin", "experiment");
+    git(repo, "switch", "-q", "main");
+    git(repo, "branch", "-q", "-D", "experiment");
+    git(repo, "push", "-q", "origin", "--delete", "experiment");
+    git(repo, "reflog", "expire", "--expire=now", "--all");
+    git(repo, "gc", "-q", "--prune=now");
+    const oid = createHash("sha256").update(dropped).digest("hex");
+
+    // The write token cannot move objects to the trash; a repository administrator's can.
+    const denied = (() => {
+      try {
+        cli(repo, "gc", "--apply", "--min-age-days", "0");
+        return "";
+      } catch (err) {
+        return String((err as { stderr?: string }).stderr);
+      }
+    })();
+    expect(denied).toContain("admin access");
+
+    process.env.R2_LFS_TOKEN = ADMIN_TOKEN;
+    try {
+      const gc = JSON.parse(cli(repo, "gc", "--apply", "--min-age-days", "0", "--json")) as { outcomes: { key: string; action: string }[] };
+      expect(gc.outcomes).toEqual([{ key: `acme/gc/${oid}`, action: "trashed", ok: true }]);
+      const trash = JSON.parse(cli(repo, "restore", "--list", "--json")) as { oid: string }[];
+      expect(trash.map((t) => t.oid)).toEqual([oid]);
+      cli(repo, "restore", oid.slice(0, 12), "--json");
+      expect(JSON.parse(cli(repo, "restore", "--list", "--json"))).toEqual([]);
+    } finally {
+      delete process.env.R2_LFS_TOKEN;
+    }
   });
 
   it("trades the gh login for a short-lived token through the credential launcher", async () => {

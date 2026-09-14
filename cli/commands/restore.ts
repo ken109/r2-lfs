@@ -34,10 +34,10 @@ export default defineCommand({
   },
   async run({ args }) {
     const term = new Terminal({ quiet: args.json });
-    const bucket = compose.bucket();
     term.intro("r2-lfs restore");
     const repo = compose.openRepo();
-    const deps = { repo, client: compose.clientFor(repo), bucket, reporter: term };
+    const storage = compose.storageFor(repo);
+    const deps = { repo, client: compose.clientFor(repo), storage, reporter: term };
     const trash = await listTrash(deps, args.layout);
 
     if (args.list) {
@@ -61,7 +61,7 @@ export default defineCommand({
       term.outro("Nothing in the trash matches");
       return;
     }
-    const outcomes = await restoreObjects({ bucket, reporter: term, client: deps.client }, selected);
+    const outcomes = await restoreObjects({ storage, reporter: term, client: deps.client }, selected);
     if (args.json) term.json(outcomes);
     for (const o of outcomes) if (o.message) (o.ok ? term.warn : term.error).call(term, `${shortOid(o.oid)}: ${o.message}`);
     const failed = outcomes.filter((o) => !o.ok).length;

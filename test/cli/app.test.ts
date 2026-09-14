@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { archiveTag } from "../../cli/app/archive.ts";
 import { forgetSession, installCredentialHelper, parseCredentialRequest, passwordFor } from "../../cli/app/credential.ts";
 import { diagnose } from "../../cli/app/doctor.ts";
-import { applyGc, applyPlan, gcMode, planGc, recheckPlan, trashObject } from "../../cli/app/gc.ts";
+import { applyGc, applyPlan, gcMode, planGc, recheckPlan } from "../../cli/app/gc.ts";
 import { initRepository } from "../../cli/app/init.ts";
 import { migrate } from "../../cli/app/migrate.ts";
 import {
@@ -34,6 +34,7 @@ import { explain } from "../../cli/app/why.ts";
 import { UsageError } from "../../cli/domain/errors.ts";
 import { launcherScript, parseLauncher } from "../../cli/domain/launchers.ts";
 import type { LfsLocation } from "../../cli/domain/remote.ts";
+import { BucketStorage, trashObject } from "../../cli/infra/bucket-storage.ts";
 import { Git } from "../../cli/infra/git.ts";
 import { LocalFiles } from "../../cli/infra/local-files.ts";
 import { TOKENS_KEY } from "../../src/shared/contract.ts";
@@ -135,7 +136,7 @@ describe("gc", () => {
       () => clone.remove(),
     );
     const reporter = new SilentReporter();
-    const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, bucket: s.bucket, reporter };
+    const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter };
     const opts = { fetch: true, mode: gcMode({ apply: true }), keepDays: "90" };
     const plan = await planGc(deps, opts);
 
@@ -150,7 +151,7 @@ describe("gc", () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     const reporter = new SilentReporter();
-    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter };
+    const deps = { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter };
 
     // By default only objects no commit uses are collected, so every commit stays checkoutable.
     const byDefault = await planGc(deps, { fetch: false, mode: "dry-run" });
@@ -172,7 +173,7 @@ describe("gc", () => {
       [s.youngOrphan]: "young",
     });
 
-    const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: true });
+    const outcomes = await applyGc({ storage: new BucketStorage(s.bucket), reporter }, plan.candidates, { trash: true });
     expect(outcomes.every((o) => o.ok)).toBe(true);
     expect(s.bucket.objects.has(`_trash/${s.prefix}${s.oldOid}`)).toBe(true);
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(false);
@@ -184,10 +185,10 @@ describe("gc", () => {
     s.bucket.locked.push(s.prefix);
     const reporter = new SilentReporter();
     const plan = await planGc(
-      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
+      { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter },
       { fetch: false, mode: "dry-run", keepDays: "90" },
     );
-    const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: true });
+    const outcomes = await applyGc({ storage: new BucketStorage(s.bucket), reporter }, plan.candidates, { trash: true });
     expect(outcomes).toEqual(plan.candidates.map((p) => ({ key: p.object.key, action: "locked", ok: true })));
     expect(s.bucket.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
     expect([...s.bucket.objects.keys()].some((k) => k.startsWith("_trash/"))).toBe(false);
@@ -200,7 +201,7 @@ describe("gc", () => {
     s.repo.commit("policy");
     const reporter = new SilentReporter();
     const plan = await planGc(
-      { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter },
+      { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter },
       { fetch: false, mode: "dry-run" },
     );
     expect(plan.candidates.map((p) => [p.oid, p.decision.kind])).toEqual([
@@ -209,21 +210,21 @@ describe("gc", () => {
     ]);
 
     s.bucket.forbidden.push(`${s.prefix}${s.orphan}`);
-    const outcomes = await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: false });
+    const outcomes = await applyGc({ storage: new BucketStorage(s.bucket), reporter }, plan.candidates, { trash: false });
     expect(outcomes).toEqual([
       { key: `${s.prefix}${s.oldOid}`, action: "tiered", ok: true },
       { key: `${s.prefix}${s.orphan}`, action: "delete", ok: false, message: "403 AccessDenied" },
     ]);
     s.bucket.forbidden.length = 0;
     s.bucket.locked.push(s.prefix);
-    expect(await applyGc({ bucket: s.bucket, reporter }, plan.candidates, { trash: false })).toEqual([
+    expect(await applyGc({ storage: new BucketStorage(s.bucket), reporter }, plan.candidates, { trash: false })).toEqual([
       { key: `${s.prefix}${s.oldOid}`, action: "locked", ok: true },
       { key: `${s.prefix}${s.orphan}`, action: "locked", ok: true },
     ]);
     expect(s.bucket.objects.get(`${s.prefix}${s.oldOid}`)?.storageClass).toBe("STANDARD_IA");
 
     s.bucket.locked.length = 0;
-    const deleted = await applyGc({ bucket: s.bucket, reporter }, plan.candidates.slice(1), { trash: false });
+    const deleted = await applyGc({ storage: new BucketStorage(s.bucket), reporter }, plan.candidates.slice(1), { trash: false });
     expect(deleted).toEqual([{ key: `${s.prefix}${s.orphan}`, action: "deleted", ok: true }]);
     expect([...s.bucket.objects.keys()].some((k) => k.startsWith("_trash/"))).toBe(false);
   });
@@ -259,7 +260,7 @@ describe("gc", () => {
       () => clone.remove(),
     );
     const reporter = new SilentReporter();
-    const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, bucket: s.bucket, reporter };
+    const deps = { repo: Git.open(clone.dir), otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter };
     const opts = { fetch: true, mode: "apply" as const, keepDays: "90" };
     const plan = await planGc(deps, opts);
     expect(plan.candidates.map((p) => p.oid)).toEqual([s.oldOid, s.orphan]);
@@ -294,7 +295,13 @@ describe("gc", () => {
     const bucket = new MemoryBucket();
     for (const oid of [rawTenDays, texTenDays, rawThreeDays]) bucket.seed(`acme/assets/${oid}`, { ageDays: 400 });
     const plan = await planGc(
-      { repo: Git.open(repo.dir), otherRepos: [], client: new FakeLfsClient(), bucket, reporter: new SilentReporter() },
+      {
+        repo: Git.open(repo.dir),
+        otherRepos: [],
+        client: new FakeLfsClient(),
+        storage: new BucketStorage(bucket),
+        reporter: new SilentReporter(),
+      },
       { fetch: false, mode: "dry-run" },
     );
     expect(Object.fromEntries(plan.planned.map((p) => [p.oid, p.decision]))).toEqual({
@@ -310,7 +317,7 @@ describe("gc", () => {
     s.repo.write(".r2-lfs.toml", 'keep_days = 90\n[[rule]]\npath = "*.blend"\nkeep_versions = 2\n');
     s.repo.commit("policy");
     const reporter = new SilentReporter();
-    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter };
+    const deps = { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter };
     const byPolicy = await planGc(deps, { fetch: false, mode: "dry-run" });
     expect(byPolicy.planned.find((p) => p.oid === s.oldOid)?.decision.kind).toBe("keep");
 
@@ -336,12 +343,12 @@ describe("gc", () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     s.client.serverInfo = { ...s.client.serverInfo, encrypted: true };
-    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter: new SilentReporter() };
+    const deps = { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter: new SilentReporter() };
     expect((await planGc(deps, { fetch: false, mode: "dry-run" })).candidates.length).toBeGreaterThan(0);
     await expect(planGc(deps, { fetch: false, mode: "apply" })).rejects.toThrow(/R2_LFS_ENCRYPTION_KEY/);
-    await expect(restoreObjects({ bucket: s.bucket, reporter: new SilentReporter(), client: s.client }, [])).rejects.toThrow(
-      /R2_LFS_ENCRYPTION_KEY/,
-    );
+    await expect(
+      restoreObjects({ storage: new BucketStorage(s.bucket), reporter: new SilentReporter(), client: s.client }, []),
+    ).rejects.toThrow(/R2_LFS_ENCRYPTION_KEY/);
     s.bucket.encrypted = true;
     expect((await planGc(deps, { fetch: false, mode: "apply" })).candidates.length).toBeGreaterThan(0);
   });
@@ -352,7 +359,7 @@ describe("gc", () => {
     const reporter = new SilentReporter();
     const shallow = new TempRepo(s.repo, "--depth", "1");
     cleanup.push(() => shallow.remove());
-    const deps = (repo: Git) => ({ repo, otherRepos: [], client: s.client, bucket: s.bucket, reporter });
+    const deps = (repo: Git) => ({ repo, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter });
     await expect(planGc(deps(Git.open(shallow.dir)), { fetch: false, mode: "dry-run" })).rejects.toThrow(/full history/);
 
     s.repo.git("remote", "add", "origin", join(s.repo.dir, "does-not-exist"));
@@ -366,7 +373,7 @@ describe("gc", () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     s.client.serverInfo.storageLayout = "shared";
-    const deps = { repo: s.git, otherRepos: [], client: s.client, bucket: s.bucket, reporter: new SilentReporter() };
+    const deps = { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter: new SilentReporter() };
     const plan = await planGc(deps, { fetch: false, mode: "dry-run" });
     expect(plan.sharedWithoutRepos).toBe(true);
     expect(plan.prefix).toBe("_shared/");
@@ -391,7 +398,7 @@ describe("gc", () => {
     const bucket = new MemoryBucket();
     for (const oid of [s.oldOid, s.newOid, finalOld, finalNew, s.orphan]) bucket.seed(`_shared/${oid}`, { size: 5, ageDays: 400 });
     const reporter = new SilentReporter();
-    const deps = { repo: s.git, otherRepos: [Git.open(other.dir)], client: s.client, bucket, reporter };
+    const deps = { repo: s.git, otherRepos: [Git.open(other.dir)], client: s.client, storage: new BucketStorage(bucket), reporter };
     s.repo.write(".r2-lfs.toml", "keep_days = 90\n");
 
     const plan = await planGc(deps, { fetch: false, mode: "apply" });
@@ -422,14 +429,14 @@ describe("restore", () => {
     await s.bucket.copy(`${s.prefix}${s.oldOid}`, `_trash/${s.prefix}${s.oldOid}`);
     await s.bucket.delete(`${s.prefix}${s.oldOid}`);
 
-    const deps = { repo: s.git, client: s.client, bucket: s.bucket, reporter };
+    const deps = { repo: s.git, client: s.client, storage: new BucketStorage(s.bucket), reporter };
     const trash = await listTrash(deps);
     expect(trash.map((t) => [t.oid, t.paths])).toEqual([[s.oldOid, ["hero.blend"]]]);
     expect(selectTrash(trash, { kind: "path", path: "hero.blend" })).toHaveLength(1);
     expect(() => selectTrash(trash, { kind: "oids", prefixes: ["zzz"] })).toThrow(/nothing in the trash/);
 
     const outcomes = await restoreObjects(
-      { bucket: s.bucket, reporter },
+      { storage: new BucketStorage(s.bucket), reporter },
       selectTrash(trash, { kind: "oids", prefixes: [s.oldOid.slice(0, 8)] }),
     );
     expect(outcomes).toEqual([{ oid: s.oldOid, ok: true }]);
@@ -452,7 +459,7 @@ describe("restore", () => {
     const [missing, locked] = trash;
     bucket.seed(locked!.object.key);
     bucket.locked.push("_trash/");
-    expect(await restoreObjects({ bucket, reporter }, [missing!, locked!])).toEqual([
+    expect(await restoreObjects({ storage: new BucketStorage(bucket), reporter }, [missing!, locked!])).toEqual([
       { oid: missing!.oid, ok: false, message: "copy failed: 404 NoSuchKey" },
       { oid: locked!.oid, ok: true, message: expect.stringContaining("trash copy could not be removed") },
     ]);
@@ -506,7 +513,7 @@ describe("verify, usage and why", () => {
     s.client.stored.delete(s.newOid);
     await s.bucket.copy(`${s.prefix}${s.newOid}`, `_trash/${s.prefix}${s.newOid}`);
     const result = await verifyObjects(
-      { repo: s.git, client: s.client, reporter: new SilentReporter(), bucket: s.bucket },
+      { repo: s.git, client: s.client, reporter: new SilentReporter(), storage: new BucketStorage(s.bucket) },
       { all: false, deep: true },
     );
     expect(result.checked).toBe(2);
@@ -518,7 +525,7 @@ describe("verify, usage and why", () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
     const report = await usageReport(
-      { repo: s.git, client: s.client, reporter: new SilentReporter(), bucket: s.bucket },
+      { repo: s.git, client: s.client, reporter: new SilentReporter(), storage: new BucketStorage(s.bucket) },
       { offline: false },
     );
     expect(report.files[0]).toMatchObject({ path: "hero.blend", versions: 2, totalBytes: 14 });
@@ -528,7 +535,7 @@ describe("verify, usage and why", () => {
   it("explains a path version by version", async () => {
     const s = scenario();
     cleanup.push(() => s.repo.remove());
-    const deps = { repo: s.git, client: s.client, reporter: new SilentReporter(), bucket: s.bucket };
+    const deps = { repo: s.git, client: s.client, reporter: new SilentReporter(), storage: new BucketStorage(s.bucket) };
     expect((await explain(deps, "hero.blend")).objects.map((o) => [o.oid, o.decision.kind])).toEqual([
       [s.newOid, "keep"],
       [s.oldOid, "keep"],
@@ -564,7 +571,7 @@ describe("verify, usage and why", () => {
     await expect(explain(deps, "abcdef")).rejects.toThrow(/abcdef is ambiguous/);
     await expect(explain(deps, "abcdef9")).rejects.toThrow(/no LFS object in history starts with abcdef9/);
 
-    const withBucket = await explain({ ...deps, bucket }, "abcdef1");
+    const withBucket = await explain({ ...deps, storage: new BucketStorage(bucket) }, "abcdef1");
     expect(withBucket.path).toBeUndefined();
     expect(withBucket.objects).toEqual([
       expect.objectContaining({
@@ -579,7 +586,10 @@ describe("verify, usage and why", () => {
     const withoutBucket = await explain(deps, "abcdef1");
     expect(withoutBucket.objects[0]).toMatchObject({ onServer: true, decision: { kind: "delete" } });
     expect(withoutBucket.objects[0]?.uploaded).toBeUndefined();
-    expect((await explain({ ...deps, bucket }, "abcdef2")).objects[0]).toMatchObject({ onServer: false, inTrash: true });
+    expect((await explain({ ...deps, storage: new BucketStorage(bucket) }, "abcdef2")).objects[0]).toMatchObject({
+      onServer: false,
+      inTrash: true,
+    });
   });
 });
 
@@ -1158,7 +1168,10 @@ describe("init and doctor", () => {
       status: "warn",
       fix: "git config -f .lfsconfig lfs.locksverify true",
     });
-    expect(checks.find((c) => c.name === "R2 credentials")).toMatchObject({ status: "warn" });
+    expect(checks.find((c) => c.name === "R2 credentials")).toMatchObject({
+      status: "ok",
+      detail: expect.stringContaining("through the server"),
+    });
 
     readOnly.serverInfo = { ...readOnly.serverInfo, warnings: ["ALLOWED_OWNERS is deprecated"] };
     const warned = await diagnose({ ...base, connect: (): LfsClient => readOnly });

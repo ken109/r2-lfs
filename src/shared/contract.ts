@@ -58,6 +58,8 @@ export interface ServerInfo {
   actionsOidcAudience?: string;
   /** Set when `<repository>/r2-lfs/session` trades a Git host token for a short-lived one. */
   sessions?: boolean;
+  /** Set when `<repository>/r2-lfs/objects` lists and changes objects, which the per-repo layout allows. */
+  storage?: boolean;
 }
 
 /** Appended to a repository's LFS URL: POST with Git host credentials for a short-lived token. */

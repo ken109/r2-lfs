@@ -81,9 +81,12 @@ Install it globally with `npm i -g r2-lfs`, or run any command with `npx r2-lfs`
 
 Every command accepts `--help`. Read-only commands accept `--json`.
 
-Commands that list or change the bucket directly (`gc`, `restore`, `token`, and the bucket details
-in `usage`, `verify` and `why`) need an R2 API token with **Object Read & Write** on the bucket
-(_R2 > Manage API tokens_):
+`gc`, `restore`, and the bucket details in `usage`, `verify` and `why` go through the server with your
+repository permissions: listing needs read access, `restore` write access, and `gc --apply` admin access (GitHub
+admin or maintain). The server only moves objects to the trash, and serves the `per-repo` layout only.
+
+`token`, `gc --no-trash`, and the `shared` layout need an R2 API token with **Object Read & Write** on the bucket
+(_R2 > Manage API tokens_). When these variables are set, every command above uses the bucket directly:
 
 ```sh
 export R2_ACCOUNT_ID=... R2_BUCKET_NAME=r2-lfs R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=...
@@ -173,12 +176,11 @@ jobs:
         with:
           apply: true
           version: 0.3.0 # x-release-please-version
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: r2-lfs
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 ```
+
+With `ACTIONS_OIDC=admin` on the server and `permissions: { contents: read, id-token: write }` on the job, the
+action signs in with the workflow's OIDC token and needs no secrets. Otherwise pass R2 API credentials as
+`R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in `env`.
 
 The action runs the CLI version it was released with. `@v0` follows every 0.x release, and before 1.0
 a minor release may change what gc deletes, so pin an exact tag, as above, when applying.
@@ -203,7 +205,7 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `R2_SECRET_ACCESS_KEY`  | secret |            | Presigned mode: its secret.                                                                                                                                                                                                                     |
 | `ACCESS_TEAM_DOMAIN`    | var    |            | Admin UI: your Cloudflare Access team domain, such as `my-team.cloudflareaccess.com`. See [Admin UI](#admin-ui).                                                                                                                                |
 | `ACCESS_AUD`            | var    |            | Admin UI: the audience tag of the Access application that protects `/_admin`.                                                                                                                                                                   |
-| `ACTIONS_OIDC`          | var    | `off`      | `read` or `write` lets GitHub Actions workflows use their own repository with an OIDC token. See [GitHub Actions](#github-actions).                                                                                                             |
+| `ACTIONS_OIDC`          | var    | `off`      | `read`, `write` or `admin` lets GitHub Actions workflows use their own repository with an OIDC token; `admin` runs gc. See [GitHub Actions](#github-actions).                                                                                   |
 | `ACTIONS_OIDC_AUDIENCE` | var    | `r2-lfs`   | The audience workflows request that token for.                                                                                                                                                                                                  |
 | `VERIFY_UPLOADS`        | var    | `on`       | Presigned mode: hash each upload before it counts as stored. `off` checks only the size, for the Free plan.                                                                                                                                     |
 | `AUTH_TOKENS`           | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
@@ -369,8 +371,9 @@ admin UI's own `Origin`.
 ## Security
 
 - Tokens from `r2-lfs token` are stored as SHA-256 hashes; `AUTH_TOKENS` is an encrypted Worker secret. Comparisons are constant-time.
-- The Worker exposes no delete endpoint. Only holders of R2 API credentials can remove objects,
-  and bucket lock rules stop even them within the retention period.
+- The Worker never deletes an object outright. It moves one to the trash only for a repository administrator,
+  after copying it with a hash check, and the trash expires on its own. Deleting without the trash takes R2 API
+  credentials, and bucket lock rules stop even them within the retention period.
 - gc copies an object to the trash before deleting it, and removes the copy again if the delete is
   refused, so a failure never loses data.
 - With `ENCRYPTION_KEY`, R2 stores objects encrypted with your key, so the bucket's contents are unreadable

@@ -4,7 +4,7 @@ import { addPath, buildHistory, type History } from "../domain/history.ts";
 import type { ObjectRef } from "../domain/objects.ts";
 import type { Facts } from "../domain/plan.ts";
 import { checkKeepVersions, keepDayWindows, POLICY_FILE, type Policy, parsePolicy } from "../domain/policy.ts";
-import type { Bucket, GitRepository, LfsClient } from "./ports.ts";
+import type { GitRepository, LfsClient } from "./ports.ts";
 
 export async function requireServerInfo(client: LfsClient): Promise<ServerInfo> {
   const result = await client.info();
@@ -29,9 +29,9 @@ export async function resolveLayout(client: LfsClient, override: string | undefi
 }
 
 /** Copies of encrypted objects need the key; without it gc and restore would only fail object by object. */
-export async function requireKeyIfEncrypted(client: LfsClient, bucket: Bucket): Promise<void> {
+export async function requireKeyIfEncrypted(client: LfsClient, storage: { encrypted: boolean }): Promise<void> {
   const info = await client.info().catch(() => undefined);
-  if (info?.kind === "ok" && info.info.encrypted && !bucket.encrypted) {
+  if (info?.kind === "ok" && info.info.encrypted && !storage.encrypted) {
     throw new UsageError("the server encrypts objects; set R2_LFS_ENCRYPTION_KEY to the same key as its ENCRYPTION_KEY");
   }
 }

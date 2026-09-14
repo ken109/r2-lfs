@@ -133,6 +133,40 @@ export interface Bucket {
   copy(source: string, target: string, storageClass?: "STANDARD" | "STANDARD_IA"): Promise<WriteResult>;
 }
 
+/** What gc did to one object. */
+export type Outcome =
+  | { key: string; action: "trashed" | "deleted" | "tiered"; ok: true }
+  /** A bucket lock rule still protects the object; a later gc collects it. */
+  | { key: string; action: "locked"; ok: true }
+  | { key: string; action: "trash" | "delete" | "tier"; ok: false; message: string };
+
+export interface RestoredObject {
+  /** The trashed object's key. */
+  key: string;
+  ok: boolean;
+  /** Set when something needs the user's attention. */
+  message?: string;
+}
+
+/**
+ * Where gc, restore and the reports list and change a repository's objects: the bucket directly with R2 API credentials,
+ * or the server's storage endpoints with the repository permissions it enforces.
+ */
+export interface ObjectStorage {
+  /** For messages, such as the bucket name or the server's host. */
+  readonly name: string;
+  /** Whether copies of SSE-C objects will work; the server always holds the key. */
+  readonly encrypted: boolean;
+  /** Through the server, which only moves objects to the trash and serves only the per-repo layout. */
+  readonly throughServer: boolean;
+  list(prefix: string): Promise<StoredObject[]>;
+  trash(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]>;
+  delete(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]>;
+  tier(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]>;
+  /** Takes trashed objects, keyed under the trash prefix. */
+  restore(objects: readonly StoredObject[], progress: (done: number) => void): Promise<RestoredObject[]>;
+}
+
 export type BatchObject = BatchObjectResult;
 
 export type InfoResult =

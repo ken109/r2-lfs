@@ -78,6 +78,7 @@ function info(env: Env): Response {
       ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
       ...(config.actionsOidc ? { actionsOidcAudience: config.actionsOidc.audience } : {}),
       sessions: true,
+      ...(config.storageLayout === "per-repo" ? { storage: true } : {}),
     };
     return Response.json(body);
   } catch (err) {

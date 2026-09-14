@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 
 import { applyPlan, gcMode, type GcPlanOptions, planGc } from "../app/gc.ts";
 import * as compose from "../composition.ts";
+import { UsageError } from "../domain/errors.ts";
 import type { Planned } from "../domain/plan.ts";
 import { dim, formatBytes, formatDate, red, shortOid, table } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
@@ -35,15 +36,18 @@ export default defineCommand({
     const term = new Terminal({ quiet: args.json });
     const mode = gcMode(args);
     const acting = mode !== "dry-run";
-    const bucket = compose.bucket();
     term.intro(acting ? "r2-lfs gc" : "r2-lfs gc (dry run)");
 
     const repo = compose.openRepo();
+    const storage = compose.storageFor(repo);
+    if (!args.trash && storage.throughServer) {
+      throw new UsageError("through the server gc only moves objects to the trash; --no-trash needs the R2_* variables");
+    }
     const deps = {
       repo,
       otherRepos: commaList(args.repos).map((dir) => compose.openRepo(dir)),
       client: compose.clientFor(repo),
-      bucket,
+      storage,
       reporter: term,
     };
     const opts: GcPlanOptions = {

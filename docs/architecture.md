@@ -88,8 +88,9 @@ commands render as text or `--json`. Tests drive use cases with in-memory fakes
 case-insensitive. `shared` keys are `_shared/<oid>`. `_trash/` and `_meta/` cannot collide with an
 owner because GitHub logins never start with an underscore.
 
-**No deletion in the Worker.** Anyone who can reach the Worker can at most read and add objects.
-Deleting needs R2 API credentials, which only the CLI uses, and bucket lock rules can refuse even that.
+**No outright deletion in the Worker.** The Worker moves an object to the trash only for a repository
+administrator, copying it first, and the trash expires on its own. Deleting without the trash needs R2 API
+credentials, which only the CLI uses, and bucket lock rules can refuse even that.
 
 **gc judges from git, not from access logs.** git-lfs does not download objects it already has, so
 "not downloaded for a long time" would also match the current version of a file nobody changed.

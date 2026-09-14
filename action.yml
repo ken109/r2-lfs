@@ -42,6 +42,8 @@ runs:
         version="${R2_LFS_VERSION:-$(node -p 'require(process.env.GITHUB_ACTION_PATH + "/package.json").version')}"
         apply=""
         if [ "${R2_LFS_APPLY}" = "true" ]; then apply="--apply"; fi
+        # Without R2 API credentials gc goes through the server, signed in with the workflow's OIDC token.
+        if [ -z "${R2_ACCESS_KEY_ID:-}" ]; then npx --yes "r2-lfs@${version}" credential --install; fi
         # Word splitting of R2_LFS_ARGS is intended.
         # shellcheck disable=SC2086
         npx --yes "r2-lfs@${version}" gc ${apply} ${R2_LFS_ARGS}
