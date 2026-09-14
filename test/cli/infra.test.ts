@@ -514,11 +514,17 @@ describe("transfer agent launcher", () => {
     files.writeExecutable(join(second, "tool"), "");
     writeFileSync(join(first, "tool.CMD"), "");
     expect(findOnPath("tool", { Path: [first, second].join(";"), PATHEXT: ".EXE;.CMD" }, "win32")).toBe(join(first, "tool.CMD"));
-    // A Windows drive letter would split a colon-separated PATH.
-    if (!windows) {
-      expect(findOnPath("tool", { PATH: [first, second].join(":") }, "linux")).toBe(join(second, "tool"));
-      expect(findOnPath("missing", { PATH: first }, "linux")).toBeUndefined();
-    }
+  });
+
+  // A Windows drive letter would split a colon-separated PATH, so this runs elsewhere.
+  it.skipIf(windows)("splits PATH on colons outside Windows", () => {
+    const first = join(dir, "first");
+    const second = join(dir, "second");
+    mkdirSync(first);
+    mkdirSync(second);
+    new LocalFiles().writeExecutable(join(second, "tool"), "");
+    expect(findOnPath("tool", { PATH: [first, second].join(":") }, "linux")).toBe(join(second, "tool"));
+    expect(findOnPath("missing", { PATH: first }, "linux")).toBeUndefined();
   });
 });
 
