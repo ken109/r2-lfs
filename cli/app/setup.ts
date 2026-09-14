@@ -31,6 +31,8 @@ export interface SetupOptions {
   /** 0 disables the trash expiry rule. */
   trashDays: number;
   deploy: boolean;
+  /** The Cloudflare Access application protecting the admin UI; the UI stays closed without it. */
+  access?: { teamDomain: string; aud: string };
 }
 
 export interface SetupResult {
@@ -83,6 +85,8 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
       TRANSFER_MODE: "auto",
       PROXY_MAX_UPLOAD_MB: "100",
       R2_BUCKET_NAME: opts.bucket,
+      ACCESS_TEAM_DOMAIN: opts.access?.teamDomain ?? "",
+      ACCESS_AUD: opts.access?.aud ?? "",
     },
   };
 }

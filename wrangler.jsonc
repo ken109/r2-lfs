@@ -32,5 +32,8 @@
     // Presigned URLs only. R2_BUCKET_NAME must match bucket_name above.
     "R2_ACCOUNT_ID": "",
     "R2_BUCKET_NAME": "r2-lfs",
+    // Admin UI only: the Cloudflare Access team domain and application audience tag protecting /_admin.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
   },
 }

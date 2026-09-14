@@ -93,10 +93,11 @@ describe("git-lfs through a local r2-lfs server", () => {
     if (work) rmSync(work, { recursive: true, force: true });
   });
 
-  it("serves the admin UI next to the LFS API", async () => {
+  it("keeps the admin UI closed while Cloudflare Access is not configured", async () => {
     const res = await fetch(`${SERVER}/_admin`);
-    expect(res.status).toBe(200);
-    expect(await res.text()).toContain("<h1>r2-lfs</h1>");
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain("Cloudflare Access");
+    expect((await fetch(`${SERVER}/_admin/_serverFn/anything`, { method: "POST" })).status).toBe(404);
   });
 
   it("sets a repository up with init, pushes LFS files and clones them back", () => {

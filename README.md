@@ -179,6 +179,8 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `R2_BUCKET_NAME`       | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                                                                                                       |
 | `R2_ACCESS_KEY_ID`     | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                                                                                                        |
 | `R2_SECRET_ACCESS_KEY` | secret |            | Presigned mode: its secret.                                                                                                                                                                                                                    |
+| `ACCESS_TEAM_DOMAIN`   | var    |            | Admin UI: your Cloudflare Access team domain, such as `my-team.cloudflareaccess.com`. See [Admin UI](#admin-ui).                                                                                                                               |
+| `ACCESS_AUD`           | var    |            | Admin UI: the audience tag of the Access application that protects `/_admin`.                                                                                                                                                                  |
 | `AUTH_TOKENS`          | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`.       |
 
 If a setting is invalid, LFS requests fail with a message listing every problem, and `r2-lfs doctor` shows it too.
@@ -212,6 +214,19 @@ Pro); larger objects fail early with a message pointing at presigned mode.
 **`presigned`** hands Git time-limited R2 URLs, so transfers skip the Worker. Objects can be up to
 4.995 GiB, the most R2 accepts in one request.
 R2 does not verify SHA-256 checksums on presigned uploads, so the Worker checks only the size.
+
+## Admin UI
+
+The Worker serves an admin UI at `/_admin`. It stays closed until Cloudflare Access protects it:
+
+1. In Cloudflare Zero Trust, add a self-hosted Access application for your Worker's host with the path
+   `_admin`, and a policy for the people who may use it. Protect only that path: git-lfs cannot sign in
+   through Access.
+2. Copy the application's audience (AUD) tag and set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`, or pass
+   `--access-team` and `--access-aud` to `r2-lfs setup`.
+
+The Worker checks the token Access adds to every request against your team's signing keys, so the UI
+refuses requests that did not come through that application.
 
 ## Security
 

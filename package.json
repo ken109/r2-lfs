@@ -76,6 +76,12 @@
       "R2_BUCKET_NAME": {
         "description": "Only for presigned URLs. Must be the same name as the bucket bound to `BUCKET`."
       },
+      "ACCESS_TEAM_DOMAIN": {
+        "description": "Only for the admin UI at /_admin. Your Cloudflare Access team domain, e.g. `my-team.cloudflareaccess.com`. Leave empty to keep the admin UI closed."
+      },
+      "ACCESS_AUD": {
+        "description": "Only for the admin UI. The Application Audience (AUD) tag of the Cloudflare Access application that protects /_admin."
+      },
       "R2_ACCESS_KEY_ID": {
         "description": "Only for presigned URLs. Create an R2 API token with Object Read & Write on the bucket (R2 > Manage API tokens)."
       },

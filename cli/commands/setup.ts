@@ -27,6 +27,12 @@ export default defineCommand({
       valueHint: "n",
     },
     "trash-days": { type: "string", description: "Expire trashed objects after this many days; 0 to skip", default: "30", valueHint: "n" },
+    "access-team": {
+      type: "string",
+      description: "Cloudflare Access team domain protecting the admin UI at /_admin",
+      valueHint: "my-team.cloudflareaccess.com",
+    },
+    "access-aud": { type: "string", description: "Audience tag of that Access application" },
     deploy: { type: "boolean", default: true, negativeDescription: "Only configure the bucket (for servers deployed with the button)" },
   },
   async run({ args }) {
@@ -43,6 +49,7 @@ export default defineCommand({
         lockDays: readDays("lock-days", args["lock-days"])!,
         trashDays: readDays("trash-days", args["trash-days"])!,
         deploy: args.deploy,
+        ...(args["access-team"] && args["access-aud"] ? { access: { teamDomain: args["access-team"], aud: args["access-aud"] } } : {}),
       },
     );
 

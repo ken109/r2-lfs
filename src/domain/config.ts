@@ -14,6 +14,8 @@ export interface ConfigVars {
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   AUTH_TOKENS?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
 }
 
 export interface StaticToken {
@@ -30,6 +32,14 @@ export interface PresignCredentials {
   secretAccessKey: string;
 }
 
+/** The Cloudflare Access application in front of the admin UI. */
+export interface AccessSettings {
+  /** Such as `my-team.cloudflareaccess.com`. */
+  teamDomain: string;
+  /** The application's audience tag. */
+  aud: string;
+}
+
 export interface Config {
   /** Lowercased REPO_PATTERNs of the repositories this server serves. */
   allowedRepos: readonly string[];
@@ -41,6 +51,8 @@ export interface Config {
   tokens: readonly StaticToken[];
   /** Settings that work but should change, such as deprecated variables. */
   warnings: readonly string[];
+  /** Unset keeps the admin UI closed. */
+  access: AccessSettings | undefined;
 }
 
 export class ConfigError extends Error {
@@ -150,6 +162,15 @@ export function parseConfig(vars: ConfigVars): Config {
   // In token mode AUTH_TOKENS may be empty: tokens can also live in the bucket (`r2-lfs token`).
   const tokens = parseStaticTokens(vars.AUTH_TOKENS, problems);
 
+  const teamDomain = value(vars.ACCESS_TEAM_DOMAIN)
+    ?.replace(/^https:\/\//, "")
+    .replace(/\/+$/, "");
+  const aud = value(vars.ACCESS_AUD);
+  if ((teamDomain === undefined) !== (aud === undefined)) problems.push("ACCESS_TEAM_DOMAIN and ACCESS_AUD are needed together");
+  if (teamDomain !== undefined && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(teamDomain)) {
+    problems.push("ACCESS_TEAM_DOMAIN must be a host name such as my-team.cloudflareaccess.com");
+  }
+
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
@@ -160,5 +181,6 @@ export function parseConfig(vars: ConfigVars): Config {
     proxyMaxUploadBytes: Math.floor(maxMb * 1024 * 1024),
     tokens,
     warnings,
+    access: teamDomain && aud ? { teamDomain: teamDomain.toLowerCase(), aud } : undefined,
   };
 }
