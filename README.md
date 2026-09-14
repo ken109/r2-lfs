@@ -172,10 +172,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: ken109/r2-lfs@v0.3.0 # x-release-please-version
+      - uses: ken109/r2-lfs@v0.4.0 # x-release-please-version
         with:
           apply: true
-          version: 0.3.0 # x-release-please-version
+          version: 0.4.0 # x-release-please-version
 ```
 
 With `ACTIONS_OIDC=admin` on the server and `permissions: { contents: read, id-token: write }` on the job, the
@@ -315,7 +315,7 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v7
-  - run: npx r2-lfs@0.3.0 credential --install # x-release-please-version
+  - run: npx r2-lfs@0.4.0 credential --install # x-release-please-version
   - run: git lfs pull
 ```
 

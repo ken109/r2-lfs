@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/ken109/r2-lfs/compare/v0.3.0...v0.4.0) (2026-09-14)
+
+
+### Features
+
+* **cli:** run gc and restore through the server when R2 credentials are not set ([b1761a6](https://github.com/ken109/r2-lfs/commit/b1761a6f2331b6645bf7abd677a3059d5b578457))
+* **cli:** trade the gh login for short-lived repository tokens in the credential helper ([ae8bca9](https://github.com/ken109/r2-lfs/commit/ae8bca9d1b1441058bbafea1900f713d26fa6596))
+* **worker:** list, trash, restore and tier a repository's objects through the Worker ([3e8bb77](https://github.com/ken109/r2-lfs/commit/3e8bb7789ce53f8ff09f5c577a666692b824a308))
+* **worker:** short-lived tokens for transfer actions and a session endpoint ([12732ac](https://github.com/ken109/r2-lfs/commit/12732ac834d970620246320aaf048d53ff1848ab))
+
+
+### Bug Fixes
+
+* **cli:** register the transfer agent through a launcher that survives Node upgrades ([8cc3249](https://github.com/ken109/r2-lfs/commit/8cc3249981da9a42a7704cd18986dddd7096cd2a))
+* **cli:** report objects a bucket lock still protects as locked, not refused ([1507d4a](https://github.com/ken109/r2-lfs/commit/1507d4a2aa05b351b2c16dd6658c82ae525ff078))
+* **cli:** split PATH on colons outside Windows whatever platform is asked about ([8ab4a1e](https://github.com/ken109/r2-lfs/commit/8ab4a1e1d7b316adfa7b980fbebef278cc97ca00))
+* **worker:** refuse a repository that reuses the name of the one whose objects are stored ([a98640a](https://github.com/ken109/r2-lfs/commit/a98640a96acb1fa31205cd91b103c2b8226a06d7))
+
 ## [0.3.0](https://github.com/ken109/r2-lfs/compare/v0.2.0...v0.3.0) (2026-09-14)
 
 
