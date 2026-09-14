@@ -17,6 +17,7 @@ export interface ConfigVars {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ACTIONS_OIDC?: string;
+  VERIFY_UPLOADS?: string;
   ACTIONS_OIDC_AUDIENCE?: string;
 }
 
@@ -58,6 +59,8 @@ export interface Config {
   storageLayout: StorageLayout;
   /** Set when transfers go through presigned URLs; absent means proxy. */
   presign: PresignCredentials | undefined;
+  /** Hash presigned uploads before they count as stored. Proxy uploads are always checked by R2. */
+  verifyUploads: boolean;
   proxyMaxUploadBytes: number;
   tokens: readonly StaticToken[];
   /** Settings that work but should change, such as deprecated variables. */
@@ -175,6 +178,7 @@ export function parseConfig(vars: ConfigVars): Config {
   // In token mode AUTH_TOKENS may be empty: tokens can also live in the bucket (`r2-lfs token`).
   const tokens = parseStaticTokens(vars.AUTH_TOKENS, problems);
 
+  const verifyUploads = oneOf("VERIFY_UPLOADS", vars.VERIFY_UPLOADS, ["on", "off"], "on", problems) === "on";
   const actionsMode = oneOf("ACTIONS_OIDC", vars.ACTIONS_OIDC, ["off", "read", "write"], "off", problems);
   const actionsAudience = value(vars.ACTIONS_OIDC_AUDIENCE) ?? "r2-lfs";
 
@@ -194,6 +198,7 @@ export function parseConfig(vars: ConfigVars): Config {
     authMode,
     storageLayout,
     presign,
+    verifyUploads,
     proxyMaxUploadBytes: Math.floor(maxMb * 1024 * 1024),
     tokens,
     warnings,

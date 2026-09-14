@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import {
   type AuthMode,
+  INCOMING_PREFIX,
   REPO_PATTERN,
   SHARED_PREFIX,
   type StorageLayout,
@@ -93,6 +94,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
       ACCESS_AUD: opts.access?.aud ?? "",
       ACTIONS_OIDC: opts.actionsOidc ?? "off",
       ACTIONS_OIDC_AUDIENCE: "r2-lfs",
+      VERIFY_UPLOADS: "on",
     },
   };
 }
@@ -137,6 +139,13 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
       ),
     );
   }
+  // Presigned uploads that git-lfs never verified.
+  await reporter.task(`Expiring ${INCOMING_PREFIX} after 1 day`, () =>
+    check(
+      wrangler.run(["r2", "bucket", "lifecycle", "add", opts.bucket, "r2-lfs-incoming", INCOMING_PREFIX, "--expire-days", "1", "--force"]),
+      "adding the incoming uploads lifecycle rule",
+    ),
+  );
 
   const { prefixes, unlockable } = lockPrefixes(opts.layout, opts.repos);
   if (opts.lockDays > 0) {

@@ -183,6 +183,7 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `ACCESS_AUD`            | var    |            | Admin UI: the audience tag of the Access application that protects `/_admin`.                                                                                                                                                                   |
 | `ACTIONS_OIDC`          | var    | `off`      | `read` or `write` lets GitHub Actions workflows use their own repository with an OIDC token. See [GitHub Actions](#github-actions).                                                                                                             |
 | `ACTIONS_OIDC_AUDIENCE` | var    | `r2-lfs`   | The audience workflows request that token for.                                                                                                                                                                                                  |
+| `VERIFY_UPLOADS`        | var    | `on`       | Presigned mode: hash each upload before it counts as stored. `off` checks only the size, for the Free plan.                                                                                                                                     |
 | `AUTH_TOKENS`           | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
 
 If a setting is invalid, LFS requests fail with a message listing every problem, and `r2-lfs doctor` shows it too.
@@ -214,8 +215,16 @@ does not hash to the oid. Uploads are limited by the Workers request body size (
 Pro); larger objects fail early with a message pointing at presigned mode.
 
 **`presigned`** hands Git time-limited R2 URLs, so transfers skip the Worker. Objects can be up to
-4.995 GiB, the most R2 accepts in one request.
-R2 does not verify SHA-256 checksums on presigned uploads, so the Worker checks only the size.
+4.995 GiB, the most R2 accepts in one request. R2 does not check SHA-256 on presigned uploads, so they
+land under `_incoming/` and the Worker hashes each one when git-lfs verifies it, then copies it into
+place inside R2. Hashing a large file takes Worker CPU time beyond the Free plan's limit; set
+`VERIFY_UPLOADS=off` there, which makes the Worker check only the size.
+
+### Upgrading a shared-layout server
+
+From 0.2.0, a repository in the `shared` layout reads only objects it has uploaded. After upgrading,
+push every version once from each repository, for example with `git lfs push --all origin`; objects
+the server already stores are checked rather than uploaded again.
 
 ## GitHub Actions
 
@@ -273,10 +282,11 @@ refuses requests that did not come through that application.
   and bucket lock rules stop even them within the retention period.
 - gc copies an object to the trash before deleting it, and removes the copy again if the delete is
   refused, so a failure never loses data.
-- In the `shared` layout, anyone who can upload to one repository can upload any object, and anyone who
-  can read one repository can download any object whose oid they know, which also tells them whether a
-  file is stored. In presigned mode content hashes are not verified. Use `per-repo` when repositories
-  have different readers or writers.
+- Stored content always hashes to its oid: R2 checks proxy uploads and the Worker checks presigned ones,
+  unless `VERIFY_UPLOADS=off`.
+- In the `shared` layout an object is stored once, but a repository can read it only after uploading its
+  content itself, so knowing an oid is not enough. With `VERIFY_UPLOADS=off` in presigned mode, a
+  writer can claim an object by its oid and size; use `per-repo` if that matters.
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability.
 

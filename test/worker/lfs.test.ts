@@ -526,14 +526,38 @@ describe("storage layout", () => {
     expect(objects[0]?.error?.code).toBe(404);
   });
 
-  it("deduplicates across repositories in shared layout", async () => {
+  it("stores shared objects once, and lets a repository read one only after uploading it itself", async () => {
     const e = makeEnv({ STORAGE_LAYOUT: "shared" });
     const object = await blob();
     await upload(e, "/acme/app", object);
     expect(await env.BUCKET.head(`_shared/${object.oid}`)).not.toBeNull();
+    expect(await env.BUCKET.head(`_members/acme/app/${object.oid}`)).not.toBeNull();
+    expect((await batch(e, "/acme/app", "upload", [object])).objects[0]?.actions).toBeUndefined();
 
-    const { objects } = await batch(e, "/acme/tools", "upload", [object]);
-    expect(objects[0]?.actions).toBeUndefined();
+    // Knowing the oid is not enough: another repository cannot download it, and must upload the content first.
+    expect((await batch(e, "/acme/tools", "download", [object])).objects[0]?.error?.code).toBe(404);
+    expect((await call(e, `/acme/tools/objects/${object.oid}`, { token: WRITE_TOKEN })).status).toBe(404);
+    expect((await call(e, "/acme/tools/objects/verify", { token: WRITE_TOKEN, json: { oid: object.oid, size: object.size } })).status).toBe(
+      404,
+    );
+    const forged = await call(e, `/acme/tools/objects/${object.oid}`, { method: "PUT", token: WRITE_TOKEN, body: (await blob()).data });
+    expect(forged.status).toBe(422);
+    expect(await env.BUCKET.head(`_members/acme/tools/${object.oid}`)).toBeNull();
+
+    await upload(e, "/acme/tools", object);
+    expect((await batch(e, "/acme/tools", "download", [object])).objects[0]?.actions?.download).toBeDefined();
+    expect(await env.BUCKET.head(`_incoming/acme/tools/${object.oid}`)).toBeNull();
+  });
+
+  it("checks a second upload of a stored object without rewriting it", async () => {
+    const e = makeEnv();
+    const object = await blob();
+    await upload(e, "/acme/app", object);
+    const before = await env.BUCKET.head(`acme/app/${object.oid}`);
+    const again = await call(e, `/acme/app/objects/${object.oid}`, { method: "PUT", token: WRITE_TOKEN, body: object.data });
+    expect(again.status).toBe(200);
+    expect((await env.BUCKET.head(`acme/app/${object.oid}`))?.uploaded).toEqual(before?.uploaded);
+    expect(await env.BUCKET.head(`_incoming/acme/app/${object.oid}`)).toBeNull();
   });
 
   it("lowercases owner and repo so GitHub's case-insensitive names share a prefix", async () => {
@@ -543,6 +567,18 @@ describe("storage layout", () => {
     expect(await env.BUCKET.head(`acme/app/${object.oid}`)).not.toBeNull();
   });
 });
+
+/** Stands in for R2's S3 API: CopyObject within the test bucket. */
+const s3: Fetcher = async (input, init) => {
+  const request = new Request(input, init);
+  const url = new URL(request.url);
+  const target = decodeURIComponent(url.pathname.replace(/^\/lfs-bucket\//, ""));
+  const source = decodeURIComponent((request.headers.get("x-amz-copy-source") ?? "").replace(/^\/lfs-bucket\//, ""));
+  const object = await env.BUCKET.get(source);
+  if (!object) return new Response("<Error><Code>NoSuchKey</Code></Error>", { status: 404 });
+  await env.BUCKET.put(target, await object.arrayBuffer());
+  return new Response("<CopyObjectResult/>");
+};
 
 describe("presigned transfers", () => {
   const presignEnv = () =>
@@ -560,11 +596,43 @@ describe("presigned transfers", () => {
     const actions = objects[0]?.actions;
     const href = new URL(actions!.upload!.href);
     expect(href.host).toBe("0123456789abcdef.r2.cloudflarestorage.com");
-    expect(href.pathname).toBe(`/lfs-bucket/acme/app/${object.oid}`);
+    expect(href.pathname).toBe(`/lfs-bucket/_incoming/acme/app/${object.oid}`);
     expect(href.searchParams.get("X-Amz-Expires")).toBe("3600");
     expect(href.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
     expect(actions!.upload!.header).toBeUndefined();
     expect(actions!.verify!.href).toBe(`${ORIGIN}/acme/app/objects/verify`);
+  });
+
+  it("moves a presigned upload into place only after its content hashes to the oid", async () => {
+    const e = presignEnv();
+    const object = await blob();
+    const verify = (json: unknown, repo = "/acme/app") => call(e, `${repo}/objects/verify`, { token: WRITE_TOKEN, json, fetcher: s3 });
+
+    // What git-lfs would PUT to the presigned URL, but with other content.
+    await env.BUCKET.put(`_incoming/acme/app/${object.oid}`, (await blob()).data);
+    expect((await verify({ oid: object.oid, size: object.size })).status).toBe(422);
+    expect(await env.BUCKET.head(`_incoming/acme/app/${object.oid}`)).toBeNull();
+    expect(await env.BUCKET.head(`acme/app/${object.oid}`)).toBeNull();
+
+    await env.BUCKET.put(`_incoming/acme/app/${object.oid}`, object.data);
+    expect((await verify({ oid: object.oid, size: object.size + 1 })).status).toBe(422);
+
+    await env.BUCKET.put(`_incoming/acme/app/${object.oid}`, object.data);
+    expect((await verify({ oid: object.oid, size: object.size })).status).toBe(200);
+    expect(new Uint8Array(await (await env.BUCKET.get(`acme/app/${object.oid}`))!.arrayBuffer())).toEqual(object.data);
+    expect(await env.BUCKET.head(`_incoming/acme/app/${object.oid}`)).toBeNull();
+    expect((await verify({ oid: object.oid, size: object.size })).status).toBe(200);
+  });
+
+  it("uploads straight to the object key when VERIFY_UPLOADS is off", async () => {
+    const e = { ...presignEnv(), VERIFY_UPLOADS: "off" };
+    const object = await blob();
+    const { objects } = await batch(e, "/acme/app", "upload", [object]);
+    expect(new URL(objects[0]!.actions!.upload!.href).pathname).toBe(`/lfs-bucket/acme/app/${object.oid}`);
+    await env.BUCKET.put(`acme/app/${object.oid}`, object.data);
+    expect((await call(e, "/acme/app/objects/verify", { token: WRITE_TOKEN, json: { oid: object.oid, size: object.size } })).status).toBe(
+      200,
+    );
   });
 
   it("accepts uploads up to R2's single-request limit and refuses larger ones before any transfer", async () => {

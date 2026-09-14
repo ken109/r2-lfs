@@ -11,8 +11,8 @@ import {
 } from "../domain/batch.ts";
 import type { Config } from "../domain/config.ts";
 import { objectKey, type Repo } from "../domain/repo.ts";
-import type { BatchObjectResult, BatchResponse } from "../shared/contract.ts";
-import type { ObjectStore, TransferLinks } from "./ports.ts";
+import { type BatchObjectResult, type BatchResponse, incomingKey, memberKey } from "../shared/contract.ts";
+import type { ObjectCopier, ObjectStore, TransferLinks } from "./ports.ts";
 
 export type Result<T> = { ok: true; value: T } | ({ ok: false } & Rejection);
 
@@ -24,6 +24,20 @@ export interface LfsContext {
   permission: Permission;
   store: ObjectStore;
   links: TransferLinks;
+  /** Presigned mode only: moves hash-checked uploads into place. */
+  copier: ObjectCopier | undefined;
+}
+
+const shared = (ctx: LfsContext) => ctx.config.storageLayout === "shared";
+const liveKey = (ctx: LfsContext, oid: string) => objectKey(ctx.config.storageLayout, ctx.repo, oid);
+const stagingKey = (ctx: LfsContext, oid: string) => incomingKey(ctx.repo.owner, ctx.repo.name, oid);
+const markerKey = (ctx: LfsContext, oid: string) => memberKey(ctx.repo.owner, ctx.repo.name, oid);
+/** Presigned uploads go to a staging key when the Worker checks their hash. */
+const staged = (ctx: LfsContext) => ctx.links.presigned && ctx.config.verifyUploads && ctx.copier !== undefined;
+
+/** In the shared layout, only repositories that uploaded an object may read it. */
+async function isMember(ctx: LfsContext, oid: string): Promise<boolean> {
+  return !shared(ctx) || (await ctx.store.head(markerKey(ctx, oid))) !== null;
 }
 
 function denied(required: Permission): Result<never> {
@@ -39,21 +53,23 @@ async function planObject(
     return { oid: String(raw.oid), size: Number(raw.size) || 0, error: { code: 422, message: "Invalid oid or size" } };
   }
   const object = raw as ObjectSpec;
-  const key = objectKey(ctx.config.storageLayout, ctx.repo, object.oid);
+  const key = liveKey(ctx, object.oid);
   const stored = await ctx.store.head(key);
 
   if (operation === "download") {
-    if (!stored) return { ...object, error: { code: 404, message: "Object does not exist" } };
+    if (!stored || !(await isMember(ctx, object.oid))) return { ...object, error: { code: 404, message: "Object does not exist" } };
     return { oid: object.oid, size: stored.size, authenticated: true, actions: { download: await ctx.links.download(key, object.oid) } };
   }
 
-  const decision = decideUpload(object, stored, { presigned: ctx.links.presigned, proxyMaxUploadBytes: ctx.config.proxyMaxUploadBytes });
+  const member = stored ? await isMember(ctx, object.oid) : false;
+  const transfer = { presigned: ctx.links.presigned, proxyMaxUploadBytes: ctx.config.proxyMaxUploadBytes };
+  const decision = decideUpload(object, stored, transfer, member);
   if (decision.kind === "exists") return object;
   if (decision.kind === "too-large") return { ...object, error: { code: 422, message: tooLargeMessage(decision) } };
   return {
     ...object,
     authenticated: true,
-    actions: { upload: await ctx.links.upload(key, object.oid), verify: ctx.links.verify() },
+    actions: { upload: await ctx.links.upload(staged(ctx) ? stagingKey(ctx, object.oid) : key, object.oid), verify: ctx.links.verify() },
   };
 }
 
@@ -71,15 +87,44 @@ export async function verify(ctx: LfsContext, body: unknown): Promise<Result<Rec
   if (!hasPermission(ctx.permission, "write")) return denied("write");
   const parsed = parseObjectSpec(body);
   if (!parsed.ok) return parsed;
-  const stored = await ctx.store.head(objectKey(ctx.config.storageLayout, ctx.repo, parsed.value.oid));
+  const { oid, size } = parsed.value;
+  const key = liveKey(ctx, oid);
+
+  if (staged(ctx)) {
+    const staging = stagingKey(ctx, oid);
+    const uploaded = await ctx.store.head(staging);
+    if (uploaded) {
+      const hash = uploaded.size === size ? await ctx.store.sha256(staging) : undefined;
+      if (hash !== oid) {
+        await ctx.store.delete(staging);
+        return reject(
+          422,
+          uploaded.size === size
+            ? "Uploaded content does not match the oid"
+            : `Uploaded object is ${uploaded.size} bytes, expected ${size}`,
+        );
+      }
+      if (!(await ctx.store.head(key))) await ctx.copier!.copy(staging, key);
+      await ctx.store.delete(staging);
+      if (shared(ctx)) await ctx.store.mark(markerKey(ctx, oid));
+      return { ok: true, value: {} };
+    }
+  }
+
+  const stored = await ctx.store.head(key);
   if (!stored) return reject(404, "Object was not uploaded");
-  if (stored.size !== parsed.value.size) return reject(422, `Uploaded object is ${stored.size} bytes, expected ${parsed.value.size}`);
+  if (stored.size !== size) return reject(422, `Uploaded object is ${stored.size} bytes, expected ${size}`);
+  if (!(await isMember(ctx, oid))) {
+    // Without hash checks a presigned upload cannot be told apart from a claim; the README says so.
+    if (!ctx.links.presigned || staged(ctx)) return reject(404, "Object was not uploaded by this repository");
+    await ctx.store.mark(markerKey(ctx, oid));
+  }
   return { ok: true, value: {} };
 }
 
 export async function download(ctx: LfsContext, oid: string): Promise<Result<{ body: ReadableStream; size: number }>> {
   if (!hasPermission(ctx.permission, "read")) return denied("read");
-  const object = await ctx.store.get(objectKey(ctx.config.storageLayout, ctx.repo, oid));
+  const object = (await isMember(ctx, oid)) ? await ctx.store.get(liveKey(ctx, oid)) : null;
   if (!object) return reject(404, "Object does not exist");
   return { ok: true, value: object };
 }
@@ -88,7 +133,12 @@ export async function upload(ctx: LfsContext, oid: string, body: ReadableStream 
   if (!hasPermission(ctx.permission, "write")) return denied("write");
   if (!body || !Number.isSafeInteger(length)) return reject(411, "Content-Length is required");
   if (length > ctx.config.proxyMaxUploadBytes) return reject(413, "Object is larger than the proxy upload limit");
-  const outcome = await ctx.store.put(objectKey(ctx.config.storageLayout, ctx.repo, oid), body, oid);
+  const key = liveKey(ctx, oid);
+  // An object that is already stored may be under a bucket lock, so a second upload is only checked, not rewritten.
+  const target = (await ctx.store.head(key)) ? stagingKey(ctx, oid) : key;
+  const outcome = await ctx.store.put(target, body, oid);
   if (outcome === "checksum-mismatch") return reject(422, "Uploaded content does not match the oid");
+  if (target !== key) await ctx.store.delete(target);
+  if (shared(ctx)) await ctx.store.mark(markerKey(ctx, oid));
   return { ok: true, value: null };
 }

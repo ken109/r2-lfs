@@ -9,6 +9,7 @@ import { type Fetcher, GithubApiPermissions } from "../infra/github-permissions.
 import { looksLikeJwt } from "../infra/jwt.ts";
 import { R2ObjectStore } from "../infra/r2-object-store.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
+import { S3Copier } from "../infra/s3-copier.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
 import { PresignedLinks, ProxyLinks } from "../infra/transfer-links.ts";
 import { type MisconfiguredInfo, type ServerInfo, VERSION } from "../shared/contract.ts";
@@ -111,6 +112,7 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
     permission: auth.permission,
     store: new R2ObjectStore(env.BUCKET),
     links: config.presign ? new PresignedLinks(config.presign, baseUrl, authorization) : new ProxyLinks(baseUrl, authorization),
+    copier: config.presign ? new S3Copier(config.presign, deps.fetch) : undefined,
   };
 
   const locks: LocksContext = {

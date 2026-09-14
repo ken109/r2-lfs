@@ -7,6 +7,10 @@ export const WORKER_COMPATIBILITY_DATE = "2026-08-22";
 
 /** Objects of every repository in `shared` layout. GitHub logins never start with `_`. */
 export const SHARED_PREFIX = "_shared/";
+/** Presigned uploads land here until the Worker has checked their hash; a lifecycle rule clears leftovers. */
+export const INCOMING_PREFIX = "_incoming/";
+/** In the shared layout, `_members/<owner>/<repo>/<oid>` records that the repository uploaded the object. */
+export const MEMBERS_PREFIX = "_members/";
 /** `r2-lfs gc` moves objects here; a lifecycle rule expires them. */
 export const TRASH_PREFIX = "_trash/";
 /** Tokens managed by `r2-lfs token`. */
@@ -118,6 +122,16 @@ export const REPO_PATTERN = /^(\*|[A-Za-z0-9*][A-Za-z0-9_*-]*\/[A-Za-z0-9._*-]+)
 /** GitHub names are case-insensitive, so keys are lowercased to keep one prefix per repository. */
 export function repoPrefix(layout: StorageLayout, owner: string, repo: string): string {
   return layout === "shared" ? SHARED_PREFIX : `${owner.toLowerCase()}/${repo.toLowerCase()}/`;
+}
+
+/** Where a presigned upload waits for its hash check. */
+export function incomingKey(owner: string, repo: string, oid: string): string {
+  return `${INCOMING_PREFIX}${owner.toLowerCase()}/${repo.toLowerCase()}/${oid}`;
+}
+
+/** The marker that lets a repository read a shared object. */
+export function memberKey(owner: string, repo: string, oid: string): string {
+  return `${MEMBERS_PREFIX}${owner.toLowerCase()}/${repo.toLowerCase()}/${oid}`;
 }
 
 const patternCache = new Map<string, RegExp>();

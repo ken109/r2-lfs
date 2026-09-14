@@ -68,8 +68,11 @@ export function decideUpload(
   object: ObjectSpec,
   stored: { size: number } | null,
   transfer: { presigned: boolean; proxyMaxUploadBytes: number },
+  /** Whether this repository has uploaded the stored object; always true outside the shared layout. */
+  member = true,
 ): UploadDecision {
-  if (stored && stored.size === object.size) return { kind: "exists" };
+  // In the shared layout a repository proves it has the content by uploading it, before it may read it.
+  if (stored && stored.size === object.size && member) return { kind: "exists" };
   const limitBytes = transfer.presigned ? R2_MAX_SINGLE_UPLOAD_BYTES : transfer.proxyMaxUploadBytes;
   if (object.size > limitBytes) return { kind: "too-large", limitBytes, presigned: transfer.presigned };
   return { kind: "upload" };

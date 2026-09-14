@@ -88,6 +88,9 @@
       "ACTIONS_OIDC_AUDIENCE": {
         "description": "The audience workflows request their OIDC token for. `r2-lfs credential` reads it from the server."
       },
+      "VERIFY_UPLOADS": {
+        "description": "`on` or `off`. In presigned mode the Worker hashes each upload before it counts as stored; hashing large files needs more CPU time than the Free plan allows, so choose `off` there."
+      },
       "R2_ACCESS_KEY_ID": {
         "description": "Only for presigned URLs. Create an R2 API token with Object Read & Write on the bucket (R2 > Manage API tokens)."
       },

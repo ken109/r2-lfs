@@ -18,7 +18,8 @@ to receive them.
 
 - **Who can read and write objects.** Requests must be for a repository `ALLOWED_REPOS` covers and carry
   credentials that the GitHub API or the token directory accepts for that repository.
-- **Integrity in proxy mode.** R2 rejects uploads whose content does not hash to the oid.
+- **Integrity.** R2 rejects proxy uploads whose content does not hash to the oid, and the Worker hashes
+  presigned uploads before moving them into place.
 - **Deletion.** The Worker cannot delete objects. Deletion needs R2 API credentials, and bucket lock
   rules can refuse it within their retention period.
 - **Tokens.** Tokens created with `r2-lfs token` are stored as SHA-256 hashes; tokens in `AUTH_TOKENS`
@@ -26,10 +27,10 @@ to receive them.
 
 ## Known limits
 
-- In presigned mode, R2 does not verify SHA-256 checksums, so a client with write access can store
-  content that does not match its oid. The Worker checks the size only.
-- In the `shared` layout, write access to any repository allows writing any object, and read access
-  to any repository allows downloading any object whose oid is known, or learning whether it is stored.
-  Use `per-repo` when repositories have different readers or writers.
+- With `VERIFY_UPLOADS=off` in presigned mode, the Worker checks only the size, so a client with write
+  access can store content that does not match its oid, and in the `shared` layout claim an object by
+  its oid and size.
+- In the `shared` layout, a repository that uploaded an object can learn that it is also stored for
+  another repository, because the upload is checked rather than repeated.
 - With `AUTH_MODE=github`, access follows the GitHub account's role on the repository, not the
   token's scopes.

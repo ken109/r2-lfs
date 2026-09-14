@@ -44,5 +44,7 @@
     "ACTIONS_OIDC": "off",
     // The audience workflows request the token for.
     "ACTIONS_OIDC_AUDIENCE": "r2-lfs",
+    // "on" | "off": hash presigned uploads before they count as stored. Turn off on the Free plan (CPU time).
+    "VERIFY_UPLOADS": "on",
   },
 }

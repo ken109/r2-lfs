@@ -715,6 +715,7 @@ describe("setup", () => {
     expect(f.runs.map((r) => r.args.slice(0, 4).join(" "))).toEqual([
       "r2 bucket create lfs",
       "r2 bucket lifecycle add",
+      "r2 bucket lifecycle add",
       "r2 bucket lock add",
       "deploy --config wrangler.json",
     ]);

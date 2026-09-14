@@ -9,6 +9,16 @@ export interface ObjectStore {
   get(key: string): Promise<{ body: ReadableStream; size: number } | null>;
   /** Stores `body` only if it hashes to `sha256`. */
   put(key: string, body: ReadableStream, sha256: string): Promise<"stored" | "checksum-mismatch">;
+  /** The hex SHA-256 of a stored object, read in full; undefined when it does not exist. */
+  sha256(key: string): Promise<string | undefined>;
+  /** Writes an empty object, such as a membership marker. */
+  mark(key: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+/** Copies inside the bucket without streaming the bytes through the Worker. */
+export interface ObjectCopier {
+  copy(source: string, target: string): Promise<void>;
 }
 
 export type Action = LfsAction;
