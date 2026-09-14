@@ -56,8 +56,10 @@ export async function diagnose(deps: DoctorDeps): Promise<Check[]> {
   add("lfs.url", "ok", raw);
 
   const locksOff = repo.config("lfs.locksverify") === "false" || repo.config("lfs.locksverify", ".lfsconfig") === "false";
-  if (locksOff) add("locking", "ok", "lock verification is off (r2-lfs does not implement locks)");
-  else add("locking", "warn", "git-lfs will try the locking API on every push", "git config -f .lfsconfig lfs.locksverify false");
+  // The server implements file locks, so a push should check that it does not overwrite someone else's locked file.
+  if (locksOff) {
+    add("locking", "warn", "pushes do not check other people's file locks", "git config -f .lfsconfig lfs.locksverify true");
+  } else add("locking", "ok", "pushes check other people's file locks");
 
   const token = deps.gitConfig.credentialFor(location.origin);
   const client = deps.connect(location, token);

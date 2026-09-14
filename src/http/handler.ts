@@ -30,7 +30,7 @@ Point a repository at it with a .lfsconfig like:
 
 [lfs]
   url = https://<this host>/<owner>/<repo>
-  locksverify = false
+  locksverify = true
 
 https://github.com/ken109/r2-lfs
 `;

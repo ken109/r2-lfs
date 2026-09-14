@@ -1034,10 +1034,19 @@ describe("init and doctor", () => {
     };
     const checks = await diagnose({ ...base, connect: (): LfsClient => readOnly });
     expect(checks.find((c) => c.name === "access")).toMatchObject({ status: "warn" });
+    expect(checks.find((c) => c.name === "locking")).toMatchObject({
+      status: "warn",
+      fix: "git config -f .lfsconfig lfs.locksverify true",
+    });
     expect(checks.find((c) => c.name === "R2 credentials")).toMatchObject({ status: "warn" });
 
     readOnly.serverInfo = { ...readOnly.serverInfo, warnings: ["ALLOWED_OWNERS is deprecated"] };
     const warned = await diagnose({ ...base, connect: (): LfsClient => readOnly });
     expect(warned.find((c) => c.name === "server settings")).toMatchObject({ status: "warn", detail: "ALLOWED_OWNERS is deprecated" });
+
+    // What init writes: the server implements locks, so pushes check them.
+    repo.write(".lfsconfig", "[lfs]\n\turl = https://lfs.example.com/acme/assets\n\tlocksverify = true\n");
+    const locking = await diagnose({ ...base, connect: (): LfsClient => readOnly });
+    expect(locking.find((c) => c.name === "locking")).toMatchObject({ status: "ok" });
   });
 });
