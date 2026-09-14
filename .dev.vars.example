@@ -5,3 +5,5 @@ R2_SECRET_ACCESS_KEY=
 AUTH_TOKENS=
 # Optional. 32 bytes (openssl rand -base64 32) to store objects encrypted with SSE-C. Transfers then go through the Worker.
 ENCRYPTION_KEY=
+# Optional. The admin UI's activity page: a Cloudflare API token with Account Analytics Read (needs R2_ACCOUNT_ID).
+ANALYTICS_API_TOKEN=

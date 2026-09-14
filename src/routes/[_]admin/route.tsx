@@ -13,6 +13,7 @@ const PAGES = [
   { to: "/_admin", label: "Overview", exact: true },
   { to: "/_admin/tokens", label: "Tokens", exact: false },
   { to: "/_admin/locks", label: "Locks", exact: false },
+  { to: "/_admin/activity", label: "Activity", exact: false },
 ] as const;
 
 function AdminLayout(): ReactNode {

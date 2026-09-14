@@ -74,7 +74,7 @@
         "description": "Largest upload accepted in proxy mode. Match your plan's request body limit (Free/Pro: 100)."
       },
       "R2_ACCOUNT_ID": {
-        "description": "Only for presigned URLs. Your Cloudflare account ID (Dashboard > Workers & Pages, right sidebar)."
+        "description": "For presigned URLs and the admin UI's activity page. Your Cloudflare account ID (Dashboard > Workers & Pages, right sidebar)."
       },
       "R2_BUCKET_NAME": {
         "description": "Only for presigned URLs. Must be the same name as the bucket bound to `BUCKET`."
@@ -105,6 +105,9 @@
       },
       "R2_SECRET_ACCESS_KEY": {
         "description": "Only for presigned URLs. The secret that pairs with `R2_ACCESS_KEY_ID`."
+      },
+      "ANALYTICS_API_TOKEN": {
+        "description": "Only for the admin UI's activity page. A Cloudflare API token with Account Analytics Read; needs R2_ACCOUNT_ID as well."
       },
       "ENCRYPTION_KEY": {
         "description": "Optional. 32 bytes as base64 (`openssl rand -base64 32`) or hex: R2 stores new objects encrypted with this key (SSE-C). Transfers then go through the Worker. Keep a copy: objects cannot be read without it."

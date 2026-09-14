@@ -138,3 +138,8 @@ export interface TokenMinter {
 export interface BucketLister {
   list(cursor: string | undefined): Promise<{ objects: { key: string; size: number }[]; cursor?: string }>;
 }
+
+/** Requests the Worker recorded in Workers Analytics Engine, by repository. */
+export interface ActivitySource {
+  byRepository(hours: number): Promise<{ repo: string; requests: number; bytes: number; errors: number }[]>;
+}

@@ -1,9 +1,12 @@
+import { recentActivity } from "../app/admin-activity.ts";
 import type { AdminApi, Overview } from "../app/admin-api.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../app/admin-locks.ts";
 import { storageReport } from "../app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../app/admin-tokens.ts";
 import type { Config } from "../domain/config.ts";
 import type { Env } from "../env.ts";
+import { AnalyticsSqlActivity } from "../infra/analytics-sql.ts";
+import type { Fetcher } from "../infra/host-permissions.ts";
 import { R2BucketLister } from "../infra/r2-bucket-lister.ts";
 import { R2TokensFile, RandomTokenMinter } from "../infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
@@ -15,11 +18,13 @@ export class WorkerAdminApi implements AdminApi {
   private readonly env: Env;
   private readonly config: Config;
   private readonly email: string;
+  private readonly fetcher: Fetcher;
 
-  constructor(env: Env, config: Config, email: string) {
+  constructor(env: Env, config: Config, email: string, fetcher: Fetcher) {
     this.env = env;
     this.config = config;
     this.email = email;
+    this.fetcher = fetcher;
   }
 
   overview(): Overview {
@@ -69,5 +74,10 @@ export class WorkerAdminApi implements AdminApi {
     const repo = parseRepository(repository);
     if (!repo) return Promise.resolve(notARepository);
     return forceUnlock(new DurableObjectLockStore(this.env.LOCKS, repo), id);
+  }
+
+  activity(hours: unknown) {
+    const source = this.config.analytics ? new AnalyticsSqlActivity(this.fetcher, this.config.analytics) : undefined;
+    return recentActivity(source, hours);
   }
 }

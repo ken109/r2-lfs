@@ -18,6 +18,6 @@ export default {
     if (!isAdmin(new URL(request.url).pathname)) return worker.fetch(request, env);
     const gate = await gateAdmin(request, env, { fetch: fetcher });
     if (!gate.ok) return gate.response;
-    return startHandler.fetch(request, { context: { admin: new WorkerAdminApi(env, gate.config, gate.email) } });
+    return startHandler.fetch(request, { context: { admin: new WorkerAdminApi(env, gate.config, gate.email, fetcher) } });
   },
 } satisfies ExportedHandler<Env>;

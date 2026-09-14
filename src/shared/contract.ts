@@ -16,6 +16,9 @@ export const TRASH_PREFIX = "_trash/";
 /** Tokens managed by `r2-lfs token`. */
 export const TOKENS_KEY = "_meta/tokens.json";
 
+/** The Workers Analytics Engine dataset request metrics go to; setup's Worker config binds it. */
+export const METRICS_DATASET = "r2_lfs";
+
 export const INFO_PATH = "/_r2-lfs/info";
 /** The admin UI. GitHub logins never start with `_`, so no repository path can collide with it. */
 export const ADMIN_PATH = "/_admin";

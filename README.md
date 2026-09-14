@@ -183,7 +183,7 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `PROXY_MAX_UPLOAD_MB`   | var    | `100`      | Largest upload accepted in proxy mode; your plan's request body limit.                                                                                                                                                                          |
 | `MAX_OBJECT_MB`         | var    |            | The largest object accepted, in MB.                                                                                                                                                                                                             |
 | `QUOTA_GB`              | var    |            | Storage each repository may use (the whole pool in the `shared` layout), in GB; uploads past it fail with 507.                                                                                                                                  |
-| `R2_ACCOUNT_ID`         | var    |            | Presigned mode: your Cloudflare account ID.                                                                                                                                                                                                     |
+| `R2_ACCOUNT_ID`         | var    |            | Presigned mode and the admin UI's activity page: your Cloudflare account ID.                                                                                                                                                                    |
 | `R2_BUCKET_NAME`        | var    |            | Presigned mode: the name of the bucket bound as `BUCKET` (`r2-lfs` in `wrangler.jsonc`).                                                                                                                                                        |
 | `R2_ACCESS_KEY_ID`      | secret |            | Presigned mode: an R2 API token with Object Read & Write on the bucket.                                                                                                                                                                         |
 | `R2_SECRET_ACCESS_KEY`  | secret |            | Presigned mode: its secret.                                                                                                                                                                                                                     |
@@ -194,6 +194,7 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `VERIFY_UPLOADS`        | var    | `on`       | Presigned mode: hash each upload before it counts as stored. `off` checks only the size, for the Free plan.                                                                                                                                     |
 | `AUTH_TOKENS`           | secret |            | Token mode: comma- or newline-separated `<repositories>:<r\|rw\|admin>:<token>` entries, where repositories are written as in [repository patterns](#repository-patterns), tokens of 16+ characters, in addition to tokens from `r2-lfs token`. |
 | `ENCRYPTION_KEY`        | secret |            | 32 bytes as base64 (`openssl rand -base64 32`) or hex. R2 stores new objects encrypted with it (SSE-C), and transfers go through the Worker. Objects cannot be read without the key.                                                            |
+| `ANALYTICS_API_TOKEN`   | secret |            | Admin UI: a Cloudflare API token with Account Analytics Read, to show requests by repository.                                                                                                                                                   |
 
 The Worker also writes one Workers Analytics Engine data point per request to the `r2_lfs` dataset:
 repository, endpoint, method, status and bytes proxied. Remove the `METRICS` binding to turn it off.
@@ -302,12 +303,15 @@ The Worker serves an admin UI at `/_admin`. It stays closed until Cloudflare Acc
 The Worker checks the token Access adds to every request against your team's signing keys, so the UI
 refuses requests that did not come through that application.
 
-It has three pages:
+It has four pages:
 
 - **Overview**: the server's settings and warnings, and on request a count of what each repository
   stores, the trash and unfinished uploads.
 - **Tokens**: create and revoke the tokens `r2-lfs token` keeps in the bucket. A new token is shown once.
 - **Locks**: a repository's file locks, with the holder and time, and unlocking any of them.
+- **Activity**: requests, bytes through the Worker and server errors by repository, from Workers
+  Analytics Engine. It needs `ANALYTICS_API_TOKEN` (`npx wrangler secret put ANALYTICS_API_TOKEN`) and
+  `R2_ACCOUNT_ID`.
 
 The UI changes nothing on requests from other sites: its server functions accept changes only with the
 admin UI's own `Origin`.

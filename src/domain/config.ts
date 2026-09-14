@@ -27,6 +27,8 @@ export interface ConfigVars {
   ACTIONS_OIDC?: string;
   VERIFY_UPLOADS?: string;
   ACTIONS_OIDC_AUDIENCE?: string;
+  /** A Cloudflare API token with Account Analytics Read, for the admin UI's activity page. */
+  ANALYTICS_API_TOKEN?: string;
 }
 
 export interface StaticToken {
@@ -87,6 +89,8 @@ export interface Config {
   warnings: readonly string[];
   /** Unset keeps the admin UI closed. */
   access: AccessSettings | undefined;
+  /** Reading Workers Analytics Engine through Cloudflare's SQL API. */
+  analytics: { accountId: string; apiToken: string } | undefined;
   actionsOidc: ActionsOidcSettings | undefined;
 }
 
@@ -253,6 +257,10 @@ export function parseConfig(vars: ConfigVars): Config {
     problems.push("ACCESS_TEAM_DOMAIN must be a host name such as my-team.cloudflareaccess.com");
   }
 
+  const analyticsToken = value(vars.ANALYTICS_API_TOKEN);
+  const accountId = value(vars.R2_ACCOUNT_ID);
+  if (analyticsToken && !accountId) problems.push("ANALYTICS_API_TOKEN needs R2_ACCOUNT_ID, the account the Worker runs in");
+
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
@@ -269,6 +277,7 @@ export function parseConfig(vars: ConfigVars): Config {
     tokens,
     warnings,
     access: teamDomain && aud ? { teamDomain: teamDomain.toLowerCase(), aud } : undefined,
+    analytics: analyticsToken && accountId ? { accountId, apiToken: analyticsToken } : undefined,
     actionsOidc: actionsMode === "off" ? undefined : { permission: actionsMode, audience: actionsAudience },
   };
 }

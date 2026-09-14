@@ -1,10 +1,13 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
+import { recentActivity } from "../../src/app/admin-activity.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../../src/app/admin-locks.ts";
 import { storageReport } from "../../src/app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../../src/app/admin-tokens.ts";
 import type { BucketLister } from "../../src/app/ports.ts";
+import { parseConfig } from "../../src/domain/config.ts";
+import { AnalyticsSqlActivity } from "../../src/infra/analytics-sql.ts";
 import { R2BucketLister } from "../../src/infra/r2-bucket-lister.ts";
 import { R2TokensFile, RandomTokenMinter } from "../../src/infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../../src/infra/repo-locks.ts";
@@ -148,5 +151,41 @@ describe("admin locks", () => {
     expect(await forceUnlock(store, lock.id)).toEqual({ ok: true, value: lock });
     expect((await repositoryLocks(store)).locks).toEqual([]);
     expect(await forceUnlock(store, lock.id)).toMatchObject({ ok: false, status: 404 });
+  });
+});
+
+describe("admin activity", () => {
+  it("queries Analytics Engine by repository when an API token is configured", async () => {
+    const seen: { url: string; auth: string | null; body: string }[] = [];
+    const source = new AnalyticsSqlActivity(
+      async (input, init) => {
+        const request = new Request(input, init);
+        seen.push({ url: request.url, auth: request.headers.get("Authorization"), body: await request.text() });
+        return Response.json({ data: [{ repo: "acme/game", requests: "12", bytes: 3456, errors: "1" }] });
+      },
+      { accountId: "acc123", apiToken: "api-token" },
+    );
+    expect(await recentActivity(source, 24)).toEqual({
+      ok: true,
+      value: { enabled: true, hours: 24, repositories: [{ repo: "acme/game", requests: 12, bytes: 3456, errors: 1 }] },
+    });
+    expect(seen[0]).toMatchObject({
+      url: "https://api.cloudflare.com/client/v4/accounts/acc123/analytics_engine/sql",
+      auth: "Bearer api-token",
+    });
+    expect(seen[0]?.body).toContain("FROM r2_lfs");
+    expect(seen[0]?.body).toContain("INTERVAL '24' HOUR");
+
+    expect(await recentActivity(source, 0.5)).toMatchObject({ ok: false, status: 422 });
+    expect(await recentActivity(undefined, 24)).toEqual({ ok: true, value: { enabled: false } });
+    const failing = new AnalyticsSqlActivity(async () => new Response("denied", { status: 403 }), { accountId: "a", apiToken: "t" });
+    expect(await recentActivity(failing, 1)).toMatchObject({ ok: false, status: 502, message: expect.stringContaining("403") });
+  });
+
+  it("needs the account id to query analytics", () => {
+    const base = { ALLOWED_REPOS: "acme/*", AUTH_MODE: "token" };
+    expect(parseConfig({ ...base, ANALYTICS_API_TOKEN: "t", R2_ACCOUNT_ID: "acc" }).analytics).toEqual({ accountId: "acc", apiToken: "t" });
+    expect(parseConfig(base).analytics).toBeUndefined();
+    expect(() => parseConfig({ ...base, ANALYTICS_API_TOKEN: "t" })).toThrow(/R2_ACCOUNT_ID/);
   });
 });

@@ -1,4 +1,5 @@
 import type { AuthMode, LfsLock, StorageLayout } from "../shared/contract.ts";
+import type { Activity } from "./admin-activity.ts";
 import type { StorageReport } from "./admin-storage.ts";
 import type { TokenSummary } from "./admin-tokens.ts";
 import type { Result } from "./lfs.ts";
@@ -33,4 +34,5 @@ export interface AdminApi {
   revokeToken(id: unknown): Promise<Result<TokenSummary>>;
   locks(repository: unknown, cursor?: unknown): Promise<Result<{ repository: string; locks: LfsLock[]; nextCursor?: string }>>;
   unlock(repository: unknown, id: unknown): Promise<Result<LfsLock>>;
+  activity(hours: unknown): Promise<Result<Activity>>;
 }

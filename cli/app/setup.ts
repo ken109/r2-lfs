@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   type AuthMode,
   INCOMING_PREFIX,
+  METRICS_DATASET,
   REPO_PATTERN,
   SHARED_PREFIX,
   type StorageLayout,
@@ -84,7 +85,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
     observability: { enabled: true },
     durable_objects: { bindings: [{ name: "LOCKS", class_name: "RepoLocks" }] },
     migrations: [{ tag: "v1", new_sqlite_classes: ["RepoLocks"] }],
-    analytics_engine_datasets: [{ binding: "METRICS", dataset: "r2_lfs" }],
+    analytics_engine_datasets: [{ binding: "METRICS", dataset: METRICS_DATASET }],
     r2_buckets: [{ binding: "BUCKET", bucket_name: opts.bucket }],
     vars: {
       ALLOWED_REPOS: opts.repos.join(","),

@@ -24,3 +24,7 @@ export const getLocks = createServerFn({ method: "GET" })
 export const unlock = createServerFn({ method: "POST" })
   .inputValidator((input: { repository: string; id: string }) => input)
   .handler(({ context, data }) => context.admin.unlock(data.repository, data.id));
+
+export const getActivity = createServerFn({ method: "GET" })
+  .inputValidator((input: { hours: number }) => input)
+  .handler(({ context, data }) => context.admin.activity(data.hours));
