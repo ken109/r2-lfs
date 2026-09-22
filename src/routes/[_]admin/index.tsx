@@ -96,6 +96,16 @@ function OverviewPage(): ReactNode {
             </dd>
             <dt>Tokens in AUTH_TOKENS</dt>
             <dd>{overview.staticTokens}</dd>
+            <dt>Short-lived tokens</dt>
+            <dd>
+              {overview.endpoints.sessions ? "on" : "off"} · <code>&lt;repository&gt;/r2-lfs/session</code>, used by{" "}
+              <code>r2-lfs credential</code>
+            </dd>
+            <dt>gc through the Worker</dt>
+            <dd>
+              {overview.endpoints.storage ? "on" : "off, the shared layout needs R2 API credentials"} ·{" "}
+              <code>&lt;repository&gt;/r2-lfs/objects</code>
+            </dd>
           </dl>
         </div>
       </section>

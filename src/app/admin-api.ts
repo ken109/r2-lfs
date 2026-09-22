@@ -19,6 +19,13 @@ export interface Overview {
   quotaBytes?: number;
   staticTokens: number;
   actionsOidc?: { permission: GrantedPermission; audience: string };
+  /** Endpoints under each repository's LFS URL besides the Git LFS API. */
+  endpoints: {
+    /** `r2-lfs/session`: trades Git host credentials for a short-lived token. */
+    sessions: boolean;
+    /** `r2-lfs/objects`: gc and restore through the Worker, in the per-repo layout only. */
+    storage: boolean;
+  };
   warnings: string[];
 }
 
@@ -38,6 +45,8 @@ export interface AdminApi {
   unlock(repository: unknown, id: unknown): Promise<Result<LfsLock>>;
   /** Requests in the last `hours`, by repository or of one `repository`. */
   activity(hours: unknown, repository?: unknown): Promise<Result<Activity>>;
+  /** Revokes every short-lived token by replacing the key they are signed with. */
+  rotateSessionKey(): Promise<Result<{ rotatedAt: string }>>;
   /** One page of a repository's live or trashed objects (`where`: `live` or `trash`). */
   objects(repository: unknown, where: unknown, cursor?: unknown): Promise<Result<StorageListing & { repository: string }>>;
   /** Trashes, restores or tiers up to MAX_STORAGE_CHANGES objects of a repository. */

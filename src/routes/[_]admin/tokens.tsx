@@ -1,7 +1,7 @@
 import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
 
-import { createToken, getTokens, revokeToken } from "./-functions.ts";
+import { createToken, getTokens, revokeToken, rotateSessionKey } from "./-functions.ts";
 import { ActionStatus, Caption, CopyButton, Failure, PageHeader, RouteError, RoutePending, Time, useAction, useConfirm } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/tokens")({
@@ -55,6 +55,23 @@ function TokensPage(): ReactNode {
       success: (value) => `Revoked ${value.label}`,
       after: () => router.invalidate(),
     });
+  }
+
+  async function rotate() {
+    const confirmed = await confirm({
+      title: "Rotate session key",
+      body: (
+        <p>
+          <strong>Every short-lived token</strong> stops working within 5 minutes, including the ones in transfers that are running now.
+          Tokens from <code>r2-lfs token</code> and <code>AUTH_TOKENS</code> are not affected.
+        </p>
+      ),
+      action: "Rotate session key",
+      danger: true,
+      typeToConfirm: "rotate",
+    });
+    if (!confirmed) return;
+    await action.run("rotate", () => rotateSessionKey(), { success: () => "Rotated the session key" });
   }
 
   return (
@@ -158,6 +175,21 @@ function TokensPage(): ReactNode {
         ) : (
           <Failure message={tokens.message} />
         )}
+      </section>
+
+      <section>
+        <h2>Short-lived tokens</h2>
+        <div className="panel">
+          <p className="lede" style={{ marginTop: 0 }}>
+            The Worker signs its own tokens for transfer actions (12 hours) and for <code>r2-lfs credential</code> (1 hour), with a key it
+            keeps in <code>_meta/session-key</code>. They keep the permission they were issued with until they expire. Rotating the key
+            revokes all of them within 5 minutes; clients then sign in again with their Git host credentials, and transfers in progress fail
+            and have to be retried.
+          </p>
+          <button type="button" className="danger" onClick={rotate} disabled={action.busy !== undefined}>
+            {action.busy === "rotate" ? "Rotating…" : "Rotate session key"}
+          </button>
+        </div>
       </section>
     </>
   );

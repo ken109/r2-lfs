@@ -2,6 +2,7 @@ import { recentActivity } from "../app/admin-activity.ts";
 import type { AdminApi, Overview } from "../app/admin-api.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../app/admin-objects.ts";
+import { rotateSessionKey } from "../app/admin-sessions.ts";
 import { countStorage, lastStorageReport } from "../app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../app/admin-tokens.ts";
 import type { Config } from "../domain/config.ts";
@@ -10,6 +11,7 @@ import { AnalyticsSqlActivity } from "../infra/analytics-sql.ts";
 import type { Fetcher } from "../infra/host-permissions.ts";
 import { R2BucketLister } from "../infra/r2-bucket-lister.ts";
 import { R2RepositoryStorage } from "../infra/r2-repository-storage.ts";
+import { R2SessionKey } from "../infra/r2-session-key.ts";
 import { R2StorageReport } from "../infra/r2-storage-report.ts";
 import { R2TokensFile, RandomTokenMinter } from "../infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
@@ -46,6 +48,8 @@ export class WorkerAdminApi implements AdminApi {
       ...(c.quotaBytes === undefined ? {} : { quotaBytes: c.quotaBytes }),
       staticTokens: c.tokens.length,
       ...(c.actionsOidc ? { actionsOidc: c.actionsOidc } : {}),
+      // As INFO_PATH reports them.
+      endpoints: { sessions: true, storage: c.storageLayout === "per-repo" },
       warnings: [...c.warnings],
     };
   }
@@ -91,6 +95,10 @@ export class WorkerAdminApi implements AdminApi {
   activity(hours: unknown, repository?: unknown) {
     const source = this.config.analytics ? new AnalyticsSqlActivity(this.fetcher, this.config.analytics) : undefined;
     return recentActivity(source, hours, repository);
+  }
+
+  rotateSessionKey() {
+    return rotateSessionKey({ keys: new R2SessionKey(this.env.BUCKET), now: () => new Date() });
   }
 
   private objectsDeps() {

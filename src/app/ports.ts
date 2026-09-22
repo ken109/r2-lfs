@@ -166,6 +166,11 @@ export interface SessionTokens {
   verify(token: string): Promise<SessionClaims | undefined>;
 }
 
+/** The key short-lived tokens are signed with; rotating it revokes them all. */
+export interface SessionKeyRotator {
+  rotate(): Promise<void>;
+}
+
 /** Which repository each name belongs to, recorded the first time the name is used. */
 export interface RepositoryIdentities {
   /** Records `id` for the name if none is recorded; false when a different repository already holds the name. */

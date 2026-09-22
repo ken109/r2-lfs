@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { recentActivity } from "../../src/app/admin-activity.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../../src/app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../../src/app/admin-objects.ts";
+import { rotateSessionKey } from "../../src/app/admin-sessions.ts";
 import { countStorage, lastStorageReport, storageReport } from "../../src/app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../../src/app/admin-tokens.ts";
 import type { BucketLister } from "../../src/app/ports.ts";
@@ -11,9 +12,11 @@ import { parseConfig } from "../../src/domain/config.ts";
 import { AnalyticsSqlActivity } from "../../src/infra/analytics-sql.ts";
 import { R2BucketLister } from "../../src/infra/r2-bucket-lister.ts";
 import { R2RepositoryStorage } from "../../src/infra/r2-repository-storage.ts";
+import { R2SessionKey } from "../../src/infra/r2-session-key.ts";
 import { R2StorageReport, STORAGE_REPORT_KEY } from "../../src/infra/r2-storage-report.ts";
 import { R2TokensFile, RandomTokenMinter } from "../../src/infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../../src/infra/repo-locks.ts";
+import { HmacSessionTokens } from "../../src/infra/session-tokens.ts";
 import { CombinedTokenDirectory } from "../../src/infra/token-directory.ts";
 import {
   chunks,
@@ -283,6 +286,23 @@ describe("admin repository objects", () => {
     expect(await recentActivity(source, 24, "Acme/Game")).toMatchObject({ ok: true });
     expect(bodies[0]).toContain("AND blob1 = 'acme/game'");
     expect(await recentActivity(source, 24, "acme")).toMatchObject({ ok: false, status: 422 });
+  });
+});
+
+describe("admin session key", () => {
+  it("rotates the key, revoking the tokens signed with it", async () => {
+    const sessions = new HmacSessionTokens(env.BUCKET);
+    const token = await sessions.mint({ repo: "acme/game", permission: "write", expires: Math.floor(Date.now() / 1000) + 600 });
+    expect(await sessions.verify(token)).toMatchObject({ repo: "acme/game" });
+
+    expect(await rotateSessionKey({ keys: new R2SessionKey(env.BUCKET), now: () => new Date("2026-09-14T00:00:00Z") })).toEqual({
+      ok: true,
+      value: { rotatedAt: "2026-09-14T00:00:00.000Z" },
+    });
+    expect(await sessions.verify(token)).toBeUndefined();
+
+    const broken = { rotate: async () => Promise.reject(new Error("R2 is down")) };
+    expect(await rotateSessionKey({ keys: broken, now: () => new Date() })).toMatchObject({ ok: false, status: 502 });
   });
 });
 

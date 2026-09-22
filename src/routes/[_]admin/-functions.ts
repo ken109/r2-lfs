@@ -39,3 +39,5 @@ export const getObjects = createServerFn({ method: "GET" })
 export const changeObjects = createServerFn({ method: "POST" })
   .inputValidator((input: { repository: string; action: "trash" | "restore" | "tier"; oids: string[] }) => input)
   .handler(({ context, data }) => context.admin.changeObjects(data.repository, data.action, data.oids));
+
+export const rotateSessionKey = createServerFn({ method: "POST" }).handler(({ context }) => context.admin.rotateSessionKey());

@@ -363,7 +363,8 @@ It has these pages:
 - **Repository** (open one from the other pages): its live and trashed objects, which you can move to the trash,
   restore or move to Infrequent Access as `gc` and `restore` would, and its file locks and requests. Objects can be
   changed in the `per-repo` layout only.
-- **Tokens**: create and revoke the tokens `r2-lfs token` keeps in the bucket. A new token is shown once.
+- **Tokens**: create and revoke the tokens `r2-lfs token` keeps in the bucket. A new token is shown once. It also
+  rotates the key the Worker signs its short-lived tokens with, which revokes all of them within 5 minutes.
 - **Locks**: a repository's file locks, with the holder and time, and unlocking any of them.
 - **Activity**: requests, bytes through the Worker and server errors by repository, from Workers
   Analytics Engine. It needs `ANALYTICS_API_TOKEN` (`npx wrangler secret put ANALYTICS_API_TOKEN`) and
@@ -390,7 +391,8 @@ admin UI's own `Origin`.
   token the Worker signs for that one object, valid for 12 hours, rather than the client's credentials, and
   `POST <repository>/r2-lfs/session` trades host credentials for a one-hour token for the repository, which
   `r2-lfs credential` does for you. Such a token keeps the permission it was issued with until it expires;
-  delete `_meta/session-key` from the bucket to revoke every token at once.
+  rotate the session key on the admin UI's Tokens page, or delete `_meta/session-key` from the bucket, to revoke every
+  token at once.
 - In the `shared` layout an object is stored once, but a repository can read it only after uploading its
   content itself, so knowing an oid is not enough. With `VERIFY_UPLOADS=off` in presigned mode, a
   writer can claim an object by its oid and size; use `per-repo` if that matters.
