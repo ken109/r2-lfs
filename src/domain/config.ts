@@ -1,4 +1,4 @@
-import { type AuthMode, REPO_PATTERN, type ServerInfo, type StorageLayout, VERSION } from "../shared/contract.ts";
+import { type AuthMode, type GrantedPermission, REPO_PATTERN, type ServerInfo, type StorageLayout, VERSION } from "../shared/contract.ts";
 
 /** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
 export interface ConfigVars {
@@ -34,7 +34,7 @@ export interface ConfigVars {
 export interface StaticToken {
   /** A REPO_PATTERN, lowercased. */
   scope: string;
-  permission: "read" | "write" | "admin";
+  permission: GrantedPermission;
   token: string;
   /** How file locks name the holder: `AUTH_TOKENS #<n>`. */
   holder: string;
@@ -58,7 +58,7 @@ export interface AccessSettings {
 /** GitHub Actions workflows authenticating with their OIDC token, for their own repository only. */
 export interface ActionsOidcSettings {
   /** `admin` lets a scheduled workflow run gc through the server. */
-  permission: "read" | "write" | "admin";
+  permission: GrantedPermission;
   /** The `aud` workflows request the token for. */
   audience: string;
 }

@@ -3,6 +3,7 @@ import type { Config } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import {
   MAX_STORAGE_CHANGES,
+  OID_PATTERN,
   repoPrefix,
   type StorageAction,
   type StorageChanges,
@@ -19,8 +20,6 @@ export interface StorageContext {
   permission: Permission;
   storage: RepositoryStorage;
 }
-
-const OID = /^[0-9a-f]{64}$/;
 
 const reject = (status: number, message: string): Result<never> => ({ ok: false, status, message });
 
@@ -45,7 +44,7 @@ export async function listObjects(ctx: StorageContext, where: string | null, cur
   const page = await ctx.storage.list(prefix, cursor ?? undefined);
   const objects = page.objects.flatMap((o) => {
     const oid = o.key.slice(prefix.length);
-    if (!OID.test(oid)) return [];
+    if (!OID_PATTERN.test(oid)) return [];
     const storageClass = o.storageClass === "InfrequentAccess" ? ("STANDARD_IA" as const) : ("STANDARD" as const);
     return [{ oid, size: o.size, uploaded: o.uploaded.toISOString(), storage_class: storageClass }];
   });
@@ -54,7 +53,7 @@ export async function listObjects(ctx: StorageContext, where: string | null, cur
 
 function parseOids(body: unknown): Result<string[]> {
   const oids = (body as { oids?: unknown } | null)?.oids;
-  if (!Array.isArray(oids) || oids.length === 0 || !oids.every((o): o is string => typeof o === "string" && OID.test(o))) {
+  if (!Array.isArray(oids) || oids.length === 0 || !oids.every((o): o is string => typeof o === "string" && OID_PATTERN.test(o))) {
     return reject(422, "oids must be a non-empty array of SHA-256 oids");
   }
   if (oids.length > MAX_STORAGE_CHANGES) return reject(422, `At most ${MAX_STORAGE_CHANGES} oids per request`);

@@ -1,4 +1,4 @@
-import type { AuthMode, LfsLock, StorageLayout } from "../shared/contract.ts";
+import type { AuthMode, GrantedPermission, LfsLock, StorageLayout } from "../shared/contract.ts";
 import type { Activity } from "./admin-activity.ts";
 import type { StorageReport } from "./admin-storage.ts";
 import type { TokenSummary } from "./admin-tokens.ts";
@@ -18,7 +18,7 @@ export interface Overview {
   maxObjectBytes?: number;
   quotaBytes?: number;
   staticTokens: number;
-  actionsOidc?: { permission: "read" | "write" | "admin"; audience: string };
+  actionsOidc?: { permission: GrantedPermission; audience: string };
   warnings: string[];
 }
 

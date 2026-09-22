@@ -91,12 +91,19 @@ export interface StorageChanges {
   }[];
 }
 
+/** What a token or a session may do in a repository. `admin` can also unlock other people's file locks. */
+export type GrantedPermission = "read" | "write" | "admin";
+
+export function isGrantedPermission(value: unknown): value is GrantedPermission {
+  return value === "read" || value === "write" || value === "admin";
+}
+
 /** What the session endpoint answers with status 200. */
 export interface SessionResponse {
   token: string;
   /** ISO 8601. */
   expires_at: string;
-  permission: "read" | "write" | "admin";
+  permission: GrantedPermission;
 }
 
 /** A transfer action in a Git LFS batch response. */
@@ -141,8 +148,7 @@ export interface StoredToken {
   label: string;
   /** A REPO_PATTERN, lowercased. */
   scope: string;
-  /** `admin` can also unlock other people's file locks. */
-  permission: "read" | "write" | "admin";
+  permission: GrantedPermission;
   /** Hex SHA-256 of the token; the token itself is never stored. */
   sha256: string;
   created: string;
@@ -162,7 +168,7 @@ export function storedTokensIn(value: unknown): StoredToken[] | undefined {
       typeof t === "object" &&
       t !== null &&
       [t.id, t.label, t.scope, t.sha256, t.created].every((field) => typeof field === "string") &&
-      (t.permission === "read" || t.permission === "write" || t.permission === "admin"),
+      isGrantedPermission(t.permission),
   );
   return valid ? file.tokens : undefined;
 }
@@ -241,7 +247,9 @@ export function revokeStoredToken(file: TokensFile, idOrLabel: string): TokenEdi
   return { ok: true, file: { ...file, tokens: file.tokens.filter((t) => t !== entry) }, entry };
 }
 
-export const OID_PATTERN = /^[0-9a-f]{64}$/;
+/** An LFS object id, a hex SHA-256, as a regular expression source. */
+export const LFS_OID = "[0-9a-f]{64}";
+export const OID_PATTERN = new RegExp(`^${LFS_OID}$`);
 
 /** The custom transfer `r2-lfs transfer-agent` implements: resumable multipart uploads through the Worker. */
 export const MULTIPART_TRANSFER = "r2-lfs-multipart";

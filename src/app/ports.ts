@@ -1,7 +1,7 @@
 import type { Grant, Permission } from "../domain/access.ts";
 import type { AccessSettings } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
-import type { LfsAction, LfsLock, TokensFile } from "../shared/contract.ts";
+import type { GrantedPermission, LfsAction, LfsLock, TokensFile } from "../shared/contract.ts";
 
 /** Where LFS objects live. */
 export interface ObjectStore {
@@ -150,7 +150,7 @@ export interface RepositoryStorage {
 export interface SessionClaims {
   /** `owner/repo`, lowercased. */
   repo: string;
-  permission: "read" | "write" | "admin";
+  permission: GrantedPermission;
   /** Unix seconds. */
   expires: number;
   /** Who holds it, as file locks name them. */

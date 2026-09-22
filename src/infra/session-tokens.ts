@@ -1,5 +1,5 @@
 import type { SessionClaims, SessionTokens } from "../app/ports.ts";
-import { SESSION_KEY_KEY, SESSION_TOKEN_PREFIX } from "../shared/contract.ts";
+import { isGrantedPermission, SESSION_KEY_KEY, SESSION_TOKEN_PREFIX } from "../shared/contract.ts";
 
 const KEY_TTL_MS = 5 * 60_000;
 // Per isolate. Deleting the key object revokes every token once isolates reload it.
@@ -26,14 +26,12 @@ function fromBase64url(text: string): Uint8Array<ArrayBuffer> | undefined {
   }
 }
 
-const PERMISSIONS = new Set(["read", "write", "admin"]);
-
 function parseClaims(json: unknown): SessionClaims | undefined {
   const c = json as Record<string, unknown> | null;
-  if (typeof c?.r !== "string" || typeof c.p !== "string" || !PERMISSIONS.has(c.p) || typeof c.e !== "number") return undefined;
+  if (typeof c?.r !== "string" || !isGrantedPermission(c.p) || typeof c.e !== "number") return undefined;
   return {
     repo: c.r,
-    permission: c.p as SessionClaims["permission"],
+    permission: c.p,
     expires: c.e,
     ...(typeof c.u === "string" ? { login: c.u } : {}),
     ...(typeof c.o === "string" ? { oid: c.o } : {}),

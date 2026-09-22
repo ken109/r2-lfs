@@ -1,9 +1,9 @@
-import { repoPatternMatches } from "../shared/contract.ts";
+import { type GrantedPermission, repoPatternMatches } from "../shared/contract.ts";
 import type { Config } from "./config.ts";
 import type { Repo } from "./repo.ts";
 
 /** `admin` adds unlocking other people's file locks to `write`. */
-export type Permission = "none" | "read" | "write" | "admin";
+export type Permission = "none" | GrantedPermission;
 
 const RANK: Record<Permission, number> = { none: 0, read: 1, write: 2, admin: 3 };
 
@@ -17,7 +17,7 @@ export function repoAllowed(config: Config, repo: Repo): boolean {
 
 export interface Grant {
   scope: string;
-  permission: "read" | "write" | "admin";
+  permission: GrantedPermission;
   /** Who the token belongs to, as file locks show it. */
   holder: string;
 }
