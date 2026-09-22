@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { getActivity } from "./-functions.ts";
-import { Caption, Failure, formatBytes, formatCount, PageHeader } from "./-ui.tsx";
+import { Caption, Failure, formatBytes, formatCount, PageHeader, RouteError, RoutePending } from "./-ui.tsx";
 
 const PERIODS = [
   { hours: 1, label: "Last hour" },
@@ -18,6 +18,8 @@ export const Route = createFileRoute("/_admin/activity")({
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => getActivity({ data: { hours: deps.hours } }),
   component: ActivityPage,
+  errorComponent: RouteError,
+  pendingComponent: RoutePending,
 });
 
 function ActivityPage(): ReactNode {

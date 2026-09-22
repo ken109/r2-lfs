@@ -1,12 +1,14 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, type ErrorComponentProps, Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { getOverview } from "./-functions.ts";
-import { STYLES } from "./-ui.tsx";
+import { RouteError, RoutePending, STYLES } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin")({
   loader: () => getOverview(),
   component: AdminLayout,
+  errorComponent: AdminError,
+  pendingComponent: AdminPending,
 });
 
 const PAGES = [
@@ -43,6 +45,27 @@ function AdminLayout(): ReactNode {
           <Outlet />
         </main>
       </div>
+    </>
+  );
+}
+
+/** Without the layout's data there is no sidebar; the page still gets the styles and a way to retry. */
+function AdminError(props: ErrorComponentProps): ReactNode {
+  return (
+    <>
+      <style>{STYLES}</style>
+      <main>
+        <RouteError {...props} />
+      </main>
+    </>
+  );
+}
+
+function AdminPending(): ReactNode {
+  return (
+    <>
+      <style>{STYLES}</style>
+      <RoutePending />
     </>
   );
 }

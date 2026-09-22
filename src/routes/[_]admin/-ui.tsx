@@ -1,3 +1,4 @@
+import { type ErrorComponentProps, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { formatDate, formatRelative } from "./-format.ts";
@@ -25,6 +26,85 @@ export function Time({ iso, relative = true }: { iso: string; relative?: boolean
     <time dateTime={iso} title={exact}>
       {relative && hydrated ? formatRelative(iso, Date.now()) : exact}
     </time>
+  );
+}
+
+const describe = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+export interface Action {
+  /** The key of the task that is running, if one is. */
+  busy: string | undefined;
+  failure: string | undefined;
+  /** What the last task that succeeded reported, shown as a toast for a few seconds. */
+  done: string | undefined;
+  /**
+   * Runs `task` unless another task of this page is running, and reports a failed outcome or a thrown error as the
+   * failure. `success` names what was done; `after` runs once it succeeded, such as reloading the page's data.
+   */
+  run<T>(
+    key: string,
+    task: () => Promise<Outcome<T>>,
+    options?: { success?: (value: T) => string | undefined; after?: (value: T) => unknown },
+  ): Promise<T | undefined>;
+  dismiss(): void;
+}
+
+/** Changes a page makes: one at a time, with the failure or a toast that says what happened. */
+export function useAction(): Action {
+  const [busy, setBusy] = useState<string>();
+  const [failure, setFailure] = useState<string>();
+  const [done, setDone] = useState<string>();
+  // State updates arrive after a render; the ref stops a second click that lands before it.
+  const running = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  return {
+    busy,
+    failure,
+    done,
+    async run(key, task, options = {}) {
+      if (running.current) return undefined;
+      running.current = true;
+      setBusy(key);
+      setFailure(undefined);
+      try {
+        const outcome = await task();
+        if (!outcome.ok) {
+          setFailure(outcome.message);
+          return undefined;
+        }
+        const message = options.success?.(outcome.value);
+        if (message) {
+          clearTimeout(timer.current);
+          setDone(message);
+          timer.current = setTimeout(() => setDone(undefined), 5000);
+        }
+        await options.after?.(outcome.value);
+        return outcome.value;
+      } catch (err) {
+        setFailure(describe(err));
+        return undefined;
+      } finally {
+        running.current = false;
+        setBusy(undefined);
+      }
+    },
+    dismiss() {
+      setFailure(undefined);
+    },
+  };
+}
+
+/** Where a page's action reports: its failure in place, and a toast for what succeeded. */
+export function ActionStatus({ action }: { action: Action }): ReactNode {
+  return (
+    <>
+      {action.failure ? <Failure message={action.failure} /> : null}
+      <div className="toast-region" role="status" aria-live="polite">
+        {action.done ? <div className="toast">{action.done}</div> : null}
+      </div>
+    </>
   );
 }
 
@@ -78,6 +158,38 @@ export function CopyButton({ text, target }: { text: string; target: () => HTMLE
         {state === "copied" ? "Copied to the clipboard" : state === "manual" ? "Selected: press Ctrl+C or ⌘C to copy" : ""}
       </span>
     </>
+  );
+}
+
+/** What a page shows when loading it threw, such as a lost connection or a Worker error. */
+export function RouteError({ error, reset }: ErrorComponentProps): ReactNode {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+  async function retry() {
+    setRetrying(true);
+    try {
+      reset();
+      await router.invalidate();
+    } finally {
+      setRetrying(false);
+    }
+  }
+  return (
+    <>
+      <PageHeader title="This page did not load" />
+      <Failure message={describe(error)} />
+      <button type="button" className="primary" onClick={retry} disabled={retrying}>
+        {retrying ? "Retrying…" : "Try again"}
+      </button>
+    </>
+  );
+}
+
+export function RoutePending(): ReactNode {
+  return (
+    <p className="pending" role="status">
+      Loading…
+    </p>
   );
 }
 
@@ -145,6 +257,9 @@ button:disabled { opacity: 0.6; cursor: default; }
 .secret code { background: var(--bg); padding: 6px 10px; border-radius: 6px; overflow-wrap: anywhere; flex: 1; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .hint { font-size: 12px; color: var(--muted); }
+.toast-region { position: fixed; right: 20px; bottom: 20px; z-index: 10; }
+.toast { background: var(--text); color: var(--bg); border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); max-width: 360px; }
+.pending { color: var(--muted); padding: 28px 32px; }
 .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 @media (max-width: 720px) { .shell { grid-template-columns: 1fr; } .sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { margin: 0 12px 0 0; align-self: center; } .who { display: none; } main { padding: 20px 16px 40px; } }

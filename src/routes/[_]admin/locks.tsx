@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
-import { type FormEvent, type ReactNode, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 
 import { getLocks, unlock } from "./-functions.ts";
-import { Caption, Failure, PageHeader, Time } from "./-ui.tsx";
+import { ActionStatus, Caption, Failure, PageHeader, RouteError, RoutePending, Time, useAction } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/locks")({
   validateSearch: (search: Record<string, unknown>): { repo?: string; cursor?: string } => ({
@@ -13,6 +13,8 @@ export const Route = createFileRoute("/_admin/locks")({
   loader: ({ deps }) =>
     deps.repo ? getLocks({ data: { repository: deps.repo, ...(deps.cursor ? { cursor: deps.cursor } : {}) } }) : undefined,
   component: LocksPage,
+  errorComponent: RouteError,
+  pendingComponent: RoutePending,
 });
 
 function LocksPage(): ReactNode {
@@ -20,7 +22,7 @@ function LocksPage(): ReactNode {
   const result = Route.useLoaderData();
   const navigate = useNavigate({ from: Route.fullPath });
   const router = useRouter();
-  const [failure, setFailure] = useState<string>();
+  const action = useAction();
 
   function lookUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,10 +32,10 @@ function LocksPage(): ReactNode {
 
   async function release(repository: string, id: string, path: string, owner: string) {
     if (!confirm(`Unlock ${path}, held by ${owner}? Their next push of it may conflict with someone else's work.`)) return;
-    setFailure(undefined);
-    const outcome = await unlock({ data: { repository, id } });
-    if (!outcome.ok) setFailure(outcome.message);
-    await router.invalidate();
+    await action.run(id, () => unlock({ data: { repository, id } }), {
+      success: (lock) => `Unlocked ${lock.path}`,
+      after: () => router.invalidate(),
+    });
   }
 
   return (
@@ -54,7 +56,7 @@ function LocksPage(): ReactNode {
         </form>
       </section>
 
-      {failure ? <Failure message={failure} /> : null}
+      <ActionStatus action={action} />
 
       {result === undefined ? null : result.ok ? (
         <section>
@@ -88,9 +90,10 @@ function LocksPage(): ReactNode {
                           type="button"
                           className="danger"
                           aria-label={`Unlock ${lock.path}`}
+                          disabled={action.busy !== undefined}
                           onClick={() => release(result.value.repository, lock.id, lock.path, lock.owner.name)}
                         >
-                          Unlock
+                          {action.busy === lock.id ? "Unlocking…" : "Unlock"}
                         </button>
                       </td>
                     </tr>

@@ -2,11 +2,13 @@ import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router"
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createToken, getTokens, revokeToken } from "./-functions.ts";
-import { Caption, CopyButton, Failure, PageHeader, Time } from "./-ui.tsx";
+import { ActionStatus, Caption, CopyButton, Failure, PageHeader, RouteError, RoutePending, Time, useAction } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/tokens")({
   loader: () => getTokens(),
   component: TokensPage,
+  errorComponent: RouteError,
+  pendingComponent: RoutePending,
 });
 
 const layout = getRouteApi("/_admin");
@@ -15,32 +17,30 @@ function TokensPage(): ReactNode {
   const tokens = Route.useLoaderData();
   const { authMode } = layout.useLoaderData();
   const router = useRouter();
+  const action = useAction();
   const [created, setCreated] = useState<{ label: string; token: string }>();
-  const [failure, setFailure] = useState<string>();
-  const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const fields = new FormData(form);
-    setBusy(true);
-    setFailure(undefined);
-    const result = await createToken({
-      data: { label: String(fields.get("label")), scope: String(fields.get("scope")), permission: String(fields.get("permission")) },
+    const data = { label: String(fields.get("label")), scope: String(fields.get("scope")), permission: String(fields.get("permission")) };
+    await action.run("create", () => createToken({ data }), {
+      success: (value) => `Created ${value.entry.label}`,
+      after: async (value) => {
+        setCreated({ label: value.entry.label, token: value.token });
+        form.reset();
+        await router.invalidate();
+      },
     });
-    setBusy(false);
-    if (!result.ok) return setFailure(result.message);
-    setCreated({ label: result.value.entry.label, token: result.value.token });
-    form.reset();
-    await router.invalidate();
   }
 
   async function revoke(id: string, label: string) {
     if (!confirm(`Revoke ${label}? Clients using it stop working within 30 seconds.`)) return;
-    setFailure(undefined);
-    const result = await revokeToken({ data: { id } });
-    if (!result.ok) setFailure(result.message);
-    await router.invalidate();
+    await action.run(`revoke:${id}`, () => revokeToken({ data: { id } }), {
+      success: (value) => `Revoked ${value.label}`,
+      after: () => router.invalidate(),
+    });
   }
 
   return (
@@ -72,12 +72,12 @@ function TokensPage(): ReactNode {
                 <option value="admin">admin (can unlock others' locks)</option>
               </select>
             </label>
-            <button type="submit" className="primary" disabled={busy}>
-              {busy ? "Creating…" : "Create"}
+            <button type="submit" className="primary" disabled={action.busy !== undefined}>
+              {action.busy === "create" ? "Creating…" : "Create"}
             </button>
           </form>
           {created ? (
-            <div className="notice" role="status">
+            <div className="notice">
               Token for <strong>{created.label}</strong>. Copy it now: it is not shown again.
               <div className="secret">
                 <code id="new-token">{created.token}</code>
@@ -88,7 +88,7 @@ function TokensPage(): ReactNode {
         </div>
       </section>
 
-      {failure ? <Failure message={failure} /> : null}
+      <ActionStatus action={action} />
 
       <section>
         <h2>Tokens</h2>
@@ -128,9 +128,10 @@ function TokensPage(): ReactNode {
                           type="button"
                           className="danger"
                           aria-label={`Revoke ${token.label}`}
+                          disabled={action.busy !== undefined}
                           onClick={() => revoke(token.id, token.label)}
                         >
-                          Revoke
+                          {action.busy === `revoke:${token.id}` ? "Revoking…" : "Revoke"}
                         </button>
                       </td>
                     </tr>

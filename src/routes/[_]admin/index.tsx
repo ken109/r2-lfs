@@ -3,10 +3,12 @@ import { type ReactNode, useState } from "react";
 
 import type { StorageReport } from "../../app/admin-storage.ts";
 import { getStorage } from "./-functions.ts";
-import { Caption, Failure, formatBytes, formatCount, PageHeader } from "./-ui.tsx";
+import { ActionStatus, Caption, formatBytes, formatCount, PageHeader, RouteError, RoutePending, useAction } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/")({
   component: OverviewPage,
+  errorComponent: RouteError,
+  pendingComponent: RoutePending,
 });
 
 const layout = getRouteApi("/_admin");
@@ -15,18 +17,14 @@ const limit = (bytes: number | undefined) => (bytes === undefined ? "no limit" :
 
 function OverviewPage(): ReactNode {
   const overview = layout.useLoaderData();
-  const [storage, setStorage] = useState<StorageReport | "loading" | undefined>();
-  const [failure, setFailure] = useState<string>();
+  const [storage, setStorage] = useState<StorageReport>();
+  const action = useAction();
 
   async function countStorage() {
-    setStorage("loading");
-    setFailure(undefined);
-    try {
-      setStorage(await getStorage());
-    } catch (err) {
-      setStorage(undefined);
-      setFailure(err instanceof Error ? err.message : String(err));
-    }
+    await action.run("count", async () => ({ ok: true as const, value: await getStorage() }), {
+      success: (report) => `Counted ${formatCount(report.total.objects)} objects`,
+      after: setStorage,
+    });
   }
 
   return (
@@ -82,15 +80,15 @@ function OverviewPage(): ReactNode {
 
       <section>
         <h2>Storage</h2>
-        {storage === undefined || storage === "loading" ? (
+        {storage === undefined ? (
           <div className="panel">
             <p className="lede" style={{ marginTop: 0 }}>
               Counting lists the whole bucket, which R2 bills as Class A operations: one per 1,000 objects.
             </p>
-            <button type="button" className="primary" onClick={countStorage} disabled={storage === "loading"}>
-              {storage === "loading" ? "Counting…" : "Count storage"}
+            <button type="button" className="primary" onClick={countStorage} disabled={action.busy !== undefined}>
+              {action.busy === "count" ? "Counting…" : "Count storage"}
             </button>
-            {failure ? <Failure message={failure} /> : null}
+            <ActionStatus action={action} />
           </div>
         ) : (
           <StorageView report={storage} shared={overview.storageLayout === "shared"} />
