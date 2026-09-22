@@ -166,6 +166,27 @@ export interface SessionTokens {
   verify(token: string): Promise<SessionClaims | undefined>;
 }
 
+/** One change made in the admin UI. */
+export interface AuditEntry {
+  /** ISO 8601. */
+  at: string;
+  email: string;
+  /** Such as `token.revoke` or `objects.trash`. */
+  action: string;
+  /** What it acted on: a token, a repository, a path. */
+  target: string;
+  /** `refused` when the person may only look. */
+  outcome: "done" | "failed" | "refused";
+  detail?: string;
+}
+
+/** Changes made in the admin UI, kept in the bucket. */
+export interface AuditLog {
+  record(entry: AuditEntry): Promise<void>;
+  /** Newest first. `cursor` continues a previous page. */
+  list(cursor: string | undefined, limit: number): Promise<{ entries: AuditEntry[]; cursor?: string }>;
+}
+
 /** The key short-lived tokens are signed with; rotating it revokes them all. */
 export interface SessionKeyRotator {
   rotate(): Promise<void>;

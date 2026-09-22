@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AdminRouteRouteImport } from './routes/[_]admin/route'
 import { Route as AdminIndexRouteImport } from './routes/[_]admin/index'
 import { Route as AdminActivityRouteImport } from './routes/[_]admin/activity'
+import { Route as AdminAuditRouteImport } from './routes/[_]admin/audit'
 import { Route as AdminLocksRouteImport } from './routes/[_]admin/locks'
 import { Route as AdminTokensRouteImport } from './routes/[_]admin/tokens'
 import { Route as AdminReposOwnerNameRouteImport } from './routes/[_]admin/repos.$owner.$name'
@@ -29,6 +30,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminActivityRoute = AdminActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAuditRoute = AdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminLocksRoute = AdminLocksRouteImport.update({
@@ -50,6 +56,7 @@ const AdminReposOwnerNameRoute = AdminReposOwnerNameRouteImport.update({
 export interface FileRoutesByFullPath {
   '/_admin': typeof AdminRouteRouteWithChildren
   '/_admin/activity': typeof AdminActivityRoute
+  '/_admin/audit': typeof AdminAuditRoute
   '/_admin/locks': typeof AdminLocksRoute
   '/_admin/tokens': typeof AdminTokensRoute
   '/_admin/': typeof AdminIndexRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/_admin/activity': typeof AdminActivityRoute
+  '/_admin/audit': typeof AdminAuditRoute
   '/_admin/locks': typeof AdminLocksRoute
   '/_admin/tokens': typeof AdminTokensRoute
   '/_admin': typeof AdminIndexRoute
@@ -66,6 +74,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_admin': typeof AdminRouteRouteWithChildren
   '/_admin/activity': typeof AdminActivityRoute
+  '/_admin/audit': typeof AdminAuditRoute
   '/_admin/locks': typeof AdminLocksRoute
   '/_admin/tokens': typeof AdminTokensRoute
   '/_admin/': typeof AdminIndexRoute
@@ -76,6 +85,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/_admin'
     | '/_admin/activity'
+    | '/_admin/audit'
     | '/_admin/locks'
     | '/_admin/tokens'
     | '/_admin/'
@@ -83,6 +93,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/_admin/activity'
+    | '/_admin/audit'
     | '/_admin/locks'
     | '/_admin/tokens'
     | '/_admin'
@@ -91,6 +102,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_admin'
     | '/_admin/activity'
+    | '/_admin/audit'
     | '/_admin/locks'
     | '/_admin/tokens'
     | '/_admin/'
@@ -124,6 +136,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminActivityRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/_admin/audit': {
+      id: '/_admin/audit'
+      path: '/audit'
+      fullPath: '/_admin/audit'
+      preLoaderRoute: typeof AdminAuditRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/_admin/locks': {
       id: '/_admin/locks'
       path: '/locks'
@@ -150,6 +169,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteRouteChildren {
   AdminActivityRoute: typeof AdminActivityRoute
+  AdminAuditRoute: typeof AdminAuditRoute
   AdminLocksRoute: typeof AdminLocksRoute
   AdminTokensRoute: typeof AdminTokensRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -158,6 +178,7 @@ interface AdminRouteRouteChildren {
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminActivityRoute: AdminActivityRoute,
+  AdminAuditRoute: AdminAuditRoute,
   AdminLocksRoute: AdminLocksRoute,
   AdminTokensRoute: AdminTokensRoute,
   AdminIndexRoute: AdminIndexRoute,

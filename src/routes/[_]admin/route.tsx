@@ -16,6 +16,7 @@ const PAGES = [
   { to: "/_admin/tokens", label: "Tokens", exact: false },
   { to: "/_admin/locks", label: "Locks", exact: false },
   { to: "/_admin/activity", label: "Activity", exact: false },
+  { to: "/_admin/audit", label: "Audit", exact: false },
 ] as const;
 
 function AdminLayout(): ReactNode {
@@ -42,6 +43,11 @@ function AdminLayout(): ReactNode {
           <div className="who">Signed in as {overview.email}</div>
         </nav>
         <main>
+          {overview.access.canChange ? null : (
+            <p className="notice warn" id="read-only">
+              {overview.access.reason}. Buttons that change something are turned off.
+            </p>
+          )}
           <Outlet />
         </main>
       </div>

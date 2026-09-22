@@ -2,7 +2,19 @@ import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router"
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createToken, getTokens, revokeToken, rotateSessionKey } from "./-functions.ts";
-import { ActionStatus, Caption, CopyButton, Failure, PageHeader, RouteError, RoutePending, Time, useAction, useConfirm } from "./-ui.tsx";
+import {
+  ActionStatus,
+  Caption,
+  CopyButton,
+  Failure,
+  PageHeader,
+  RouteError,
+  RoutePending,
+  Time,
+  useAction,
+  useConfirm,
+  useReadOnly,
+} from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/tokens")({
   loader: () => getTokens(),
@@ -18,6 +30,7 @@ function TokensPage(): ReactNode {
   const { authMode } = layout.useLoaderData();
   const router = useRouter();
   const action = useAction();
+  const readOnly = useReadOnly();
   const { confirm, dialog } = useConfirm();
   const [created, setCreated] = useState<{ label: string; token: string }>();
 
@@ -103,7 +116,7 @@ function TokensPage(): ReactNode {
                 <option value="admin">admin (can unlock others' locks)</option>
               </select>
             </label>
-            <button type="submit" className="primary" disabled={action.busy !== undefined}>
+            <button type="submit" className="primary" disabled={action.busy !== undefined || readOnly !== undefined} title={readOnly}>
               {action.busy === "create" ? "Creating…" : "Create"}
             </button>
           </form>
@@ -160,7 +173,8 @@ function TokensPage(): ReactNode {
                           type="button"
                           className="danger"
                           aria-label={`Revoke ${token.label}`}
-                          disabled={action.busy !== undefined}
+                          disabled={action.busy !== undefined || readOnly !== undefined}
+                          title={readOnly}
                           onClick={() => revoke(token.id, token.label, token.permission)}
                         >
                           {action.busy === `revoke:${token.id}` ? "Revoking…" : "Revoke"}
@@ -186,7 +200,13 @@ function TokensPage(): ReactNode {
             revokes all of them within 5 minutes; clients then sign in again with their Git host credentials, and transfers in progress fail
             and have to be retried.
           </p>
-          <button type="button" className="danger" onClick={rotate} disabled={action.busy !== undefined}>
+          <button
+            type="button"
+            className="danger"
+            onClick={rotate}
+            disabled={action.busy !== undefined || readOnly !== undefined}
+            title={readOnly}
+          >
             {action.busy === "rotate" ? "Rotating…" : "Rotate session key"}
           </button>
         </div>

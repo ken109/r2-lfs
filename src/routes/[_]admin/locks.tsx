@@ -15,6 +15,7 @@ import {
   Time,
   useAction,
   useConfirm,
+  useReadOnly,
 } from "./-ui.tsx";
 
 interface Search {
@@ -69,6 +70,7 @@ function LocksPage(): ReactNode {
   const navigate = useNavigate({ from: Route.fullPath });
   const router = useRouter();
   const action = useAction();
+  const readOnly = useReadOnly();
   const { confirm, dialog } = useConfirm();
   const choices = repositoryChoices(allowedRepos, counted);
   const page = (search.prev?.length ?? 0) + 1;
@@ -186,7 +188,8 @@ function LocksPage(): ReactNode {
                             type="button"
                             className="danger"
                             aria-label={`Unlock ${lock.path}`}
-                            disabled={action.busy !== undefined}
+                            disabled={action.busy !== undefined || readOnly !== undefined}
+                            title={readOnly}
                             onClick={() => release(result.value.repository, lock.id, lock.path, lock.owner.name)}
                           >
                             {action.busy === lock.id ? "Unlocking…" : "Unlock"}

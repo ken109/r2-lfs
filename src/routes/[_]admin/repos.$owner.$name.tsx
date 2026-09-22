@@ -19,6 +19,7 @@ import {
   Time,
   useAction,
   useConfirm,
+  useReadOnly,
 } from "./-ui.tsx";
 
 interface Search {
@@ -183,6 +184,7 @@ function ObjectsTable({ repository, listing, where }: { repository: string; list
   const navigate = useNavigate({ from: Route.fullPath });
   const search = Route.useSearch();
   const action = useAction();
+  const readOnly = useReadOnly();
   const { confirm, dialog } = useConfirm();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [progress, setProgress] = useState<{ action: StorageAction; done: number; total: number }>();
@@ -289,15 +291,32 @@ function ObjectsTable({ repository, listing, where }: { repository: string; list
         </span>
         {where === "live" ? (
           <>
-            <button type="button" className="danger" disabled={!selected.size || action.busy !== undefined} onClick={() => start("trash")}>
+            <button
+              type="button"
+              className="danger"
+              disabled={!selected.size || action.busy !== undefined || readOnly !== undefined}
+              title={readOnly}
+              onClick={() => start("trash")}
+            >
               {VERB.trash.label}
             </button>
-            <button type="button" disabled={!selected.size || action.busy !== undefined} onClick={() => start("tier")}>
+            <button
+              type="button"
+              disabled={!selected.size || action.busy !== undefined || readOnly !== undefined}
+              title={readOnly}
+              onClick={() => start("tier")}
+            >
               {VERB.tier.label}
             </button>
           </>
         ) : (
-          <button type="button" className="primary" disabled={!selected.size || action.busy !== undefined} onClick={() => start("restore")}>
+          <button
+            type="button"
+            className="primary"
+            disabled={!selected.size || action.busy !== undefined || readOnly !== undefined}
+            title={readOnly}
+            onClick={() => start("restore")}
+          >
             {VERB.restore.label}
           </button>
         )}

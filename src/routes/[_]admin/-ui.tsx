@@ -1,4 +1,4 @@
-import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-router";
+import { type ErrorComponentProps, getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { formatCount, formatDate, formatRelative, type SortDirection, splitRepository } from "./-format.ts";
@@ -114,6 +114,17 @@ export function Failure({ message }: { message: string }): ReactNode {
       {message}
     </p>
   );
+}
+
+const adminLayout = getRouteApi("/_admin");
+
+/**
+ * Why the person signed in may only look, or undefined when they may change things. Buttons that change something
+ * are disabled with this as their description; the server refuses such changes all the same.
+ */
+export function useReadOnly(): string | undefined {
+  const { access } = adminLayout.useLoaderData();
+  return access.canChange ? undefined : access.reason;
 }
 
 /** A repository's name, linking to its page when it is an `owner/name`. */
@@ -492,6 +503,8 @@ tr.over td { color: var(--danger); }
 .chart .bar-errors { fill: var(--danger); }
 .chart figcaption { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
 .key-errors::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--danger); margin-right: 4px; }
+.badge.error { border-color: var(--danger); color: var(--danger); }
+td.wrap { white-space: normal; min-width: 240px; overflow-wrap: anywhere; }
 .badge.warn { border-color: var(--accent); color: var(--text); margin-left: 8px; }
 tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .stat .bar { width: 100%; margin: 6px 0 0; }

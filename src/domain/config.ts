@@ -29,6 +29,8 @@ export interface ConfigVars {
   ACTIONS_OIDC_AUDIENCE?: string;
   /** A Cloudflare API token with Account Analytics Read, for the admin UI's activity page. */
   ANALYTICS_API_TOKEN?: string;
+  /** Comma-separated emails, `*` for any characters, who may change things in the admin UI; unset lets everyone. */
+  ADMIN_EMAILS?: string;
 }
 
 export interface StaticToken {
@@ -93,6 +95,11 @@ export interface Config {
   /** Reading Workers Analytics Engine through Cloudflare's SQL API. */
   analytics: { accountId: string; apiToken: string } | undefined;
   actionsOidc: ActionsOidcSettings | undefined;
+  /**
+   * Lowercased email patterns of the people who may change things in the admin UI; the others only look.
+   * Undefined when ADMIN_EMAILS is unset, which lets everyone Cloudflare Access lets in.
+   */
+  adminEmails: readonly string[] | undefined;
 }
 
 export class ConfigError extends Error {
@@ -258,6 +265,15 @@ export function parseConfig(vars: ConfigVars): Config {
     problems.push("ACCESS_TEAM_DOMAIN must be a host name such as my-team.cloudflareaccess.com");
   }
 
+  // Set but without a usable entry means nobody may change anything, never everybody.
+  const adminRaw = value(vars.ADMIN_EMAILS);
+  const adminEmails = adminRaw === undefined ? undefined : listOf(adminRaw).map((entry) => entry.toLowerCase());
+  for (const entry of adminEmails ?? []) {
+    if (entry !== "*" && !entry.includes("@")) {
+      warnings.push(`ADMIN_EMAILS entry "${entry}" is not an email address or a pattern such as *@example.com`);
+    }
+  }
+
   const analyticsToken = value(vars.ANALYTICS_API_TOKEN);
   const accountId = value(vars.R2_ACCOUNT_ID);
   // Only the admin UI's activity page needs these, so a missing account id must not stop the Git LFS API.
@@ -283,6 +299,7 @@ export function parseConfig(vars: ConfigVars): Config {
     access: teamDomain && aud ? { teamDomain: teamDomain.toLowerCase(), aud } : undefined,
     analytics: analyticsToken && accountId ? { accountId, apiToken: analyticsToken } : undefined,
     actionsOidc: actionsMode === "off" ? undefined : { permission: actionsMode, audience: actionsAudience },
+    adminEmails,
   };
 }
 

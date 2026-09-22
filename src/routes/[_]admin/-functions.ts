@@ -41,3 +41,7 @@ export const changeObjects = createServerFn({ method: "POST" })
   .handler(({ context, data }) => context.admin.changeObjects(data.repository, data.action, data.oids));
 
 export const rotateSessionKey = createServerFn({ method: "POST" }).handler(({ context }) => context.admin.rotateSessionKey());
+
+export const getAudit = createServerFn({ method: "GET" })
+  .inputValidator((input: { cursor?: string }) => input)
+  .handler(({ context, data }) => context.admin.audit(data.cursor));

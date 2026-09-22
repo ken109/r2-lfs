@@ -7,3 +7,5 @@ AUTH_TOKENS=
 ENCRYPTION_KEY=
 # Optional. The admin UI's activity page: a Cloudflare API token with Account Analytics Read (needs R2_ACCOUNT_ID).
 ANALYTICS_API_TOKEN=
+# Optional. The admin UI: comma-separated emails (* for any characters) who may change things; everyone else only looks.
+ADMIN_EMAILS=

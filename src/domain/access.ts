@@ -62,3 +62,14 @@ export function permissionFromGithub(
   if (permissions?.pull) return "read";
   return "none";
 }
+
+/** Whether an email matches an ADMIN_EMAILS pattern, where `*` stands for any characters; case-insensitive. */
+export function emailMatches(pattern: string, email: string): boolean {
+  const source = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
+  return new RegExp(`^${source}$`, "i").test(email);
+}
+
+/** Whether someone signed in to the admin UI may change things, or only look. */
+export function mayChange(config: Config, email: string): boolean {
+  return config.adminEmails === undefined || config.adminEmails.some((pattern) => emailMatches(pattern, email));
+}

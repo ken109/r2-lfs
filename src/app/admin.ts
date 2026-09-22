@@ -1,3 +1,4 @@
+import { mayChange } from "../domain/access.ts";
 import type { Config } from "../domain/config.ts";
 import type { AccessVerifier } from "./ports.ts";
 
@@ -20,4 +21,10 @@ export async function authorizeAdmin(
   const email = await deps.access.verify(assertion, config.access);
   if (!email) return { ok: false, status: 403, message: "The Cloudflare Access token is not valid for this application" };
   return { ok: true, email };
+}
+
+/** Why someone signed in may only look, or undefined when they may change things too. */
+export function changeRefusal(config: Config, email: string): string | undefined {
+  if (mayChange(config, email)) return undefined;
+  return `${email} can look but not change anything: ADMIN_EMAILS does not list it`;
 }

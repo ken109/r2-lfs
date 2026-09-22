@@ -3,6 +3,7 @@ import type { Activity } from "./admin-activity.ts";
 import type { SavedStorageReport } from "./admin-storage.ts";
 import type { TokenSummary } from "./admin-tokens.ts";
 import type { Result } from "./lfs.ts";
+import type { AuditEntry } from "./ports.ts";
 
 /** What the admin UI shows about the server's configuration; nothing secret. */
 export interface Overview {
@@ -26,6 +27,8 @@ export interface Overview {
     /** `r2-lfs/objects`: gc and restore through the Worker, in the per-repo layout only. */
     storage: boolean;
   };
+  /** Whether the person signed in may change things; with ADMIN_EMAILS set, only those it lists may. */
+  access: { canChange: true; limited: boolean } | { canChange: false; reason: string };
   warnings: string[];
 }
 
@@ -52,6 +55,8 @@ export interface AdminApi {
   activity(hours: unknown, repository?: unknown): Promise<Result<Activity>>;
   /** Revokes every short-lived token by replacing the key they are signed with. */
   rotateSessionKey(): Promise<Result<{ rotatedAt: string }>>;
+  /** Changes made in the admin UI, newest first, 50 at a time. */
+  audit(cursor?: unknown): Promise<Result<{ entries: AuditEntry[]; cursor?: string }>>;
   /** One page of a repository's live or trashed objects (`where`: `live` or `trash`). */
   objects(repository: unknown, where: unknown, cursor?: unknown): Promise<Result<StorageListing & { repository: string }>>;
   /** Trashes, restores or tiers up to MAX_STORAGE_CHANGES objects of a repository. */

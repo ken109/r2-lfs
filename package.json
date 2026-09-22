@@ -91,6 +91,9 @@
       "ACCESS_AUD": {
         "description": "Only for the admin UI. The Application Audience (AUD) tag of the Cloudflare Access application that protects /_admin."
       },
+      "ADMIN_EMAILS": {
+        "description": "Optional, for the admin UI. Comma-separated emails of the people who may change things there, where `*` stands for any characters, e.g. `me@example.com,*@my-team.example`. Everyone else Cloudflare Access lets in can only look. Leave empty to let everyone change things."
+      },
       "ACTIONS_OIDC": {
         "description": "`off`, `read` or `write`: what GitHub Actions workflows may do in their own repository by authenticating with an OIDC token (`id-token: write`), with no secret stored."
       },

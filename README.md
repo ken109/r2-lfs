@@ -205,6 +205,7 @@ These are Worker variables, set in `wrangler.jsonc`, on the Deploy to Cloudflare
 | `R2_SECRET_ACCESS_KEY`  | secret |            | Presigned mode: its secret.                                                                                                                                                                                                                     |
 | `ACCESS_TEAM_DOMAIN`    | var    |            | Admin UI: your Cloudflare Access team domain, such as `my-team.cloudflareaccess.com`. See [Admin UI](#admin-ui).                                                                                                                                |
 | `ACCESS_AUD`            | var    |            | Admin UI: the audience tag of the Access application that protects `/_admin`.                                                                                                                                                                   |
+| `ADMIN_EMAILS`          | var    |            | Admin UI: comma-separated emails of the people who may change things, where `*` stands for any characters (`me@example.com,*@my-team.example`). Others Access lets in can only look. Empty lets everyone change things.                         |
 | `ACTIONS_OIDC`          | var    | `off`      | `read`, `write` or `admin` lets GitHub Actions workflows use their own repository with an OIDC token; `admin` runs gc. See [GitHub Actions](#github-actions).                                                                                   |
 | `ACTIONS_OIDC_AUDIENCE` | var    | `r2-lfs`   | The audience workflows request that token for.                                                                                                                                                                                                  |
 | `VERIFY_UPLOADS`        | var    | `on`       | Presigned mode: hash each upload before it counts as stored. `off` checks only the size, for the Free plan.                                                                                                                                     |
@@ -374,6 +375,11 @@ It has these pages:
 
 The UI changes nothing on requests from other sites: its server functions accept changes only with the
 admin UI's own `Origin`.
+
+Everyone Access lets in can change things, unless `ADMIN_EMAILS` lists who may: then the others can look at every
+page, but the buttons that change something are off and the Worker refuses such changes. Creating and revoking
+tokens, unlocking files, trashing, restoring and tiering objects and rotating the session key are recorded, with who
+made them and how they ended, under `_meta/audit/` in the bucket, which the **Audit** page lists newest first.
 
 ## Security
 
