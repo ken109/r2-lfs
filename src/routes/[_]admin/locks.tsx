@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router"
 import type { FormEvent, ReactNode } from "react";
 
 import { getLocks, unlock } from "./-functions.ts";
-import { ActionStatus, Caption, Failure, PageHeader, RouteError, RoutePending, Time, useAction } from "./-ui.tsx";
+import { ActionStatus, Caption, Failure, PageHeader, RouteError, RoutePending, Time, useAction, useConfirm } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/locks")({
   validateSearch: (search: Record<string, unknown>): { repo?: string; cursor?: string } => ({
@@ -23,6 +23,7 @@ function LocksPage(): ReactNode {
   const navigate = useNavigate({ from: Route.fullPath });
   const router = useRouter();
   const action = useAction();
+  const { confirm, dialog } = useConfirm();
 
   function lookUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -31,7 +32,18 @@ function LocksPage(): ReactNode {
   }
 
   async function release(repository: string, id: string, path: string, owner: string) {
-    if (!confirm(`Unlock ${path}, held by ${owner}? Their next push of it may conflict with someone else's work.`)) return;
+    const confirmed = await confirm({
+      title: "Unlock file",
+      body: (
+        <p>
+          <strong className="mono">{path}</strong> is locked by <strong>{owner}</strong>. Their next push of it may conflict with someone
+          else's work.
+        </p>
+      ),
+      action: `Unlock ${path}`,
+      danger: true,
+    });
+    if (!confirmed) return;
     await action.run(id, () => unlock({ data: { repository, id } }), {
       success: (lock) => `Unlocked ${lock.path}`,
       after: () => router.invalidate(),
@@ -57,6 +69,7 @@ function LocksPage(): ReactNode {
       </section>
 
       <ActionStatus action={action} />
+      {dialog}
 
       {result === undefined ? null : result.ok ? (
         <section>

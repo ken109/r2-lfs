@@ -2,7 +2,7 @@ import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router"
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createToken, getTokens, revokeToken } from "./-functions.ts";
-import { ActionStatus, Caption, CopyButton, Failure, PageHeader, RouteError, RoutePending, Time, useAction } from "./-ui.tsx";
+import { ActionStatus, Caption, CopyButton, Failure, PageHeader, RouteError, RoutePending, Time, useAction, useConfirm } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/tokens")({
   loader: () => getTokens(),
@@ -18,6 +18,7 @@ function TokensPage(): ReactNode {
   const { authMode } = layout.useLoaderData();
   const router = useRouter();
   const action = useAction();
+  const { confirm, dialog } = useConfirm();
   const [created, setCreated] = useState<{ label: string; token: string }>();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -35,8 +36,21 @@ function TokensPage(): ReactNode {
     });
   }
 
-  async function revoke(id: string, label: string) {
-    if (!confirm(`Revoke ${label}? Clients using it stop working within 30 seconds.`)) return;
+  async function revoke(id: string, label: string, permission: string) {
+    const confirmed = await confirm({
+      title: "Revoke token",
+      body: (
+        <p>
+          Clients using <strong>{label}</strong> stop working within 30 seconds. This cannot be undone; a new token has to be handed out
+          instead.
+        </p>
+      ),
+      action: `Revoke ${label}`,
+      danger: true,
+      // An admin token can unlock anyone's files; make sure it is the one meant.
+      ...(permission === "admin" ? { typeToConfirm: label } : {}),
+    });
+    if (!confirmed) return;
     await action.run(`revoke:${id}`, () => revokeToken({ data: { id } }), {
       success: (value) => `Revoked ${value.label}`,
       after: () => router.invalidate(),
@@ -89,6 +103,7 @@ function TokensPage(): ReactNode {
       </section>
 
       <ActionStatus action={action} />
+      {dialog}
 
       <section>
         <h2>Tokens</h2>
@@ -129,7 +144,7 @@ function TokensPage(): ReactNode {
                           className="danger"
                           aria-label={`Revoke ${token.label}`}
                           disabled={action.busy !== undefined}
-                          onClick={() => revoke(token.id, token.label)}
+                          onClick={() => revoke(token.id, token.label, token.permission)}
                         >
                           {action.busy === `revoke:${token.id}` ? "Revoking…" : "Revoke"}
                         </button>

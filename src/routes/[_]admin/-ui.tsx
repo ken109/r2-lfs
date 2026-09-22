@@ -161,6 +161,88 @@ export function CopyButton({ text, target }: { text: string; target: () => HTMLE
   );
 }
 
+export interface ConfirmRequest {
+  title: string;
+  /** What happens, with the target named in <strong>. */
+  body: ReactNode;
+  /** The confirming button: a verb and its target, such as `Revoke ci`. */
+  action: string;
+  danger?: boolean;
+  /** For changes that are hard to undo: the text to type before the button works, such as the target's name. */
+  typeToConfirm?: string;
+}
+
+/** A confirmation in a modal <dialog>: `confirm` resolves true only when the person pressed the action button. */
+export function useConfirm(): { confirm: (request: ConfirmRequest) => Promise<boolean>; dialog: ReactNode } {
+  const [pending, setPending] = useState<{ id: number; request: ConfirmRequest; resolve: (ok: boolean) => void }>();
+  const count = useRef(0);
+  const confirm = (request: ConfirmRequest) =>
+    new Promise<boolean>((resolve) => {
+      setPending({ id: ++count.current, request, resolve });
+    });
+  const settle = (ok: boolean) => {
+    pending?.resolve(ok);
+    setPending(undefined);
+  };
+  const dialog = pending ? <ConfirmDialog key={pending.id} request={pending.request} onSettle={settle} /> : null;
+  return { confirm, dialog };
+}
+
+function ConfirmDialog({ request, onSettle }: { request: ConfirmRequest; onSettle: (ok: boolean) => void }): ReactNode {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [typed, setTyped] = useState("");
+  useEffect(() => {
+    const dialog = ref.current;
+    // The dialog leaves the DOM when it settles, so focus goes back to what opened it by hand.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      dialog?.close();
+      opener?.focus();
+    };
+  }, []);
+  const ready = request.typeToConfirm === undefined || typed === request.typeToConfirm;
+
+  return (
+    <dialog
+      ref={ref}
+      className="confirm"
+      aria-labelledby="confirm-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        onSettle(false);
+      }}
+    >
+      <form
+        method="dialog"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (ready) onSettle(true);
+        }}
+      >
+        <h2 id="confirm-title">{request.title}</h2>
+        <div className="confirm-body">{request.body}</div>
+        {request.typeToConfirm === undefined ? null : (
+          <label className="field">
+            <span>
+              Type <strong className="mono">{request.typeToConfirm}</strong> to confirm
+            </span>
+            <input value={typed} onChange={(event) => setTyped(event.target.value)} autoComplete="off" spellCheck={false} autoFocus />
+          </label>
+        )}
+        <div className="confirm-actions">
+          <button type="button" onClick={() => onSettle(false)} autoFocus={request.typeToConfirm === undefined}>
+            Cancel
+          </button>
+          <button type="submit" className={request.danger ? "primary danger-fill" : "primary"} disabled={!ready}>
+            {request.action}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
 /** What a page shows when loading it threw, such as a lost connection or a Worker error. */
 export function RouteError({ error, reset }: ErrorComponentProps): ReactNode {
   const router = useRouter();
@@ -205,9 +287,9 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
 /** The admin UI's styles: one sheet, light and dark. */
 export const STYLES = `
 :root { color-scheme: light dark; --bg: #f7f7f5; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
-  --accent: #b34d00; --accent-text: #fff; --danger: #c62828; --ok: #2e7d32; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  --accent: #b34d00; --accent-text: #fff; --danger: #c62828; --danger-text: #fff; --ok: #2e7d32; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 @media (prefers-color-scheme: dark) { :root { --bg: #141413; --panel: #1d1d1b; --text: #ececea; --muted: #9a9a94; --line: #33332f;
-  --accent: #f38020; --accent-text: #141413; --danger: #ef6c6c; --ok: #7bc47f; } }
+  --accent: #f38020; --accent-text: #141413; --danger: #ef6c6c; --danger-text: #141413; --ok: #7bc47f; } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
 a { color: inherit; }
@@ -249,6 +331,14 @@ button { font: inherit; height: 36px; border-radius: 6px; padding: 6px 14px; bor
 button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button.danger { color: var(--danger); }
+button.primary.danger-fill { background: var(--danger); border-color: var(--danger); color: var(--danger-text); }
+dialog.confirm { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); padding: 20px; width: min(460px, calc(100vw - 32px)); }
+dialog.confirm::backdrop { background: rgb(0 0 0 / 0.45); }
+dialog.confirm h2 { font-size: 17px; }
+.confirm-body { margin: 0 0 14px; }
+.confirm-body p { margin: 0 0 8px; }
+dialog.confirm label.field { margin-bottom: 14px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 button:disabled { opacity: 0.6; cursor: default; }
 .notice { border-radius: 8px; padding: 10px 14px; margin: 12px 0; border: 1px solid var(--line); background: var(--panel); }
 .notice.error { border-color: var(--danger); color: var(--danger); }
