@@ -2,13 +2,12 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
-import { handle } from "../../src/http/handler.ts";
 import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
 import { DurableObjectLockStore, type RepoLocks } from "../../src/infra/repo-locks.ts";
 import { clearStoredTokensCache } from "../../src/infra/token-directory.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
+import { call as send, envWith } from "./helpers.ts";
 
-const ORIGIN = "https://lfs.example.com";
 const ALICE = "a".repeat(32);
 const BOB = "b".repeat(32);
 const ADMIN = "c".repeat(32);
@@ -18,10 +17,7 @@ let repoCounter = 0;
 /** A repository no other test has used, so each test starts without locks. */
 const freshRepo = () => `/acme/locks-${Date.now()}-${repoCounter++}`;
 
-const tokenEnv = (): Env => ({
-  BUCKET: env.BUCKET,
-  LOCKS: env.LOCKS,
-  ALLOWED_REPOS: "acme/*",
+const tokenEnv = envWith({
   AUTH_MODE: "token",
   TRANSFER_MODE: "proxy",
   AUTH_TOKENS: `acme/*:rw:${ALICE},acme/*:rw:${BOB},acme/*:admin:${ADMIN},acme/*:r:${READER}`,
@@ -32,15 +28,7 @@ const noGithub: Fetcher = () => {
 };
 
 async function call(e: Env, path: string, opts: { method?: string; token?: string; json?: unknown; fetcher?: Fetcher } = {}) {
-  const headers = new Headers();
-  if (opts.token) headers.set("Authorization", `Basic ${btoa(`git:${opts.token}`)}`);
-  if (opts.json !== undefined) headers.set("Content-Type", "application/vnd.git-lfs+json");
-  const request = new Request(`${ORIGIN}${path}`, {
-    method: opts.method ?? (opts.json === undefined ? "GET" : "POST"),
-    headers,
-    ...(opts.json === undefined ? {} : { body: JSON.stringify(opts.json) }),
-  });
-  const res = await handle(request, e, { fetch: opts.fetcher ?? noGithub });
+  const res = await send(e, path, { fetcher: noGithub, ...opts });
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }
 

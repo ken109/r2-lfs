@@ -1,21 +1,14 @@
-import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { parseConfig } from "../../src/domain/config.ts";
-import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
 import { R2ObjectStore } from "../../src/infra/r2-object-store.ts";
+import { envWith } from "./helpers.ts";
 
 const KEY_HEX = "0f".repeat(32);
 const KEY_BASE64 = btoa(String.fromCharCode(...new Uint8Array(32).fill(0x0f)));
 
-const makeEnv = (over: Partial<Env> = {}): Env => ({
-  BUCKET: env.BUCKET,
-  LOCKS: env.LOCKS,
-  ALLOWED_REPOS: "acme/*",
-  AUTH_MODE: "token",
-  ...over,
-});
+const makeEnv = envWith({ AUTH_MODE: "token" });
 
 /** A bucket that records the options each call receives; local R2 does not implement SSE-C. */
 function recordingBucket(encrypted: Set<string>) {

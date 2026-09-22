@@ -7,63 +7,18 @@ import { handle } from "../../src/http/handler.ts";
 import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.ts";
 import { clearStoredTokensCache } from "../../src/infra/token-directory.ts";
 import { type BatchObjectResult, TOKENS_KEY, type TokensFile } from "../../src/shared/contract.ts";
+import { basic, blob, call, type CallOptions, envWith, noHost, ORIGIN, sha256 } from "./helpers.ts";
 
-const ORIGIN = "https://lfs.example.com";
 const WRITE_TOKEN = "w".repeat(32);
 const READ_TOKEN = "r".repeat(32);
 
-function makeEnv(overrides: Partial<Env> = {}): Env {
-  return {
-    BUCKET: env.BUCKET,
-    LOCKS: env.LOCKS,
-    ALLOWED_REPOS: "acme/*",
-    AUTH_MODE: "token",
-    STORAGE_LAYOUT: "per-repo",
-    TRANSFER_MODE: "proxy",
-    PROXY_MAX_UPLOAD_MB: "1",
-    AUTH_TOKENS: `acme/*:rw:${WRITE_TOKEN},acme/app:r:${READ_TOKEN}`,
-    ...overrides,
-  };
-}
-
-const basic = (token: string) => `Basic ${btoa(`git:${token}`)}`;
-
-const unexpectedFetch: Fetcher = () => {
-  throw new Error("GitHub API must not be called");
-};
-
-interface CallOptions {
-  method?: string;
-  token?: string;
-  authorization?: string;
-  body?: BodyInit;
-  json?: unknown;
-  fetcher?: Fetcher;
-}
-
-function call(e: Env, path: string, opts: CallOptions = {}): Promise<Response> {
-  const headers = new Headers();
-  const authorization = opts.authorization ?? (opts.token ? basic(opts.token) : undefined);
-  if (authorization) headers.set("Authorization", authorization);
-  let body = opts.body;
-  // Clients such as git-lfs send Content-Length; a Request built here would not have the header.
-  if (body instanceof Uint8Array) headers.set("Content-Length", String(body.byteLength));
-  if (opts.json !== undefined) {
-    body = JSON.stringify(opts.json);
-    headers.set("Content-Type", "application/vnd.git-lfs+json");
-  }
-  const url = path.startsWith("http") ? path : `${ORIGIN}${path}`;
-  const request = new Request(url, { method: opts.method ?? (body ? "POST" : "GET"), headers, body });
-  return handle(request, e, { fetch: opts.fetcher ?? unexpectedFetch });
-}
-
-/** Random content so each test works on objects no other test has stored. */
-async function blob(size = 64): Promise<{ data: Uint8Array; oid: string; size: number }> {
-  const data = crypto.getRandomValues(new Uint8Array(size));
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  const oid = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return { data, oid, size };
-}
+const makeEnv = envWith({
+  AUTH_MODE: "token",
+  STORAGE_LAYOUT: "per-repo",
+  TRANSFER_MODE: "proxy",
+  PROXY_MAX_UPLOAD_MB: "1",
+  AUTH_TOKENS: `acme/*:rw:${WRITE_TOKEN},acme/app:r:${READ_TOKEN}`,
+});
 
 async function batch(
   e: Env,
@@ -105,11 +60,6 @@ function thrown(fn: () => unknown): unknown {
     return err;
   }
   throw new Error("expected the call to throw");
-}
-
-async function sha256Hex(text: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function storeTokens(tokens: TokensFile["tokens"]) {
@@ -281,7 +231,7 @@ describe("authentication (token mode)", () => {
       headers: { "Content-Length": "2" },
       body: "{}",
     });
-    expect((await handle(lockCheck, makeEnv(), { fetch: unexpectedFetch })).status).toBe(401);
+    expect((await handle(lockCheck, makeEnv(), { fetch: noHost })).status).toBe(401);
     expect(lockCheck.bodyUsed).toBe(true);
 
     const refusedUpload = new Request(`${ORIGIN}/acme/app/objects/${"a".repeat(64)}`, {
@@ -289,7 +239,7 @@ describe("authentication (token mode)", () => {
       headers: { "Content-Length": String(2 * 1024 * 1024) },
       body: new Uint8Array(2 * 1024 * 1024),
     });
-    expect((await handle(refusedUpload, makeEnv(), { fetch: unexpectedFetch })).status).toBe(401);
+    expect((await handle(refusedUpload, makeEnv(), { fetch: noHost })).status).toBe(401);
     expect(refusedUpload.bodyUsed).toBe(false);
   });
 
@@ -339,7 +289,7 @@ describe("stored tokens (r2-lfs token)", () => {
   it("accepts tokens stored in the bucket, within their scope and permission", async () => {
     const token = "stored-token-0123456789";
     await storeTokens([
-      { id: "t1", label: "ci", scope: "acme/app", permission: "read", sha256: await sha256Hex(token), created: "2026-09-14" },
+      { id: "t1", label: "ci", scope: "acme/app", permission: "read", sha256: await sha256(token), created: "2026-09-14" },
     ]);
     const e = makeEnv({ AUTH_TOKENS: "" });
     expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
@@ -350,7 +300,7 @@ describe("stored tokens (r2-lfs token)", () => {
 
   it("ignores a malformed tokens file instead of failing every request", async () => {
     const e = makeEnv();
-    const entry = { id: "t", label: "l", scope: "*", sha256: await sha256Hex(WRITE_TOKEN), created: "2026-09-14" };
+    const entry = { id: "t", label: "l", scope: "*", sha256: await sha256(WRITE_TOKEN), created: "2026-09-14" };
     const broken = ["{", '{"version":1,"tokens":{}}', '{"version":1,"tokens":[{"sha256":1}]}', '{"version":1,"tokens":[null]}'];
     for (const file of broken) {
       await env.BUCKET.put(TOKENS_KEY, file);
@@ -368,9 +318,7 @@ describe("stored tokens (r2-lfs token)", () => {
   it("picks up revocations once the cached copy expires", async () => {
     const token = "expiring-token-0123456789";
     const e = makeEnv({ AUTH_TOKENS: "" });
-    await storeTokens([
-      { id: "t3", label: "cached", scope: "*", permission: "read", sha256: await sha256Hex(token), created: "2026-09-14" },
-    ]);
+    await storeTokens([{ id: "t3", label: "cached", scope: "*", permission: "read", sha256: await sha256(token), created: "2026-09-14" }]);
     expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
 
     await env.BUCKET.put(TOKENS_KEY, JSON.stringify({ version: 1, tokens: [] } satisfies TokensFile));
@@ -382,7 +330,7 @@ describe("stored tokens (r2-lfs token)", () => {
 
   it("stops accepting a token once it is removed from the file", async () => {
     const token = "revoked-token-0123456789";
-    await storeTokens([{ id: "t2", label: "old", scope: "*", permission: "write", sha256: await sha256Hex(token), created: "2026-09-14" }]);
+    await storeTokens([{ id: "t2", label: "old", scope: "*", permission: "write", sha256: await sha256(token), created: "2026-09-14" }]);
     const e = makeEnv({ AUTH_TOKENS: "" });
     expect((await batch(e, "/acme/app", "download", [], { token })).status).toBe(200);
     await storeTokens([]);
@@ -467,7 +415,7 @@ describe("proxy transfers", () => {
         body: stream,
       }),
       e,
-      { fetch: unexpectedFetch },
+      { fetch: noHost },
     );
     expect(chunked.status).toBe(411);
 
@@ -479,7 +427,7 @@ describe("proxy transfers", () => {
         body: object.data,
       }),
       e,
-      { fetch: unexpectedFetch },
+      { fetch: noHost },
     );
     expect(tooLarge.status).toBe(413);
     expect(await env.BUCKET.head(`acme/app/${object.oid}`)).toBeNull();

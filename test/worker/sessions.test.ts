@@ -7,40 +7,14 @@ import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.t
 import { clearRepositoryIdentitiesCache } from "../../src/infra/r2-repository-identities.ts";
 import { clearSessionKeyCache, HmacSessionTokens } from "../../src/infra/session-tokens.ts";
 import { type BatchObjectResult, type LfsLock, SESSION_KEY_KEY, type SessionResponse } from "../../src/shared/contract.ts";
+import { basic, blob, type CallOptions, envWith, noHost, ORIGIN, call as send } from "./helpers.ts";
 
-const ORIGIN = "https://lfs.example.com";
 const WRITE_TOKEN = "w".repeat(32);
 
-const makeEnv = (over: Partial<Env> = {}): Env => ({
-  BUCKET: env.BUCKET,
-  LOCKS: env.LOCKS,
-  ALLOWED_REPOS: "acme/*",
-  AUTH_MODE: "token",
-  TRANSFER_MODE: "proxy",
-  AUTH_TOKENS: `acme/*:rw:${WRITE_TOKEN}`,
-  ...over,
-});
+const makeEnv = envWith({ AUTH_MODE: "token", TRANSFER_MODE: "proxy", AUTH_TOKENS: `acme/*:rw:${WRITE_TOKEN}` });
 
-const noHost: Fetcher = () => {
-  throw new Error("the host API must not be called");
-};
-
-function call(e: Env, path: string, authorization: string | undefined, init: { method?: string; json?: unknown; body?: Uint8Array } = {}) {
-  const headers = new Headers();
-  if (authorization) headers.set("Authorization", authorization);
-  if (init.body) headers.set("Content-Length", String(init.body.byteLength));
-  const body = init.json === undefined ? init.body : JSON.stringify(init.json);
-  const url = path.startsWith("http") ? path : `${ORIGIN}${path}`;
-  return handle(new Request(url, { method: init.method ?? "POST", headers, body }), e, { fetch: noHost });
-}
-
-const basic = (token: string) => `Basic ${btoa(`git:${token}`)}`;
-
-async function blob(size = 32) {
-  const data = crypto.getRandomValues(new Uint8Array(size));
-  const oid = [...new Uint8Array(await crypto.subtle.digest("SHA-256", data))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return { data, oid, size };
-}
+const call = (e: Env, path: string, authorization: string | undefined, opts: CallOptions = {}) =>
+  send(e, path, { ...(authorization ? { authorization } : {}), ...opts });
 
 async function session(e: Env, repo: string, authorization: string) {
   const res = await call(e, `/${repo}/r2-lfs/session`, authorization, { json: {} });

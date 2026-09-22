@@ -6,28 +6,18 @@ import type { Env } from "../../src/env.ts";
 import { handle } from "../../src/http/handler.ts";
 import { clearUsageCache } from "../../src/infra/r2-object-store.ts";
 import { clearStoredTokensCache } from "../../src/infra/token-directory.ts";
+import { basic, envWith } from "./helpers.ts";
 
 const TOKEN = "q".repeat(32);
 const oid = (n: number) => n.toString(16).padStart(64, "0");
 
-function makeEnv(over: Partial<Env> = {}): Env {
-  return {
-    BUCKET: env.BUCKET,
-    LOCKS: env.LOCKS,
-    ALLOWED_REPOS: "acme/*",
-    AUTH_MODE: "token",
-    TRANSFER_MODE: "proxy",
-    PROXY_MAX_UPLOAD_MB: "100",
-    AUTH_TOKENS: `acme/*:rw:${TOKEN}`,
-    ...over,
-  };
-}
+const makeEnv = envWith({ AUTH_MODE: "token", TRANSFER_MODE: "proxy", PROXY_MAX_UPLOAD_MB: "100", AUTH_TOKENS: `acme/*:rw:${TOKEN}` });
 
 async function batch(e: Env, repo: string, objects: { oid: string; size: number }[]) {
   const res = await handle(
     new Request(`https://lfs.example.com/acme/${repo}/objects/batch`, {
       method: "POST",
-      headers: { Authorization: `Basic ${btoa(`x:${TOKEN}`)}` },
+      headers: { Authorization: basic(TOKEN, "x") },
       body: JSON.stringify({ operation: "upload", objects }),
     }),
     e,

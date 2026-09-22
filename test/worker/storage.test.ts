@@ -5,45 +5,24 @@ import type { RepositoryStorage } from "../../src/app/ports.ts";
 import { changeObjects } from "../../src/app/repository-storage.ts";
 import { parseConfig } from "../../src/domain/config.ts";
 import type { Env } from "../../src/env.ts";
-import { handle } from "../../src/http/handler.ts";
 import { R2RepositoryStorage } from "../../src/infra/r2-repository-storage.ts";
 import type { BatchObjectResult, StorageChanges, StorageListing } from "../../src/shared/contract.ts";
+import { blob, type CallOptions, envWith, call as send } from "./helpers.ts";
 
-const ORIGIN = "https://lfs.example.com";
 const ADMIN = "a".repeat(32);
 const WRITE = "w".repeat(32);
 const READ = "r".repeat(32);
 
-const makeEnv = (over: Partial<Env> = {}): Env => ({
-  BUCKET: env.BUCKET,
-  LOCKS: env.LOCKS,
-  ALLOWED_REPOS: "acme/*",
+const makeEnv = envWith({
   AUTH_MODE: "token",
   TRANSFER_MODE: "proxy",
   AUTH_TOKENS: `acme/*:admin:${ADMIN},acme/*:rw:${WRITE},acme/*:r:${READ}`,
-  ...over,
 });
 
-const noHost = () => {
-  throw new Error("the host API must not be called");
-};
-
-function call(
-  e: Env,
-  path: string,
-  token: string,
-  init: { method?: string; json?: unknown; body?: Uint8Array; authorization?: string } = {},
-) {
-  const headers = new Headers({ Authorization: init.authorization ?? `Basic ${btoa(`git:${token}`)}` });
-  if (init.body) headers.set("Content-Length", String(init.body.byteLength));
-  const body = init.json === undefined ? init.body : JSON.stringify(init.json);
-  const url = path.startsWith("http") ? path : `${ORIGIN}${path}`;
-  return handle(new Request(url, { method: init.method ?? (body ? "POST" : "GET"), headers, body }), e, { fetch: noHost });
-}
+const call = (e: Env, path: string, token: string, opts: CallOptions = {}) => send(e, path, { token, ...opts });
 
 async function store(e: Env, repo: string, size = 48) {
-  const data = crypto.getRandomValues(new Uint8Array(size));
-  const oid = [...new Uint8Array(await crypto.subtle.digest("SHA-256", data))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const { data, oid } = await blob(size);
   const res = await call(e, `/${repo}/objects/batch`, WRITE, { json: { operation: "upload", objects: [{ oid, size }] } });
   const upload = ((await res.json()) as { objects: BatchObjectResult[] }).objects[0]!.actions!.upload!;
   expect((await call(e, upload.href, "", { method: "PUT", body: data, authorization: upload.header!.Authorization })).status).toBe(200);

@@ -1,4 +1,3 @@
-import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
@@ -7,6 +6,7 @@ import { clearHostCache, type Fetcher } from "../../src/infra/host-permissions.t
 import { clearJwtKeysCache } from "../../src/infra/jwt.ts";
 import { clearRepositoryIdentitiesCache } from "../../src/infra/r2-repository-identities.ts";
 import type { LfsLock } from "../../src/shared/contract.ts";
+import { basic, envWith } from "./helpers.ts";
 import { signingKey } from "./jwt-helpers.ts";
 
 const ISSUER = "https://token.actions.githubusercontent.com";
@@ -21,15 +21,7 @@ const claims = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const makeEnv = (over: Partial<Env> = {}): Env => ({
-  BUCKET: env.BUCKET,
-  LOCKS: env.LOCKS,
-  ALLOWED_REPOS: "acme/*",
-  AUTH_MODE: "github",
-  TRANSFER_MODE: "proxy",
-  ACTIONS_OIDC: "read",
-  ...over,
-});
+const makeEnv = envWith({ AUTH_MODE: "github", TRANSFER_MODE: "proxy", ACTIONS_OIDC: "read" });
 
 let repoCounter = 0;
 
@@ -46,7 +38,7 @@ async function setup() {
     handle(
       new Request(`https://lfs.example.com${path}`, {
         method: "POST",
-        headers: { Authorization: `Basic ${btoa(`x:${token}`)}`, "Content-Type": "application/vnd.git-lfs+json" },
+        headers: { Authorization: basic(token, "x"), "Content-Type": "application/vnd.git-lfs+json" },
         body: JSON.stringify(json),
       }),
       e,

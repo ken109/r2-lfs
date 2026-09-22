@@ -2,52 +2,20 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import type { Env } from "../../src/env.ts";
-import { handle } from "../../src/http/handler.ts";
+import { blob, type CallOptions, envWith, call as send } from "./helpers.ts";
 
-const ORIGIN = "https://lfs.example.com";
 const WRITE_TOKEN = "w".repeat(32);
 
-function makeEnv(overrides: Partial<Env> = {}): Env {
-  return {
-    BUCKET: env.BUCKET,
-    LOCKS: env.LOCKS,
-    ALLOWED_REPOS: "acme/*",
-    AUTH_MODE: "token",
-    STORAGE_LAYOUT: "per-repo",
-    TRANSFER_MODE: "proxy",
-    PROXY_MAX_UPLOAD_MB: "1",
-    AUTH_TOKENS: `acme/*:rw:${WRITE_TOKEN}`,
-    ...overrides,
-  };
-}
+const makeEnv = envWith({
+  AUTH_MODE: "token",
+  STORAGE_LAYOUT: "per-repo",
+  TRANSFER_MODE: "proxy",
+  PROXY_MAX_UPLOAD_MB: "1",
+  AUTH_TOKENS: `acme/*:rw:${WRITE_TOKEN}`,
+});
 
-function call(
-  e: Env,
-  path: string,
-  opts: { method?: string; token?: string; body?: Uint8Array; json?: unknown; headers?: Record<string, string> } = {},
-) {
-  const headers = new Headers(opts.headers);
-  headers.set("Authorization", `Basic ${btoa(`git:${opts.token ?? WRITE_TOKEN}`)}`);
-  let body: BodyInit | undefined = opts.body;
-  if (opts.body) headers.set("Content-Length", String(opts.body.byteLength));
-  if (opts.json !== undefined) body = JSON.stringify(opts.json);
-  const url = path.startsWith("http") ? path : `${ORIGIN}${path}`;
-  return handle(new Request(url, { method: opts.method ?? (body ? "POST" : "GET"), headers, body }), e, { fetch });
-}
-
-async function sha256(data: ArrayBuffer | Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** Random content; getRandomValues fills at most 65,536 bytes a call. */
-async function blob(size: number, tamper = false) {
-  const data = new Uint8Array(size);
-  for (let i = 0; i < size; i += 65_536) crypto.getRandomValues(data.subarray(i, Math.min(size, i + 65_536)));
-  const oid = await sha256(data);
-  if (tamper) data[0] = data[0]! ^ 1;
-  return { data, oid, size };
-}
+/** With the write token unless another is given. */
+const call = (e: Env, path: string, opts: CallOptions = {}) => send(e, path, { token: WRITE_TOKEN, ...opts });
 
 describe("ranged downloads", () => {
   it("resumes a download from an offset, a suffix or a closed range", async () => {
