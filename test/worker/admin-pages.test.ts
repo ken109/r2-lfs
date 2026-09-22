@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { recentActivity } from "../../src/app/admin-activity.ts";
-import { forceUnlock, parseRepository, repositoryLocks } from "../../src/app/admin-locks.ts";
+import { forceUnlock, parseRepository, repositoryLocks, servedRepository } from "../../src/app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../../src/app/admin-objects.ts";
 import { rotateSessionKey } from "../../src/app/admin-sessions.ts";
 import { countStorage, lastStorageReport, storageReport } from "../../src/app/admin-storage.ts";
@@ -24,7 +24,9 @@ import {
   formatCount,
   formatDate,
   formatRelative,
+  olderThan,
   quotaShare,
+  repositoryChoices,
   sortRows,
   splitRepository,
 } from "../../src/routes/[_]admin/-format.ts";
@@ -192,6 +194,21 @@ describe("admin locks", () => {
     expect((await repositoryLocks(store)).locks).toEqual([]);
     expect(await forceUnlock(store, lock.id)).toMatchObject({ ok: false, status: 404 });
   });
+
+  it("accepts only repositories the server serves, and filters by path", async () => {
+    expect(servedRepository(perRepo, "Acme/Game")).toEqual({ ok: true, value: { owner: "Acme", name: "Game" } });
+    expect(servedRepository(perRepo, "other/game")).toMatchObject({
+      ok: false,
+      status: 422,
+      message: expect.stringContaining("ALLOWED_REPOS"),
+    });
+    expect(servedRepository(perRepo, "acme")).toMatchObject({ ok: false, status: 422 });
+
+    const store = new DurableObjectLockStore(env.LOCKS, { owner: "acme", name: `paths-${Date.now()}` });
+    await store.create("a.blend", "someone");
+    const { lock } = await store.create("b.blend", "someone");
+    expect((await repositoryLocks(store, undefined, "b.blend")).locks).toEqual([lock]);
+  });
 });
 
 describe("admin activity", () => {
@@ -340,5 +357,12 @@ describe("admin UI formatting", () => {
     expect(sortRows(rows, "repo", "ascending").map((r) => r.repo)).toEqual(["a", "b", "c"]);
     expect(quotaShare(80, 100)).toBe(0.8);
     expect(quotaShare(80, undefined)).toBeUndefined();
+  });
+
+  it("marks old locks and suggests repositories", () => {
+    const now = Date.parse("2026-09-14T00:00:00Z");
+    expect(olderThan("2026-09-06T00:00:00Z", 7, now)).toBe(true);
+    expect(olderThan("2026-09-08T00:00:00Z", 7, now)).toBe(false);
+    expect(repositoryChoices(["acme/*", "acme/game", "*"], ["acme/web", "acme/game"])).toEqual(["acme/game", "acme/web"]);
   });
 });

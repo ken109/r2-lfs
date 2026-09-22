@@ -41,7 +41,12 @@ export interface AdminApi {
   tokens(): Promise<Result<TokenSummary[]>>;
   createToken(input: { label?: unknown; scope?: unknown; permission?: unknown }): Promise<Result<{ token: string; entry: TokenSummary }>>;
   revokeToken(id: unknown): Promise<Result<TokenSummary>>;
-  locks(repository: unknown, cursor?: unknown): Promise<Result<{ repository: string; locks: LfsLock[]; nextCursor?: string }>>;
+  /** A page of a repository's locks, of one `path` when it is given. */
+  locks(
+    repository: unknown,
+    cursor?: unknown,
+    path?: unknown,
+  ): Promise<Result<{ repository: string; locks: LfsLock[]; nextCursor?: string }>>;
   unlock(repository: unknown, id: unknown): Promise<Result<LfsLock>>;
   /** Requests in the last `hours`, by repository or of one `repository`. */
   activity(hours: unknown, repository?: unknown): Promise<Result<Activity>>;

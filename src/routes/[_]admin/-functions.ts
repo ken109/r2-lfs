@@ -21,8 +21,8 @@ export const revokeToken = createServerFn({ method: "POST" })
   .handler(({ context, data }) => context.admin.revokeToken(data.id));
 
 export const getLocks = createServerFn({ method: "GET" })
-  .inputValidator((input: { repository: string; cursor?: string }) => input)
-  .handler(({ context, data }) => context.admin.locks(data.repository, data.cursor));
+  .inputValidator((input: { repository: string; cursor?: string; path?: string }) => input)
+  .handler(({ context, data }) => context.admin.locks(data.repository, data.cursor, data.path));
 
 export const unlock = createServerFn({ method: "POST" })
   .inputValidator((input: { repository: string; id: string }) => input)

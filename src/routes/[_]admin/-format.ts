@@ -34,6 +34,20 @@ export function quotaShare(bytes: number, quota: number | undefined): number | u
 /** Past this share of its quota a repository is shown as nearly full. */
 export const QUOTA_WARNING = 0.8;
 
+/** Whether `iso` lies more than `days` before `now`. */
+export function olderThan(iso: string, days: number, now: number): boolean {
+  return now - new Date(iso).getTime() > days * 24 * 3600 * 1000;
+}
+
+/**
+ * Repositories to suggest where one is typed: the patterns of ALLOWED_REPOS that name a single repository, and the
+ * repositories a storage count found, without repeats.
+ */
+export function repositoryChoices(allowedRepos: readonly string[], counted: readonly string[]): string[] {
+  const exact = allowedRepos.filter((pattern) => !pattern.includes("*"));
+  return [...new Set([...exact, ...counted])].toSorted();
+}
+
 /** How many results ended each way, most frequent first. */
 export function countOutcomes(results: readonly { outcome: string }[]): { outcome: string; count: number }[] {
   const counts = new Map<string, number>();

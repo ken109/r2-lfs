@@ -1,6 +1,6 @@
 import { recentActivity } from "../app/admin-activity.ts";
 import type { AdminApi, Overview } from "../app/admin-api.ts";
-import { forceUnlock, parseRepository, repositoryLocks } from "../app/admin-locks.ts";
+import { forceUnlock, repositoryLocks, servedRepository } from "../app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../app/admin-objects.ts";
 import { rotateSessionKey } from "../app/admin-sessions.ts";
 import { countStorage, lastStorageReport } from "../app/admin-storage.ts";
@@ -15,8 +15,6 @@ import { R2SessionKey } from "../infra/r2-session-key.ts";
 import { R2StorageReport } from "../infra/r2-storage-report.ts";
 import { R2TokensFile, RandomTokenMinter } from "../infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
-
-const notARepository = { ok: false as const, status: 422, message: "Enter a repository as owner/name" };
 
 /** The admin UI's operations on this Worker's bucket, lock objects and analytics. */
 export class WorkerAdminApi implements AdminApi {
@@ -79,17 +77,21 @@ export class WorkerAdminApi implements AdminApi {
     return revokeToken(new R2TokensFile(this.env.BUCKET), id);
   }
 
-  async locks(repository: unknown, cursor?: unknown) {
-    const repo = parseRepository(repository);
-    if (!repo) return notARepository;
-    const page = await repositoryLocks(new DurableObjectLockStore(this.env.LOCKS, repo), typeof cursor === "string" ? cursor : undefined);
-    return { ok: true as const, value: { repository: `${repo.owner}/${repo.name}`, ...page } };
+  async locks(repository: unknown, cursor?: unknown, path?: unknown) {
+    const repo = servedRepository(this.config, repository);
+    if (!repo.ok) return repo;
+    const page = await repositoryLocks(
+      new DurableObjectLockStore(this.env.LOCKS, repo.value),
+      typeof cursor === "string" ? cursor : undefined,
+      typeof path === "string" ? path.trim() : undefined,
+    );
+    return { ok: true as const, value: { repository: `${repo.value.owner}/${repo.value.name}`, ...page } };
   }
 
   unlock(repository: unknown, id: unknown) {
-    const repo = parseRepository(repository);
-    if (!repo) return Promise.resolve(notARepository);
-    return forceUnlock(new DurableObjectLockStore(this.env.LOCKS, repo), id);
+    const repo = servedRepository(this.config, repository);
+    if (!repo.ok) return Promise.resolve(repo);
+    return forceUnlock(new DurableObjectLockStore(this.env.LOCKS, repo.value), id);
   }
 
   activity(hours: unknown, repository?: unknown) {

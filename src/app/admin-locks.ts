@@ -1,3 +1,6 @@
+import { repoAllowed } from "../domain/access.ts";
+import type { Config } from "../domain/config.ts";
+import type { Repo } from "../domain/repo.ts";
 import { type LfsLock, OWNER_NAME, REPO_NAME } from "../shared/contract.ts";
 import type { Result } from "./lfs.ts";
 import type { LockStore } from "./ports.ts";
@@ -10,8 +13,26 @@ export function parseRepository(value: unknown): { owner: string; name: string }
   return match && !/^\.+$/.test(match[2]!) ? { owner: match[1]!, name: match[2]! } : undefined;
 }
 
-export async function repositoryLocks(locks: LockStore, cursor?: string): Promise<{ locks: LfsLock[]; nextCursor?: string }> {
-  return locks.list({ limit: 100, ...(cursor ? { cursor } : {}) });
+/**
+ * A repository this server serves, as typed into the admin UI. Locks of any other name would only create empty
+ * lock objects, so it is refused.
+ */
+export function servedRepository(config: Config, value: unknown): Result<Repo> {
+  const repo = parseRepository(value);
+  if (!repo) return { ok: false, status: 422, message: "Enter a repository as owner/name" };
+  if (!repoAllowed(config, repo)) {
+    return { ok: false, status: 422, message: `${repo.owner}/${repo.name} is not in ALLOWED_REPOS (${config.allowedRepos.join(", ")})` };
+  }
+  return { ok: true, value: repo };
+}
+
+/** A page of locks in lock order, of one path when `path` is given. */
+export async function repositoryLocks(
+  locks: LockStore,
+  cursor?: string,
+  path?: string,
+): Promise<{ locks: LfsLock[]; nextCursor?: string }> {
+  return locks.list({ limit: 100, ...(cursor ? { cursor } : {}), ...(path ? { path } : {}) });
 }
 
 /** Removes someone's lock, as `git lfs unlock --force` would with admin permission. */

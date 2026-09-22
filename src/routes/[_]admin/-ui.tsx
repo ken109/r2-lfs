@@ -417,6 +417,8 @@ button.sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2p
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar.over > span { background: var(--danger); }
 tr.over td { color: var(--danger); }
+.badge.warn { border-color: var(--accent); color: var(--text); margin-left: 8px; }
+tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .stat .bar { width: 100%; margin: 6px 0 0; }
 .inline-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }

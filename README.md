@@ -365,7 +365,8 @@ It has these pages:
   changed in the `per-repo` layout only.
 - **Tokens**: create and revoke the tokens `r2-lfs token` keeps in the bucket. A new token is shown once. It also
   rotates the key the Worker signs its short-lived tokens with, which revokes all of them within 5 minutes.
-- **Locks**: a repository's file locks, with the holder and time, and unlocking any of them.
+- **Locks**: the file locks of a repository in `ALLOWED_REPOS`, or of one path in it, with the holder and time, marking
+  those held for over a week, and unlocking any of them.
 - **Activity**: requests, bytes through the Worker and server errors by repository, from Workers
   Analytics Engine. It needs `ANALYTICS_API_TOKEN` (`npx wrangler secret put ANALYTICS_API_TOKEN`) and
   `R2_ACCOUNT_ID`, which `setup` sets from your Wrangler login; set it yourself after deploying with the button.
