@@ -197,6 +197,13 @@ export interface BucketLister {
   list(cursor: string | undefined): Promise<{ objects: { key: string; size: number }[]; cursor?: string }>;
 }
 
+/** Where the admin UI keeps its last storage report. */
+export interface StorageReportStore {
+  /** The parsed JSON, or undefined when there is none. */
+  read(): Promise<unknown>;
+  write(report: unknown): Promise<void>;
+}
+
 /** Requests the Worker recorded in Workers Analytics Engine, by repository. */
 export interface ActivitySource {
   /** With `repo` (lowercased owner/name), that repository alone. */

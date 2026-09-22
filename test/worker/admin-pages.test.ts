@@ -4,17 +4,27 @@ import { describe, expect, it } from "vitest";
 import { recentActivity } from "../../src/app/admin-activity.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../../src/app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../../src/app/admin-objects.ts";
-import { storageReport } from "../../src/app/admin-storage.ts";
+import { countStorage, lastStorageReport, storageReport } from "../../src/app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../../src/app/admin-tokens.ts";
 import type { BucketLister } from "../../src/app/ports.ts";
 import { parseConfig } from "../../src/domain/config.ts";
 import { AnalyticsSqlActivity } from "../../src/infra/analytics-sql.ts";
 import { R2BucketLister } from "../../src/infra/r2-bucket-lister.ts";
 import { R2RepositoryStorage } from "../../src/infra/r2-repository-storage.ts";
+import { R2StorageReport, STORAGE_REPORT_KEY } from "../../src/infra/r2-storage-report.ts";
 import { R2TokensFile, RandomTokenMinter } from "../../src/infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../../src/infra/repo-locks.ts";
 import { CombinedTokenDirectory } from "../../src/infra/token-directory.ts";
-import { chunks, countOutcomes, formatCount, formatDate, formatRelative, splitRepository } from "../../src/routes/[_]admin/-format.ts";
+import {
+  chunks,
+  countOutcomes,
+  formatCount,
+  formatDate,
+  formatRelative,
+  quotaShare,
+  sortRows,
+  splitRepository,
+} from "../../src/routes/[_]admin/-format.ts";
 import { TOKENS_KEY } from "../../src/shared/contract.ts";
 
 const OID = (n: number) => n.toString(16).padStart(64, "0");
@@ -132,6 +142,30 @@ describe("admin storage report", () => {
 
     const endless: BucketLister = { list: async () => ({ objects: [{ key: `a/b/${OID(9)}`, size: 1 }], cursor: "more" }) };
     expect(await storageReport(endless, "per-repo", 3)).toMatchObject({ truncated: true, total: { objects: 3, bytes: 3 } });
+  });
+
+  it("keeps the last count in the bucket, outside what it counts", async () => {
+    const store = new R2StorageReport(env.BUCKET);
+    expect(await lastStorageReport(store)).toBeUndefined();
+    await env.BUCKET.put(`kept/repo/${OID(1)}`, new Uint8Array(10));
+    const counted = await countStorage({
+      lister: new R2BucketLister(env.BUCKET),
+      layout: "per-repo",
+      store,
+      now: () => new Date("2026-09-14T00:00:00Z"),
+    });
+    expect(counted).toMatchObject({ countedAt: "2026-09-14T00:00:00.000Z", report: { total: { objects: 1, bytes: 10 } } });
+    expect(await lastStorageReport(store)).toEqual(counted);
+
+    // Counting again does not count the kept report.
+    const again = await countStorage({ lister: new R2BucketLister(env.BUCKET), layout: "per-repo", store, now: () => new Date() });
+    expect(again.report.total).toEqual({ objects: 1, bytes: 10 });
+
+    await env.BUCKET.put(STORAGE_REPORT_KEY, "not json");
+    expect(await lastStorageReport(store)).toBeUndefined();
+    const failing = { read: async () => undefined, write: async () => Promise.reject(new Error("down")) };
+    const kept = await countStorage({ lister: new R2BucketLister(env.BUCKET), layout: "per-repo", store: failing, now: () => new Date() });
+    expect(kept.report.total.objects).toBe(1);
   });
 
   it("lists the R2 bucket with keys and sizes", async () => {
@@ -274,5 +308,17 @@ describe("admin UI formatting", () => {
     expect(splitRepository("acme/game")).toEqual({ owner: "acme", name: "game" });
     expect(splitRepository("")).toBeUndefined();
     expect(splitRepository("a/b/c")).toBeUndefined();
+  });
+
+  it("sorts rows by a column and measures quota use", () => {
+    const rows = [
+      { repo: "b", bytes: 1 },
+      { repo: "a", bytes: 3 },
+      { repo: "c", bytes: 2 },
+    ];
+    expect(sortRows(rows, "bytes", "descending").map((r) => r.repo)).toEqual(["a", "c", "b"]);
+    expect(sortRows(rows, "repo", "ascending").map((r) => r.repo)).toEqual(["a", "b", "c"]);
+    expect(quotaShare(80, 100)).toBe(0.8);
+    expect(quotaShare(80, undefined)).toBeUndefined();
   });
 });

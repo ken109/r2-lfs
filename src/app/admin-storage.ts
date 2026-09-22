@@ -1,5 +1,5 @@
 import { INCOMING_PREFIX, MEMBERS_PREFIX, SHARED_PREFIX, type StorageLayout, TOKENS_KEY, TRASH_PREFIX } from "../shared/contract.ts";
-import type { BucketLister } from "./ports.ts";
+import type { BucketLister, StorageReportStore } from "./ports.ts";
 
 export interface Tally {
   objects: number;
@@ -67,4 +67,35 @@ export async function storageReport(lister: BucketLister, layout: StorageLayout,
     .map(([repo, t]) => ({ repo, ...t }))
     .toSorted((a, b) => b.bytes - a.bytes || a.repo.localeCompare(b.repo));
   return { repositories, total, trash, incoming, truncated: cursor !== undefined };
+}
+
+/** A report as the bucket keeps it, so the Overview need not list the whole bucket again on every visit. */
+export interface SavedStorageReport {
+  /** ISO 8601. */
+  countedAt: string;
+  report: StorageReport;
+}
+
+/** Counts the bucket and keeps the result; a failure to keep it does not lose the count. */
+export async function countStorage(deps: {
+  lister: BucketLister;
+  layout: StorageLayout;
+  store: StorageReportStore;
+  now: () => Date;
+}): Promise<SavedStorageReport> {
+  const saved = { countedAt: deps.now().toISOString(), report: await storageReport(deps.lister, deps.layout) };
+  try {
+    await deps.store.write(saved);
+  } catch (err) {
+    console.error("Could not keep the storage report:", err);
+  }
+  return saved;
+}
+
+/** The last report counted, if any; undefined too when it cannot be read, since counting again replaces it. */
+export async function lastStorageReport(store: StorageReportStore): Promise<SavedStorageReport | undefined> {
+  const value = (await store.read().catch(() => undefined)) as Partial<SavedStorageReport> | undefined;
+  const report = value?.report;
+  if (typeof value?.countedAt !== "string" || !report || !Array.isArray(report.repositories) || !report.total) return undefined;
+  return value as SavedStorageReport;
 }

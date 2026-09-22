@@ -358,7 +358,8 @@ refuses requests that did not come through that application.
 It has these pages:
 
 - **Overview**: the server's settings and warnings, and on request a count of what each repository
-  stores, the trash and unfinished uploads.
+  stores, the trash and unfinished uploads, with each repository's share of `QUOTA_GB`. The last count is kept in
+  `_meta/storage-report.json` and shown until you count again.
 - **Repository** (open one from the other pages): its live and trashed objects, which you can move to the trash,
   restore or move to Infrequent Access as `gc` and `restore` would, and its file locks and requests. Objects can be
   changed in the `per-repo` layout only.

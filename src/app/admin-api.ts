@@ -1,6 +1,6 @@
 import type { AuthMode, GrantedPermission, LfsLock, StorageChanges, StorageLayout, StorageListing } from "../shared/contract.ts";
 import type { Activity } from "./admin-activity.ts";
-import type { StorageReport } from "./admin-storage.ts";
+import type { SavedStorageReport } from "./admin-storage.ts";
 import type { TokenSummary } from "./admin-tokens.ts";
 import type { Result } from "./lfs.ts";
 
@@ -28,7 +28,9 @@ export interface Overview {
  */
 export interface AdminApi {
   overview(): Overview;
-  storage(): Promise<StorageReport>;
+  /** Counts what the bucket holds, and keeps the result for `lastStorage`. */
+  storage(): Promise<SavedStorageReport>;
+  lastStorage(): Promise<SavedStorageReport | undefined>;
   tokens(): Promise<Result<TokenSummary[]>>;
   createToken(input: { label?: unknown; scope?: unknown; permission?: unknown }): Promise<Result<{ token: string; entry: TokenSummary }>>;
   revokeToken(id: unknown): Promise<Result<TokenSummary>>;

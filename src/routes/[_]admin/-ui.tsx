@@ -1,7 +1,7 @@
 import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { formatDate, formatRelative, splitRepository } from "./-format.ts";
+import { formatDate, formatRelative, type SortDirection, splitRepository } from "./-format.ts";
 
 /** Server functions answer with the use cases' results; a failed one carries the status and a message to show. */
 export type Outcome<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
@@ -124,6 +124,44 @@ export function RepoLink({ repo }: { repo: string }): ReactNode {
     <Link to="/_admin/repos/$owner/$name" params={params} className="mono">
       {repo}
     </Link>
+  );
+}
+
+/** Which column a table is sorted by, changed by the column headers. */
+export function useSort<K extends string>(key: K, direction: SortDirection = "descending") {
+  const [sort, setSort] = useState<{ key: K; direction: SortDirection }>({ key, direction });
+  const toggle = (next: K, first: SortDirection) =>
+    setSort((current) =>
+      current.key === next
+        ? { key: next, direction: current.direction === "ascending" ? "descending" : "ascending" }
+        : { key: next, direction: first },
+    );
+  return { ...sort, toggle };
+}
+
+/**
+ * A column header that sorts the table: text columns start A to Z, numbers largest first. It says how the table is
+ * sorted with aria-sort.
+ */
+export function SortHeader<K extends string>({
+  sort,
+  column,
+  numeric = false,
+  children,
+}: {
+  sort: { key: K; direction: SortDirection; toggle: (key: K, first: SortDirection) => void };
+  column: K;
+  numeric?: boolean;
+  children: ReactNode;
+}): ReactNode {
+  const active = sort.key === column;
+  return (
+    <th className={numeric ? "num" : undefined} aria-sort={active ? sort.direction : "none"}>
+      <button type="button" className="sort" onClick={() => sort.toggle(column, numeric ? "descending" : "ascending")}>
+        {children}
+        <span aria-hidden="true">{active ? (sort.direction === "ascending" ? " ▲" : " ▼") : ""}</span>
+      </button>
+    </th>
   );
 }
 
@@ -373,6 +411,14 @@ tr.selected td { background: color-mix(in srgb, var(--accent) 10%, transparent);
 .report { margin-bottom: 12px; }
 .report p { margin: 0; }
 .report table { margin-top: 8px; }
+button.sort { all: unset; cursor: pointer; font: inherit; color: inherit; }
+button.sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.bar { display: inline-block; vertical-align: middle; width: 80px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-right: 8px; }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+.bar.over > span { background: var(--danger); }
+tr.over td { color: var(--danger); }
+.stat .bar { width: 100%; margin: 6px 0 0; }
+.inline-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
 .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 @media (max-width: 720px) { .shell { grid-template-columns: 1fr; } .sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }

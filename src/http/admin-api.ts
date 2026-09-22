@@ -2,7 +2,7 @@ import { recentActivity } from "../app/admin-activity.ts";
 import type { AdminApi, Overview } from "../app/admin-api.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../app/admin-objects.ts";
-import { storageReport } from "../app/admin-storage.ts";
+import { countStorage, lastStorageReport } from "../app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../app/admin-tokens.ts";
 import type { Config } from "../domain/config.ts";
 import type { Env } from "../env.ts";
@@ -10,6 +10,7 @@ import { AnalyticsSqlActivity } from "../infra/analytics-sql.ts";
 import type { Fetcher } from "../infra/host-permissions.ts";
 import { R2BucketLister } from "../infra/r2-bucket-lister.ts";
 import { R2RepositoryStorage } from "../infra/r2-repository-storage.ts";
+import { R2StorageReport } from "../infra/r2-storage-report.ts";
 import { R2TokensFile, RandomTokenMinter } from "../infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 
@@ -50,7 +51,16 @@ export class WorkerAdminApi implements AdminApi {
   }
 
   storage() {
-    return storageReport(new R2BucketLister(this.env.BUCKET), this.config.storageLayout);
+    return countStorage({
+      lister: new R2BucketLister(this.env.BUCKET),
+      layout: this.config.storageLayout,
+      store: new R2StorageReport(this.env.BUCKET),
+      now: () => new Date(),
+    });
+  }
+
+  lastStorage() {
+    return lastStorageReport(new R2StorageReport(this.env.BUCKET));
   }
 
   tokens() {

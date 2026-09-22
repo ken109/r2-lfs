@@ -13,6 +13,27 @@ export function chunks<T>(items: readonly T[], size: number): T[][] {
   return runs;
 }
 
+export type SortDirection = "ascending" | "descending";
+
+/** `rows` ordered by `key`: numbers by value, anything else as text; ties keep their order. */
+export function sortRows<T>(rows: readonly T[], key: keyof T, direction: SortDirection): T[] {
+  const sign = direction === "ascending" ? 1 : -1;
+  return rows.toSorted((a, b) => {
+    const x = a[key];
+    const y = b[key];
+    const order = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
+    return sign * order;
+  });
+}
+
+/** Share of the quota used, from 0; undefined without a quota. */
+export function quotaShare(bytes: number, quota: number | undefined): number | undefined {
+  return quota ? bytes / quota : undefined;
+}
+
+/** Past this share of its quota a repository is shown as nearly full. */
+export const QUOTA_WARNING = 0.8;
+
 /** How many results ended each way, most frequent first. */
 export function countOutcomes(results: readonly { outcome: string }[]): { outcome: string; count: number }[] {
   const counts = new Map<string, number>();

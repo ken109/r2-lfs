@@ -5,7 +5,10 @@ import { createServerFn } from "@tanstack/react-start";
 
 export const getOverview = createServerFn({ method: "GET" }).handler(({ context }) => context.admin.overview());
 
-export const getStorage = createServerFn({ method: "GET" }).handler(({ context }) => context.admin.storage());
+// POST: counting writes the report it keeps.
+export const countStorage = createServerFn({ method: "POST" }).handler(({ context }) => context.admin.storage());
+
+export const getLastStorage = createServerFn({ method: "GET" }).handler(({ context }) => context.admin.lastStorage());
 
 export const getTokens = createServerFn({ method: "GET" }).handler(({ context }) => context.admin.tokens());
 
