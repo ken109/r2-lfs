@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0](https://github.com/ken109/r2-lfs/compare/v0.4.0...v0.5.0) (2026-09-22)
+
+
+### Features
+
+* **admin:** a page per repository to trash, restore and tier its objects ([8e28791](https://github.com/ken109/r2-lfs/commit/8e28791275f8b80a612b208b364aa5d0e3246ddd))
+* **admin:** chart requests over time and show error rates ([a499553](https://github.com/ken109/r2-lfs/commit/a4995537c0ea46fb1c5df437d412b44bf9482f3f))
+* **admin:** confirm changes in a dialog that names the target ([f599f46](https://github.com/ken109/r2-lfs/commit/f599f460c2d1143ad4d26b402d47e177382e1f81))
+* **admin:** find locks by path, page back and forth, and mark old ones ([5192fc7](https://github.com/ken109/r2-lfs/commit/5192fc743d64530b47b797ba24626093bfadf94f))
+* **admin:** keep the last storage count and show each repository against its quota ([1d758a8](https://github.com/ken109/r2-lfs/commit/1d758a8248abb497b84a22d9f49e3b4dd941612f))
+* **admin:** limit changes to ADMIN_EMAILS and keep an audit log ([238ee6e](https://github.com/ken109/r2-lfs/commit/238ee6e63867dedcf835c1d4152f599f0d8bea7f))
+* **admin:** rotate the session key and show which repository endpoints are on ([915da69](https://github.com/ken109/r2-lfs/commit/915da692acf93c71838c8cee60ded9d4fff33143))
+* **admin:** run changes one at a time and report how they ended ([e0e9a17](https://github.com/ken109/r2-lfs/commit/e0e9a1754ebc0a86dbcc20c698c37e40b7d68943))
+* offer ADMIN_EMAILS in wrangler.jsonc and the setup command's deploy settings ([06a4dd1](https://github.com/ken109/r2-lfs/commit/06a4dd17bf886a6f25d25d83de2599bbebe93a07))
+
+
+### Bug Fixes
+
+* **admin:** meet contrast, focus and labelling needs of assistive technology ([1613735](https://github.com/ken109/r2-lfs/commit/16137351588a7bf355844a02aba424274ada5ee5))
+* **admin:** render dates the same on the server and in the browser ([161a9f3](https://github.com/ken109/r2-lfs/commit/161a9f302766c76696da9f58de8f3f13146a4116))
+* **cli:** count a restore a lock rule refuses to overwrite as restored ([72226b7](https://github.com/ken109/r2-lfs/commit/72226b79400448745318e418248aeabbff56fd1e))
+
 ## [0.4.0](https://github.com/ken109/r2-lfs/compare/v0.3.0...v0.4.0) (2026-09-14)
 
 
