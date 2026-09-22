@@ -47,6 +47,8 @@
     // Admin UI only: the Cloudflare Access team domain and application audience tag protecting /_admin.
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": "",
+    // Admin UI only: comma-separated emails that may change things, with * within addresses. Empty: everyone Access lets in.
+    "ADMIN_EMAILS": "",
     // "off" | "read" | "write": what GitHub Actions workflows may do in their own repository with an OIDC token.
     "ACTIONS_OIDC": "off",
     // The audience workflows request the token for.

@@ -103,6 +103,7 @@ export function workerConfig(opts: SetupOptions): Record<string, unknown> {
       R2_BUCKET_NAME: opts.bucket,
       ACCESS_TEAM_DOMAIN: opts.access?.teamDomain ?? "",
       ACCESS_AUD: opts.access?.aud ?? "",
+      ADMIN_EMAILS: "",
       ACTIONS_OIDC: opts.actionsOidc ?? "off",
       ACTIONS_OIDC_AUDIENCE: "r2-lfs",
       VERIFY_UPLOADS: "on",
