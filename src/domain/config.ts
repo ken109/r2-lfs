@@ -1,4 +1,4 @@
-import { type AuthMode, REPO_PATTERN, type StorageLayout } from "../shared/contract.ts";
+import { type AuthMode, REPO_PATTERN, type ServerInfo, type StorageLayout, VERSION } from "../shared/contract.ts";
 
 /** The Worker variables and secrets that configure r2-lfs. All optional here; validation decides. */
 export interface ConfigVars {
@@ -283,5 +283,33 @@ export function parseConfig(vars: ConfigVars): Config {
     access: teamDomain && aud ? { teamDomain: teamDomain.toLowerCase(), aud } : undefined,
     analytics: analyticsToken && accountId ? { accountId, apiToken: analyticsToken } : undefined,
     actionsOidc: actionsMode === "off" ? undefined : { permission: actionsMode, audience: actionsAudience },
+  };
+}
+
+/** The settings, or what is wrong with them. */
+export function loadConfig(vars: ConfigVars): { ok: true; value: Config } | { ok: false; error: ConfigError } {
+  try {
+    return { ok: true, value: parseConfig(vars) };
+  } catch (err) {
+    if (err instanceof ConfigError) return { ok: false, error: err };
+    throw err;
+  }
+}
+
+/** Non-secret settings, so `r2-lfs doctor` can explain what the server expects. */
+export function publicSettings(config: Config): ServerInfo {
+  return {
+    name: "r2-lfs",
+    version: VERSION,
+    authMode: config.authMode,
+    ...(config.authMode === "token" ? {} : { authHost: config.host.url }),
+    storageLayout: config.storageLayout,
+    transfer: config.presign ? "presigned" : "proxy",
+    proxyMaxUploadBytes: config.proxyMaxUploadBytes,
+    ...(config.encryptionKey ? { encrypted: true } : {}),
+    ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
+    ...(config.actionsOidc ? { actionsOidcAudience: config.actionsOidc.audience } : {}),
+    sessions: true,
+    ...(config.storageLayout === "per-repo" ? { storage: true } : {}),
   };
 }

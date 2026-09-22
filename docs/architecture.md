@@ -35,10 +35,10 @@ flowchart LR
 
 | Layer     | Holds                                                                                                     | May import                           |
 | --------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `domain/` | Configuration parsing, permission rules, batch request validation, key layout                             | `shared/`                            |
-| `app/`    | Use cases: authorize, batch, verify, download, upload. `ports.ts` declares what they need from outside.   | `domain/`, `shared/`                 |
+| `domain/` | Configuration parsing and its public settings, permission rules, batch request validation, key layout     | `shared/`                            |
+| `app/`    | Use cases: authorize, sessions, batch, verify, download, upload. `ports.ts` declares their outside needs. | `domain/`, `shared/`                 |
 | `infra/`  | Port implementations: R2 binding, presigned URLs, GitHub API, token directory                             | `app/ports.ts`, `domain/`, `shared/` |
-| `http/`   | Routing, Request/Response mapping, composition of infra per request                                       | everything above                     |
+| `http/`   | Routing and the methods each route takes, Request/Response mapping, composition of infra per request      | everything above                     |
 | `routes/` | The admin UI under `/_admin` (TanStack Start), and `server.ts`, which routes requests to it or to the API | everything above                     |
 
 The admin UI's server functions (`routes/[_]admin/-functions.ts`) do not construct adapters. `server.ts`

@@ -62,3 +62,44 @@ export function route(pathname: string): Route {
   }
   return { kind: "object", owner, name, oid: oid! };
 }
+
+/** Routes, with multipart uploads and storage split into the requests they take. */
+type Endpoint =
+  | Exclude<Route["kind"], "multipart" | "storage" | "not-found">
+  | "multipart-start"
+  | "multipart-part"
+  | "multipart-complete"
+  | "multipart-abort"
+  | "storage-list"
+  | "storage-change";
+
+/** The methods each endpoint answers; any other gets 405. */
+const METHODS: Record<Endpoint, readonly string[]> = {
+  landing: ["GET"],
+  info: ["GET"],
+  batch: ["POST"],
+  verify: ["POST"],
+  object: ["GET", "PUT"],
+  "multipart-start": ["POST"],
+  "multipart-part": ["PUT"],
+  "multipart-complete": ["POST"],
+  "multipart-abort": ["DELETE"],
+  locks: ["GET", "POST"],
+  "locks-verify": ["POST"],
+  unlock: ["POST"],
+  session: ["POST"],
+  "storage-list": ["GET"],
+  "storage-change": ["POST"],
+};
+
+function endpointOf(matched: Exclude<Route, { kind: "not-found" }>): Endpoint {
+  if (matched.kind === "storage") return matched.action === undefined ? "storage-list" : "storage-change";
+  if (matched.kind !== "multipart") return matched.kind;
+  if (matched.uploadId === undefined) return "multipart-start";
+  if (matched.complete) return "multipart-complete";
+  return matched.part === undefined ? "multipart-abort" : "multipart-part";
+}
+
+export function allowsMethod(matched: Exclude<Route, { kind: "not-found" }>, method: string): boolean {
+  return METHODS[endpointOf(matched)].includes(method);
+}

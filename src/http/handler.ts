@@ -3,8 +3,8 @@ import * as lfs from "../app/lfs.ts";
 import { createLock, listLocks, type LockResponse, type LocksContext, unlock, verifyLocks } from "../app/locks.ts";
 import * as multipart from "../app/multipart.ts";
 import { changeObjects, listObjects } from "../app/repository-storage.ts";
-import { hasPermission } from "../domain/access.ts";
-import { type Config, ConfigError, parseConfig } from "../domain/config.ts";
+import { actionAuthorization, checkTransferScope, openSession, type TransferScope } from "../app/session.ts";
+import { loadConfig, publicSettings } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
 import type { Env } from "../env.ts";
 import { GithubActionsOidc } from "../infra/actions-oidc.ts";
@@ -20,18 +20,10 @@ import { S3Copier } from "../infra/s3-copier.ts";
 import { HmacSessionTokens } from "../infra/session-tokens.ts";
 import { CombinedTokenDirectory } from "../infra/token-directory.ts";
 import { PresignedLinks, ProxyLinks } from "../infra/transfer-links.ts";
-import {
-  ACTION_TTL_SECONDS,
-  type MisconfiguredInfo,
-  type ServerInfo,
-  SESSION_TOKEN_PREFIX,
-  SESSION_TTL_SECONDS,
-  type SessionResponse,
-  VERSION,
-} from "../shared/contract.ts";
+import { type MisconfiguredInfo, VERSION } from "../shared/contract.ts";
 import { extractCredentials } from "./credentials.ts";
 import { lfsError, lfsJson } from "./responses.ts";
-import { route } from "./router.ts";
+import { allowsMethod, type Route, route } from "./router.ts";
 
 export interface Deps {
   fetch: Fetcher;
@@ -64,30 +56,10 @@ async function readJson(request: Request): Promise<unknown> {
 
 /** Non-secret settings, so `r2-lfs doctor` can explain what the server expects. */
 function info(env: Env): Response {
-  try {
-    const config = parseConfig(env);
-    const body: ServerInfo = {
-      name: "r2-lfs",
-      version: VERSION,
-      authMode: config.authMode,
-      ...(config.authMode === "token" ? {} : { authHost: config.host.url }),
-      storageLayout: config.storageLayout,
-      transfer: config.presign ? "presigned" : "proxy",
-      proxyMaxUploadBytes: config.proxyMaxUploadBytes,
-      ...(config.encryptionKey ? { encrypted: true } : {}),
-      ...(config.warnings.length > 0 ? { warnings: [...config.warnings] } : {}),
-      ...(config.actionsOidc ? { actionsOidcAudience: config.actionsOidc.audience } : {}),
-      sessions: true,
-      ...(config.storageLayout === "per-repo" ? { storage: true } : {}),
-    };
-    return Response.json(body);
-  } catch (err) {
-    if (err instanceof ConfigError) {
-      const body: MisconfiguredInfo = { name: "r2-lfs", version: VERSION, problems: err.problems };
-      return Response.json(body, { status: 500 });
-    }
-    throw err;
-  }
+  const loaded = loadConfig(env);
+  if (loaded.ok) return Response.json(publicSettings(loaded.value));
+  const body: MisconfiguredInfo = { name: "r2-lfs", version: VERSION, problems: loaded.error.problems };
+  return Response.json(body, { status: 500 });
 }
 
 /** Bodies up to this size are read to the end when a request is answered without them. */
@@ -126,31 +98,28 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
     return response;
   }
 
-  switch (matched.kind) {
-    case "landing":
-      return request.method === "GET"
-        ? new Response(LANDING, { headers: { "Content-Type": "text/plain; charset=utf-8" } })
-        : lfsError(405, "Method not allowed");
-    case "info":
-      return request.method === "GET" ? info(env) : lfsError(405, "Method not allowed");
-    case "not-found":
-      return lfsError(404, "Not found");
-  }
+  if (matched.kind === "not-found") return lfsError(404, "Not found");
+  if (!allowsMethod(matched, request.method)) return lfsError(405, "Method not allowed");
+  return matched.kind === "info" ? info(env) : new Response(LANDING, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
 
-type RepositoryRoute = Exclude<ReturnType<typeof route>, { kind: "landing" | "info" | "not-found" }>;
+type RepositoryRoute = Exclude<Route, { kind: "landing" | "info" | "not-found" }>;
+
+function transferScope(matched: RepositoryRoute): TransferScope {
+  if (matched.kind === "verify") return { kind: "verify" };
+  if (matched.kind === "object" || matched.kind === "multipart") return { kind: "transfer", oid: matched.oid };
+  return { kind: "other" };
+}
 
 async function handleRepository(request: Request, env: Env, deps: Deps, url: URL, matched: RepositoryRoute): Promise<Response> {
   const repo: Repo = { owner: matched.owner, name: matched.name };
 
-  let config: Config;
-  try {
-    config = parseConfig(env);
-  } catch (err) {
-    if (!(err instanceof ConfigError)) throw err;
-    console.error(err.message);
-    return lfsError(500, err.message);
+  const loaded = loadConfig(env);
+  if (!loaded.ok) {
+    console.error(loaded.error.message);
+    return lfsError(500, loaded.error.message);
   }
+  const config = loaded.value;
 
   const credentials = extractCredentials(request.headers.get("Authorization"));
   const sessions = new HmacSessionTokens(env.BUCKET);
@@ -163,22 +132,18 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
     isJwt: looksLikeJwt,
   });
   if (!auth.ok) return lfsError(auth.status, auth.message);
-  // A transfer action's token covers that object's transfer and nothing else.
-  if (auth.oid !== undefined) {
-    const covered = matched.kind === "verify" || ((matched.kind === "object" || matched.kind === "multipart") && matched.oid === auth.oid);
-    if (!covered) return lfsError(403, "This token was issued for one object's transfer only");
-  }
+  const scoped = checkTransferScope(auth.oid, transferScope(matched));
+  if (!scoped.ok) return lfsError(scoped.status, scoped.message);
+  if (!allowsMethod(matched, request.method)) return lfsError(405, "Method not allowed");
 
   const baseUrl = `${url.origin}/${repo.owner}/${repo.name}`;
-  const repoKey = `${repo.owner}/${repo.name}`.toLowerCase();
-  const actionAuthorization = async (oid: string, permission: "read" | "write") =>
-    `Bearer ${await sessions.mint({ repo: repoKey, permission, oid, expires: Math.floor(Date.now() / 1000) + ACTION_TTL_SECONDS })}`;
+  const authorizeAction = actionAuthorization({ repo, sessions });
   const ctx: lfs.LfsContext = {
     config,
     repo,
     permission: auth.permission,
     store: new R2ObjectStore(env.BUCKET, config.encryptionKey),
-    links: config.presign ? new PresignedLinks(config.presign, baseUrl, actionAuthorization) : new ProxyLinks(baseUrl, actionAuthorization),
+    links: config.presign ? new PresignedLinks(config.presign, baseUrl, authorizeAction) : new ProxyLinks(baseUrl, authorizeAction),
     copier: config.presign ? new S3Copier(config.presign, deps.fetch) : undefined,
     ...(auth.oid === undefined ? {} : { onlyOid: auth.oid }),
   };
@@ -195,42 +160,27 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
     case "storage": {
       const storage = { config, repo, permission: auth.permission, storage: new R2RepositoryStorage(env.BUCKET, config.encryptionKey) };
       if (matched.action === undefined) {
-        if (request.method !== "GET") return lfsError(405, "Method not allowed");
         const listed = await listObjects(storage, url.searchParams.get("in"), url.searchParams.get("cursor"));
         return toResponse(listed, (body) => lfsJson(200, body));
       }
-      if (request.method !== "POST") return lfsError(405, "Method not allowed");
       return toResponse(await changeObjects(storage, matched.action, await readJson(request)), (body) => lfsJson(200, body));
     }
     case "session": {
-      if (request.method !== "POST") return lfsError(405, "Method not allowed");
-      // Trading a token for another would let a session outlive the permission it was issued for.
-      if (credentials?.password.startsWith(SESSION_TOKEN_PREFIX)) return lfsError(403, "Send Git host credentials, not an r2-lfs token");
-      if (!hasPermission(auth.permission, "read")) return lfsError(403, "You do not have read access to this repository");
-      const expires = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-      const login = await auth.identify();
-      const permission = auth.permission as SessionResponse["permission"];
-      const token = await sessions.mint({ repo: repoKey, permission, expires, ...(login ? { login } : {}) });
-      const body: SessionResponse = { token, expires_at: new Date(expires * 1000).toISOString(), permission };
-      return lfsJson(200, body);
+      const session = { repo, permission: auth.permission, identify: auth.identify, sessions };
+      return toResponse(await openSession(session, credentials), (body) => lfsJson(200, body));
     }
     case "locks":
       if (request.method === "GET") return lockResponse(await listLocks(locks, url.searchParams));
-      if (request.method === "POST") return lockResponse(await createLock(locks, await readJson(request)));
-      return lfsError(405, "Method not allowed");
+      return lockResponse(await createLock(locks, await readJson(request)));
     case "locks-verify":
-      if (request.method !== "POST") return lfsError(405, "Method not allowed");
       return lockResponse(await verifyLocks(locks, await readJson(request)));
     case "unlock":
-      if (request.method !== "POST") return lfsError(405, "Method not allowed");
       return lockResponse(await unlock(locks, matched.id, await readJson(request)));
     case "batch":
-      if (request.method !== "POST") return lfsError(405, "Method not allowed");
       return toResponse(await lfs.batch(ctx, await readJson(request)), (body) => lfsJson(200, body));
     case "verify":
-      if (request.method !== "POST") return lfsError(405, "Method not allowed");
       return toResponse(await lfs.verify(ctx, await readJson(request)), (body) => lfsJson(200, body));
-    case "object":
+    case "object": {
       if (request.method === "GET") {
         return toResponse(await lfs.download(ctx, matched.oid, request.headers.get("Range")), ({ body, size, range }) =>
           range
@@ -248,30 +198,24 @@ async function handleRepository(request: Request, env: Env, deps: Deps, url: URL
               }),
         );
       }
-      if (request.method === "PUT") {
-        // Number(null) would be 0 and pass the size checks, leaving R2 to fail on a stream of unknown length.
-        const header = request.headers.get("Content-Length")?.trim();
-        const length = header ? Number(header) : Number.NaN;
-        return toResponse(await lfs.upload(ctx, matched.oid, request.body, length), () => new Response(null, { status: 200 }));
-      }
-      return lfsError(405, "Method not allowed");
+      // Number(null) would be 0 and pass the size checks, leaving R2 to fail on a stream of unknown length.
+      const header = request.headers.get("Content-Length")?.trim();
+      const length = header ? Number(header) : Number.NaN;
+      return toResponse(await lfs.upload(ctx, matched.oid, request.body, length), () => new Response(null, { status: 200 }));
+    }
     case "multipart": {
       const { oid, uploadId, part, complete } = matched;
       if (uploadId === undefined) {
-        if (request.method !== "POST") return lfsError(405, "Method not allowed");
         return toResponse(await multipart.startMultipart(parts, oid, await readJson(request)), (body) => lfsJson(200, body));
       }
       if (complete) {
-        if (request.method !== "POST") return lfsError(405, "Method not allowed");
         return toResponse(await multipart.completeMultipart(parts, oid, uploadId, await readJson(request)), (body) => lfsJson(200, body));
       }
       if (part !== undefined) {
-        if (request.method !== "PUT") return lfsError(405, "Method not allowed");
         const header = request.headers.get("Content-Length")?.trim();
         const length = header ? Number(header) : Number.NaN;
         return toResponse(await multipart.uploadPart(parts, oid, uploadId, part, request.body, length), (body) => lfsJson(200, body));
       }
-      if (request.method !== "DELETE") return lfsError(405, "Method not allowed");
       return toResponse(await multipart.abortMultipart(parts, oid, uploadId), (body) => lfsJson(200, body));
     }
   }
