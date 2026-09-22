@@ -367,8 +367,9 @@ It has these pages:
   rotates the key the Worker signs its short-lived tokens with, which revokes all of them within 5 minutes.
 - **Locks**: the file locks of a repository in `ALLOWED_REPOS`, or of one path in it, with the holder and time, marking
   those held for over a week, and unlocking any of them.
-- **Activity**: requests, bytes through the Worker and server errors by repository, from Workers
-  Analytics Engine. It needs `ANALYTICS_API_TOKEN` (`npx wrangler secret put ANALYTICS_API_TOKEN`) and
+- **Activity**: requests over time, and requests, bytes through the Worker, server errors and the error rate
+  of the 200 busiest repositories, over up to 90 days, from Workers Analytics Engine. The Overview sums up the
+  last 24 hours. It needs `ANALYTICS_API_TOKEN` (`npx wrangler secret put ANALYTICS_API_TOKEN`) and
   `R2_ACCOUNT_ID`, which `setup` sets from your Wrangler login; set it yourself after deploying with the button.
 
 The UI changes nothing on requests from other sites: its server functions accept changes only with the

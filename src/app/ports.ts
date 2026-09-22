@@ -211,6 +211,16 @@ export interface StorageReportStore {
 
 /** Requests the Worker recorded in Workers Analytics Engine, by repository. */
 export interface ActivitySource {
-  /** With `repo` (lowercased owner/name), that repository alone. */
-  byRepository(hours: number, repo?: string): Promise<{ repo: string; requests: number; bytes: number; errors: number }[]>;
+  /** The `limit` repositories with the most requests; with `repo` (lowercased owner/name), that repository alone. */
+  byRepository(hours: number, repo?: string, limit?: number): Promise<({ repo: string } & RequestTotals)[]>;
+  /** Totals per `bucketHours`, oldest first; buckets without requests are left out. `start` is ISO 8601. */
+  timeline(hours: number, bucketHours: number, repo?: string): Promise<({ start: string } & RequestTotals)[]>;
+}
+
+export interface RequestTotals {
+  requests: number;
+  /** Bytes of proxied transfers, which cross the Worker. */
+  bytes: number;
+  /** Answers with status 500 or above. */
+  errors: number;
 }

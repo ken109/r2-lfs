@@ -1,13 +1,13 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { recentActivity } from "../../src/app/admin-activity.ts";
+import { bucketHoursFor, fillTimeline, recentActivity } from "../../src/app/admin-activity.ts";
 import { forceUnlock, parseRepository, repositoryLocks, servedRepository } from "../../src/app/admin-locks.ts";
 import { changeRepositoryObjects, repositoryObjects } from "../../src/app/admin-objects.ts";
 import { rotateSessionKey } from "../../src/app/admin-sessions.ts";
 import { countStorage, lastStorageReport, storageReport } from "../../src/app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../../src/app/admin-tokens.ts";
-import type { BucketLister } from "../../src/app/ports.ts";
+import type { ActivitySource, BucketLister } from "../../src/app/ports.ts";
 import { parseConfig } from "../../src/domain/config.ts";
 import { AnalyticsSqlActivity } from "../../src/infra/analytics-sql.ts";
 import { R2BucketLister } from "../../src/infra/r2-bucket-lister.ts";
@@ -23,6 +23,7 @@ import {
   countOutcomes,
   formatCount,
   formatDate,
+  errorRate,
   formatRelative,
   olderThan,
   quotaShare,
@@ -212,31 +213,67 @@ describe("admin locks", () => {
 });
 
 describe("admin activity", () => {
-  it("queries Analytics Engine by repository when an API token is configured", async () => {
+  it("queries Analytics Engine by repository and over time when an API token is configured", async () => {
     const seen: { url: string; auth: string | null; body: string }[] = [];
     const source = new AnalyticsSqlActivity(
       async (input, init) => {
         const request = new Request(input, init);
-        seen.push({ url: request.url, auth: request.headers.get("Authorization"), body: await request.text() });
-        return Response.json({ data: [{ repo: "acme/game", requests: "12", bytes: 3456, errors: "1" }] });
+        const body = await request.text();
+        seen.push({ url: request.url, auth: request.headers.get("Authorization"), body });
+        return Response.json({
+          data: body.includes("toStartOfInterval")
+            ? [
+                { t: "2026-09-13 23:00:00", requests: "4", bytes: 0, errors: "0" },
+                { t: "2026-09-14 01:00:00", requests: "8", bytes: 3456, errors: "1" },
+              ]
+            : [{ repo: "acme/game", requests: "12", bytes: 3456, errors: "1" }],
+        });
       },
       { accountId: "acc123", apiToken: "api-token" },
     );
-    expect(await recentActivity(source, 24)).toEqual({
+
+    const result = await recentActivity(source, 3, undefined, () => new Date("2026-09-14T01:30:00Z"));
+    expect(result).toEqual({
       ok: true,
-      value: { enabled: true, hours: 24, repositories: [{ repo: "acme/game", requests: 12, bytes: 3456, errors: 1 }] },
+      value: {
+        enabled: true,
+        hours: 3,
+        repositories: [{ repo: "acme/game", requests: 12, bytes: 3456, errors: 1 }],
+        truncated: false,
+        total: { requests: 12, bytes: 3456, errors: 1 },
+        bucketHours: 1,
+        timeline: [
+          { start: "2026-09-13T22:00:00.000Z", requests: 0, bytes: 0, errors: 0 },
+          { start: "2026-09-13T23:00:00.000Z", requests: 4, bytes: 0, errors: 0 },
+          { start: "2026-09-14T00:00:00.000Z", requests: 0, bytes: 0, errors: 0 },
+          { start: "2026-09-14T01:00:00.000Z", requests: 8, bytes: 3456, errors: 1 },
+        ],
+      },
     });
     expect(seen[0]).toMatchObject({
       url: "https://api.cloudflare.com/client/v4/accounts/acc123/analytics_engine/sql",
       auth: "Bearer api-token",
     });
-    expect(seen[0]?.body).toContain("FROM r2_lfs");
-    expect(seen[0]?.body).toContain("INTERVAL '24' HOUR");
+    expect(seen.map((s) => s.body)).toEqual([
+      expect.stringMatching(/FROM r2_lfs[\s\S]*INTERVAL '3' HOUR[\s\S]*LIMIT 200/),
+      expect.stringMatching(/toStartOfInterval\(timestamp, INTERVAL '1' HOUR\)[\s\S]*GROUP BY t/),
+    ]);
 
     expect(await recentActivity(source, 0.5)).toMatchObject({ ok: false, status: 422 });
     expect(await recentActivity(undefined, 24)).toEqual({ ok: true, value: { enabled: false } });
     const failing = new AnalyticsSqlActivity(async () => new Response("denied", { status: 403 }), { accountId: "a", apiToken: "t" });
     expect(await recentActivity(failing, 1)).toMatchObject({ ok: false, status: 502, message: expect.stringContaining("403") });
+  });
+
+  it("says when the repository list stopped at its limit, and widens buckets for long periods", async () => {
+    const full: ActivitySource = {
+      byRepository: async (_hours, _repo, limit = 200) =>
+        Array.from({ length: limit }, (_, i) => ({ repo: `acme/r${i}`, requests: 1, bytes: 0, errors: 0 })),
+      timeline: async () => [],
+    };
+    expect(await recentActivity(full, 24)).toMatchObject({ ok: true, value: { truncated: true } });
+    expect([1, 24, 24 * 7, 24 * 30, 24 * 90].map(bucketHoursFor)).toEqual([1, 1, 1, 6, 24]);
+    expect(fillTimeline([], 24 * 90, 24, new Date("2026-09-14T12:00:00Z"))).toHaveLength(91);
   });
 
   it("needs the account id to query analytics, and only warns without it", () => {
@@ -301,7 +338,8 @@ describe("admin repository objects", () => {
       { accountId: "a", apiToken: "t" },
     );
     expect(await recentActivity(source, 24, "Acme/Game")).toMatchObject({ ok: true });
-    expect(bodies[0]).toContain("AND blob1 = 'acme/game'");
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) expect(body).toContain("AND blob1 = 'acme/game'");
     expect(await recentActivity(source, 24, "acme")).toMatchObject({ ok: false, status: 422 });
   });
 });
@@ -357,6 +395,8 @@ describe("admin UI formatting", () => {
     expect(sortRows(rows, "repo", "ascending").map((r) => r.repo)).toEqual(["a", "b", "c"]);
     expect(quotaShare(80, 100)).toBe(0.8);
     expect(quotaShare(80, undefined)).toBeUndefined();
+    expect(errorRate(3, 200)).toBe("1.5%");
+    expect(errorRate(0, 0)).toBe("–");
   });
 
   it("marks old locks and suggests repositories", () => {

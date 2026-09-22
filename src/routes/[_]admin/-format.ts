@@ -26,6 +26,9 @@ export function sortRows<T>(rows: readonly T[], key: keyof T, direction: SortDir
   });
 }
 
+/** The share of requests that failed with a server error, as `1.5%`. */
+export const errorRate = (errors: number, requests: number) => (requests ? `${((errors / requests) * 100).toFixed(1)}%` : "–");
+
 /** Share of the quota used, from 0; undefined without a quota. */
 export function quotaShare(bytes: number, quota: number | undefined): number | undefined {
   return quota ? bytes / quota : undefined;

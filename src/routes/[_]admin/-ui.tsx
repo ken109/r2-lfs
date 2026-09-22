@@ -1,7 +1,7 @@
 import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { formatDate, formatRelative, type SortDirection, splitRepository } from "./-format.ts";
+import { formatCount, formatDate, formatRelative, type SortDirection, splitRepository } from "./-format.ts";
 
 /** Server functions answer with the use cases' results; a failed one carries the status and a message to show. */
 export type Outcome<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
@@ -162,6 +162,72 @@ export function SortHeader<K extends string>({
         <span aria-hidden="true">{active ? (sort.direction === "ascending" ? " ▲" : " ▼") : ""}</span>
       </button>
     </th>
+  );
+}
+
+interface Bucket {
+  start: string;
+  requests: number;
+  errors: number;
+}
+
+/**
+ * Requests per bucket as bars, with the server errors among them in red. An inline SVG scaled to the width it gets;
+ * each bar's tooltip has its numbers, and the label sums the chart up for screen readers.
+ */
+export function ActivityChart({ timeline, bucketHours, height = 120 }: { timeline: Bucket[]; bucketHours: number; height?: number }) {
+  if (timeline.length === 0) return null;
+  const width = 600;
+  const peak = Math.max(1, ...timeline.map((b) => b.requests));
+  const step = width / timeline.length;
+  const gap = step > 4 ? 1 : 0;
+  const busiest = timeline.reduce((a, b) => (b.requests > a.requests ? b : a));
+  const unit = bucketHours === 1 ? "hour" : `${bucketHours} hours`;
+  const label = `Requests per ${unit}, from ${formatDate(timeline[0]!.start)} to ${formatDate(timeline.at(-1)!.start)}: at most ${formatCount(
+    busiest.requests,
+  )}, at ${formatDate(busiest.start)}.`;
+  const y = (n: number) => height - (n / peak) * height;
+
+  return (
+    <figure className="chart">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={label}>
+        <line x1={0} x2={width} y1={height - 0.5} y2={height - 0.5} className="axis" />
+        {timeline.map((bucket, i) => (
+          <g key={bucket.start}>
+            <title>
+              {`${formatDate(bucket.start)}: ${formatCount(bucket.requests)} requests, ${formatCount(bucket.errors)} server errors`}
+            </title>
+            {/* A full-height, invisible target, so the tooltip shows over empty buckets too. */}
+            <rect x={i * step} y={0} width={step} height={height} className="hit" />
+            {bucket.requests ? (
+              <rect
+                x={i * step + gap / 2}
+                y={y(bucket.requests)}
+                width={step - gap}
+                height={height - y(bucket.requests)}
+                className="bar-requests"
+              />
+            ) : null}
+            {bucket.errors ? (
+              <rect
+                x={i * step + gap / 2}
+                y={y(bucket.errors)}
+                width={step - gap}
+                height={height - y(bucket.errors)}
+                className="bar-errors"
+              />
+            ) : null}
+          </g>
+        ))}
+      </svg>
+      <figcaption className="hint">
+        <span>{formatDate(timeline[0]!.start)}</span>
+        <span>
+          Peak {formatCount(peak)} requests per {unit} · <span className="key-errors">server errors</span>
+        </span>
+        <span>{formatDate(timeline.at(-1)!.start)}</span>
+      </figcaption>
+    </figure>
   );
 }
 
@@ -417,6 +483,15 @@ button.sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2p
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar.over > span { background: var(--danger); }
 tr.over td { color: var(--danger); }
+.chart { margin: 0; }
+.chart svg { display: block; width: 100%; height: 120px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.chart .axis { stroke: var(--line); }
+.chart .hit { fill: transparent; }
+.chart .hit:hover { fill: color-mix(in srgb, var(--text) 6%, transparent); }
+.chart .bar-requests { fill: var(--accent); }
+.chart .bar-errors { fill: var(--danger); }
+.chart figcaption { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.key-errors::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--danger); margin-right: 4px; }
 .badge.warn { border-color: var(--accent); color: var(--text); margin-left: 8px; }
 tr.stale td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .stat .bar { width: 100%; margin: 6px 0 0; }

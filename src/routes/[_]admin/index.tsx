@@ -1,12 +1,14 @@
-import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { StorageReport } from "../../app/admin-storage.ts";
-import { QUOTA_WARNING, quotaShare, sortRows } from "./-format.ts";
-import { countStorage, getLastStorage } from "./-functions.ts";
+import { errorRate, QUOTA_WARNING, quotaShare, sortRows } from "./-format.ts";
+import { countStorage, getActivity, getLastStorage } from "./-functions.ts";
 import {
   ActionStatus,
+  ActivityChart,
   Caption,
+  Failure,
   formatBytes,
   formatCount,
   PageHeader,
@@ -20,7 +22,18 @@ import {
 } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/")({
-  loader: () => getLastStorage(),
+  loader: async () => {
+    const [storage, activity] = await Promise.all([
+      getLastStorage(),
+      // A summary only: the page still works when Analytics Engine does not answer.
+      getActivity({ data: { hours: 24 } }).catch((err: unknown) => ({
+        ok: false as const,
+        status: 502,
+        message: err instanceof Error ? err.message : String(err),
+      })),
+    ]);
+    return { storage, activity };
+  },
   component: OverviewPage,
   errorComponent: RouteError,
   pendingComponent: RoutePending,
@@ -32,7 +45,7 @@ const limit = (bytes: number | undefined) => (bytes === undefined ? "no limit" :
 
 function OverviewPage(): ReactNode {
   const overview = layout.useLoaderData();
-  const saved = Route.useLoaderData();
+  const { storage: saved, activity } = Route.useLoaderData();
   const router = useRouter();
   const action = useAction();
 
@@ -109,6 +122,40 @@ function OverviewPage(): ReactNode {
           </dl>
         </div>
       </section>
+
+      {activity.ok && !activity.value.enabled ? null : (
+        <section aria-labelledby="day-heading">
+          <h2 id="day-heading">Last 24 hours</h2>
+          {!activity.ok ? (
+            <Failure message={activity.message} />
+          ) : activity.value.enabled ? (
+            <>
+              <div className="stats">
+                <Stat label="Requests" value={formatCount(activity.value.total.requests)} />
+                <Stat
+                  label="Server errors"
+                  value={formatCount(activity.value.total.errors)}
+                  sub={`${errorRate(activity.value.total.errors, activity.value.total.requests)} of requests`}
+                />
+                <Stat label="Through the Worker" value={formatBytes(activity.value.total.bytes)} />
+                <Stat
+                  label="Busiest repository"
+                  value={activity.value.repositories[0]?.repo ?? "none"}
+                  {...(activity.value.repositories[0] ? { sub: `${formatCount(activity.value.repositories[0].requests)} requests` } : {})}
+                />
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <ActivityChart timeline={activity.value.timeline} bucketHours={activity.value.bucketHours} />
+              </div>
+              <p className="hint">
+                <Link to="/_admin/activity" search={{ hours: 24 }}>
+                  Requests by repository
+                </Link>
+              </p>
+            </>
+          ) : null}
+        </section>
+      )}
 
       <section>
         <h2>Storage</h2>

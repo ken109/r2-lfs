@@ -1,11 +1,13 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
+import type { Activity } from "../../app/admin-activity.ts";
 import { MAX_STORAGE_CHANGES, type StorageAction, type StorageChanges, type StorageListing } from "../../shared/contract.ts";
-import { chunks, countOutcomes } from "./-format.ts";
+import { chunks, countOutcomes, errorRate } from "./-format.ts";
 import { changeObjects, getActivity, getLocks, getObjects } from "./-functions.ts";
 import {
   ActionStatus,
+  ActivityChart,
   Caption,
   Failure,
   formatBytes,
@@ -130,32 +132,26 @@ function RepositoryPage(): ReactNode {
             Set <code>ANALYTICS_API_TOKEN</code> and <code>R2_ACCOUNT_ID</code> to see requests here.
           </p>
         ) : (
-          <ActivitySummary rows={activity.value.repositories} />
+          <ActivitySummary activity={activity.value} />
         )}
       </section>
     </>
   );
 }
 
-function ActivitySummary({ rows }: { rows: { requests: number; bytes: number; errors: number }[] }): ReactNode {
-  const total = rows.reduce(
-    (sum, r) => ({ requests: sum.requests + r.requests, bytes: sum.bytes + r.bytes, errors: sum.errors + r.errors }),
-    {
-      requests: 0,
-      bytes: 0,
-      errors: 0,
-    },
-  );
+function ActivitySummary({ activity }: { activity: Extract<Activity, { enabled: true }> }): ReactNode {
+  const { total } = activity;
   return (
-    <div className="stats">
-      <Stat label="Requests" value={formatCount(total.requests)} />
-      <Stat label="Through the Worker" value={formatBytes(total.bytes)} />
-      <Stat
-        label="Server errors"
-        value={formatCount(total.errors)}
-        {...(total.requests ? { sub: `${((total.errors / total.requests) * 100).toFixed(1)}% of requests` } : {})}
-      />
-    </div>
+    <>
+      <div className="stats">
+        <Stat label="Requests" value={formatCount(total.requests)} />
+        <Stat label="Through the Worker" value={formatBytes(total.bytes)} />
+        <Stat label="Server errors" value={formatCount(total.errors)} sub={`${errorRate(total.errors, total.requests)} of requests`} />
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <ActivityChart timeline={activity.timeline} bucketHours={activity.bucketHours} />
+      </div>
+    </>
   );
 }
 
