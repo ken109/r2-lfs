@@ -1,10 +1,20 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
 import { lockPrefixes, reposOfOwners, workerConfig } from "../../cli/app/setup.ts";
 import { displayWidth, formatBytes, table } from "../../cli/ui/format.ts";
-import { REPO_PATTERN, repoPatternMatches, VERSION, WORKER_COMPATIBILITY_DATE } from "../../src/shared/contract.ts";
+import {
+  emptyTokensFile,
+  mintToken,
+  readTokensFile,
+  REPO_PATTERN,
+  repoPatternMatches,
+  serializeTokensFile,
+  VERSION,
+  WORKER_COMPATIBILITY_DATE,
+} from "../../src/shared/contract.ts";
 
 describe("format", () => {
   it("formats sizes", () => {
@@ -113,5 +123,20 @@ describe("contract", () => {
       r2_buckets: [{ binding: "BUCKET", bucket_name: "b" }],
       vars: { ALLOWED_REPOS: "acme/*" },
     });
+  });
+
+  it("mints tokens whose stored hash is their SHA-256, and reads and writes the tokens file both sides share", async () => {
+    const { token, id, sha256 } = await mintToken();
+    expect(token).toMatch(/^r2lfs_[\w-]{43}$/);
+    expect(id).toMatch(/^[0-9a-f]{8}$/);
+    expect(sha256).toBe(createHash("sha256").update(token).digest("hex"));
+    expect((await mintToken()).token).not.toBe(token);
+
+    const file = { version: 1 as const, tokens: [{ id, label: "ci", scope: "*", permission: "read" as const, sha256, created: "x" }] };
+    expect(serializeTokensFile(file)).toBe(`${JSON.stringify(file, null, 2)}\n`);
+    expect(readTokensFile(serializeTokensFile(file))).toEqual({ ok: true, file });
+    expect(readTokensFile(undefined)).toEqual({ ok: true, file: emptyTokensFile() });
+    expect(readTokensFile("{")).toEqual({ ok: false, problem: "not-json" });
+    expect(readTokensFile('{"version":2}')).toEqual({ ok: false, problem: "format" });
   });
 });

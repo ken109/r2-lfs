@@ -1,29 +1,26 @@
 import {
   addStoredToken,
   type NewStoredToken,
+  readTokensFile,
   revokeStoredToken,
   type StoredToken,
-  storedTokensIn,
   type TokenEdit,
   TOKENS_KEY,
   type TokensFile,
 } from "../../src/shared/contract.ts";
 import { UsageError } from "./errors.ts";
 
-export function emptyTokensFile(): TokensFile {
-  return { version: 1, tokens: [] };
-}
+export { emptyTokensFile } from "../../src/shared/contract.ts";
 
-export function parseTokensFile(text: string): TokensFile {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new UsageError(`${TOKENS_KEY} in the bucket is not valid JSON; fix or delete it`);
-  }
-  const tokens = storedTokensIn(value);
-  if (!tokens) throw new UsageError(`${TOKENS_KEY} in the bucket has an unexpected format; fix or delete it`);
-  return { version: 1, tokens };
+/** The tokens file as stored; `undefined`, for no file yet, is an empty one. */
+export function parseTokensFile(text: string | undefined): TokensFile {
+  const read = readTokensFile(text);
+  if (read.ok) return read.file;
+  throw new UsageError(
+    read.problem === "not-json"
+      ? `${TOKENS_KEY} in the bucket is not valid JSON; fix or delete it`
+      : `${TOKENS_KEY} in the bucket has an unexpected format; fix or delete it`,
+  );
 }
 
 export type NewToken = NewStoredToken;

@@ -1,7 +1,7 @@
 import type { TokenDirectory } from "../app/ports.ts";
 import type { Grant } from "../domain/access.ts";
 import type { StaticToken } from "../domain/config.ts";
-import { type StoredToken, storedTokensIn, TOKENS_KEY } from "../shared/contract.ts";
+import { readTokensFile, type StoredToken, TOKENS_KEY } from "../shared/contract.ts";
 import { secretEquals, sha256Hex } from "./crypto.ts";
 
 const TTL_MS = 30_000;
@@ -15,13 +15,10 @@ export function clearStoredTokensCache(): void {
 async function storedTokens(bucket: R2Bucket): Promise<StoredToken[]> {
   if (cache && cache.bucket === bucket && cache.expires > Date.now()) return cache.tokens;
   const object = await bucket.get(TOKENS_KEY);
-  let tokens: StoredToken[] = [];
-  if (object) {
-    const parsed = storedTokensIn(await object.json().catch(() => undefined));
-    // A broken file must not take down tokens from AUTH_TOKENS as well.
-    if (parsed) tokens = parsed;
-    else console.error(`${TOKENS_KEY} is not a valid tokens file; ignoring stored tokens`);
-  }
+  const read = readTokensFile(object ? await object.text() : undefined);
+  // A broken file must not take down tokens from AUTH_TOKENS as well.
+  if (!read.ok) console.error(`${TOKENS_KEY} is not a valid tokens file; ignoring stored tokens`);
+  const tokens = read.ok ? read.file.tokens : [];
   cache = { bucket, tokens, expires: Date.now() + TTL_MS };
   return tokens;
 }

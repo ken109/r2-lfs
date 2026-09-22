@@ -1,4 +1,4 @@
-// Contracts shared by the Worker and the CLI. Keep this file free of runtime-specific APIs.
+// Contracts shared by the Worker and the CLI. Keep this file to APIs both runtimes have, such as Web Crypto.
 
 export const VERSION = "0.4.0"; // x-release-please-version
 
@@ -165,6 +165,45 @@ export function storedTokensIn(value: unknown): StoredToken[] | undefined {
       (t.permission === "read" || t.permission === "write" || t.permission === "admin"),
   );
   return valid ? file.tokens : undefined;
+}
+
+/** A tokens file before the first token. */
+export function emptyTokensFile(): TokensFile {
+  return { version: 1, tokens: [] };
+}
+
+/** Reads the tokens file as stored; `undefined`, for no file yet, reads as an empty one. */
+export function readTokensFile(text: string | undefined): { ok: true; file: TokensFile } | { ok: false; problem: "not-json" | "format" } {
+  if (text === undefined) return { ok: true, file: emptyTokensFile() };
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { ok: false, problem: "not-json" };
+  }
+  const tokens = storedTokensIn(value);
+  return tokens ? { ok: true, file: { version: 1, tokens } } : { ok: false, problem: "format" };
+}
+
+/** How the tokens file is stored: indented JSON, ending in a newline. */
+export function serializeTokensFile(file: TokensFile): string {
+  return `${JSON.stringify(file, null, 2)}\n`;
+}
+
+const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+const base64url = (bytes: Uint8Array) =>
+  btoa(String.fromCodePoint(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+
+/** A new token: `r2lfs_` and 32 random bytes, a short id to name it by, and the hex SHA-256 that is stored instead. */
+export async function mintToken(): Promise<{ token: string; id: string; sha256: string }> {
+  const token = `r2lfs_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
+  const id = hex(crypto.getRandomValues(new Uint8Array(4)));
+  const sha256 = hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))));
+  return { token, id, sha256 };
 }
 
 export interface NewStoredToken {
