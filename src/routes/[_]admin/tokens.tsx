@@ -2,7 +2,7 @@ import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router"
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createToken, getTokens, revokeToken } from "./-functions.ts";
-import { Failure, formatDate, PageHeader } from "./-ui.tsx";
+import { Failure, PageHeader, Time } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/tokens")({
   loader: () => getTokens(),
@@ -118,7 +118,9 @@ function TokensPage(): ReactNode {
                       <td>
                         <span className="badge">{token.permission}</span>
                       </td>
-                      <td>{formatDate(token.created)}</td>
+                      <td>
+                        <Time iso={token.created} />
+                      </td>
                       <td className="mono">{token.id}</td>
                       <td className="num">
                         <button type="button" className="danger" onClick={() => revoke(token.id, token.label)}>

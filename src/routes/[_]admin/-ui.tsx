@@ -1,23 +1,32 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+
+import { formatDate, formatRelative } from "./-format.ts";
 
 /** Server functions answer with the use cases' results; a failed one carries the status and a message to show. */
 export type Outcome<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB", "PB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+export { formatBytes, formatCount, formatDate, formatRelative } from "./-format.ts";
+
+/** Whether the component has hydrated; false during the server render and the hydration that follows it. */
+export function useHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  return hydrated;
 }
 
-export const formatCount = (n: number) => new Intl.NumberFormat("en").format(Math.round(n));
-
-export const formatDate = (iso: string) => new Date(iso).toLocaleString();
+/**
+ * A point in time: the server renders a fixed UTC form, and the browser switches to a relative one after hydrating,
+ * so both renders agree. The exact time stays in the tooltip.
+ */
+export function Time({ iso, relative = true }: { iso: string; relative?: boolean }): ReactNode {
+  const hydrated = useHydrated();
+  const exact = formatDate(iso);
+  return (
+    <time dateTime={iso} title={exact}>
+      {relative && hydrated ? formatRelative(iso, Date.now()) : exact}
+    </time>
+  );
+}
 
 export function Failure({ message }: { message: string }): ReactNode {
   return (

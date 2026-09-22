@@ -12,6 +12,7 @@ import { R2BucketLister } from "../../src/infra/r2-bucket-lister.ts";
 import { R2TokensFile, RandomTokenMinter } from "../../src/infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../../src/infra/repo-locks.ts";
 import { CombinedTokenDirectory } from "../../src/infra/token-directory.ts";
+import { formatCount, formatDate, formatRelative } from "../../src/routes/[_]admin/-format.ts";
 import { TOKENS_KEY } from "../../src/shared/contract.ts";
 
 const OID = (n: number) => n.toString(16).padStart(64, "0");
@@ -189,5 +190,18 @@ describe("admin activity", () => {
     const withoutAccount = parseConfig({ ...base, ANALYTICS_API_TOKEN: "t" });
     expect(withoutAccount.analytics).toBeUndefined();
     expect(withoutAccount.warnings).toEqual([expect.stringContaining("R2_ACCOUNT_ID")]);
+  });
+});
+
+describe("admin UI formatting", () => {
+  it("renders dates the same in the Worker and in any browser, and relative times from a given now", () => {
+    expect(formatDate("2026-09-14T08:05:59.123Z")).toBe("2026-09-14 08:05 UTC");
+    expect(formatDate("not a date")).toBe("not a date");
+    const now = Date.parse("2026-09-14T12:00:00Z");
+    expect(formatRelative("2026-09-14T11:59:40Z", now)).toBe("this minute");
+    expect(formatRelative("2026-09-14T09:00:00Z", now)).toBe("3 hours ago");
+    expect(formatRelative("2026-09-11T12:00:00Z", now)).toBe("3 days ago");
+    expect(formatRelative("2026-08-14T12:00:00Z", now)).toBe("last month");
+    expect(formatCount(1234567.4)).toBe("1,234,567");
   });
 });
