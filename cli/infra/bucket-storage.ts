@@ -1,31 +1,40 @@
 import { TRASH_PREFIX } from "../../src/shared/contract.ts";
-import type { Bucket, ObjectStorage, Outcome, RestoredObject } from "../app/ports.ts";
+import { moveToTrash, restoreFromTrash, type TrashStep, type TrashStore } from "../../src/shared/trash.ts";
+import type { Bucket, ObjectStorage, Outcome, RestoredObject, WriteResult } from "../app/ports.ts";
 import type { StoredObject } from "../domain/objects.ts";
+
+const step = (result: WriteResult): TrashStep =>
+  result.ok ? { ok: true } : { ok: false, refusal: result.locked ? "locked" : "failed", detail: `${result.status} ${result.message}` };
+
+/** The bucket as the trash procedures see it; refusals read as the S3 API's status and message. */
+function trashStore(bucket: Bucket): TrashStore {
+  return {
+    copy: async (source, target) => {
+      const copied = await bucket.copy(source, target);
+      // Until restore takes a refused overwrite as already restored, a lock rule's refusal reads as any other.
+      return copied.ok ? { ok: true } : { ok: false, refusal: "failed", detail: `${copied.status} ${copied.message}` };
+    },
+    delete: async (key) => step(await bucket.delete(key)),
+    exists: (key) => bucket.exists(key),
+  };
+}
 
 /** Copies to the trash before deleting, so a refused delete never loses data. */
 export async function trashObject(bucket: Bucket, object: StoredObject): Promise<Outcome> {
   const key = object.key;
-  const target = `${TRASH_PREFIX}${key}`;
-  const copied = await bucket.copy(key, target);
-  if (!copied.ok) return { key, action: "trash", ok: false, message: `copy failed: ${copied.status} ${copied.message}` };
-  const deleted = await bucket.delete(key);
-  if (deleted.ok) return { key, action: "trashed", ok: true };
-  if (deleted.locked) {
-    await bucket.delete(target);
-    return { key, action: "locked", ok: true };
+  const result = await moveToTrash(trashStore(bucket), key, `${TRASH_PREFIX}${key}`);
+  switch (result.outcome) {
+    case "trashed":
+    case "locked":
+      return { key, action: result.outcome, ok: true };
+    case "copy-refused":
+      return { key, action: "trash", ok: false, message: `copy failed: ${result.detail}` };
+    case "delete-refused": {
+      const refused = `delete refused: ${result.detail}`;
+      const message = result.checked ? refused : `${refused}; kept the trash copy because the object could not be checked`;
+      return { key, action: "trash", ok: false, message };
+    }
   }
-
-  // An error response does not prove nothing was deleted, as with a timeout, so drop the copy only when the object is still there.
-  const refused = `delete refused: ${deleted.status} ${deleted.message}`;
-  let stillThere: boolean;
-  try {
-    stillThere = await bucket.exists(key);
-  } catch {
-    return { key, action: "trash", ok: false, message: `${refused}; kept the trash copy because the object could not be checked` };
-  }
-  if (!stillThere) return { key, action: "trashed", ok: true };
-  await bucket.delete(target);
-  return { key, action: "trash", ok: false, message: refused };
 }
 
 async function each<T>(objects: readonly StoredObject[], progress: (done: number) => void, act: (o: StoredObject) => Promise<T>) {
@@ -82,11 +91,10 @@ export class BucketStorage implements ObjectStorage {
 
   restore(objects: readonly StoredObject[], progress: (done: number) => void): Promise<RestoredObject[]> {
     return each(objects, progress, async ({ key }): Promise<RestoredObject> => {
-      const copied = await this.bucket.copy(key, key.slice(TRASH_PREFIX.length));
-      if (!copied.ok) return { key, ok: false, message: `copy failed: ${copied.status} ${copied.message}` };
-      const removed = await this.bucket.delete(key);
+      const result = await restoreFromTrash(trashStore(this.bucket), key, key.slice(TRASH_PREFIX.length));
+      if (result.outcome === "copy-refused") return { key, ok: false, message: `copy failed: ${result.detail}` };
       // The object is back either way; a leftover trash copy expires with the lifecycle rule.
-      return removed.ok
+      return result.copyRemoved
         ? { key, ok: true }
         : { key, ok: true, message: "restored, but the trash copy could not be removed and will expire" };
     });

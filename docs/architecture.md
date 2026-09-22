@@ -6,6 +6,7 @@ r2-lfs has two programs that share one small contract:
 src/     the Worker: a Git LFS server on Cloudflare Workers, storing objects in R2, with an admin UI
 cli/     the CLI: runs on developer machines and in CI, talks to git, the Worker and R2's S3 API
 src/shared/contract.ts   bucket key layout, server info, the tokens file; imported by both
+src/shared/trash.ts      moving objects into and out of the trash without losing the only copy
 ```
 
 Both are split into layers with dependencies pointing inwards. The rules are enforced by

@@ -9,6 +9,7 @@ import {
   type StorageListing,
   TRASH_PREFIX,
 } from "../shared/contract.ts";
+import { moveToTrash, restoreFromTrash, type TrashStore } from "../shared/trash.ts";
 import type { Result } from "./lfs.ts";
 import type { RepositoryStorage } from "./ports.ts";
 
@@ -63,31 +64,40 @@ function parseOids(body: unknown): Result<string[]> {
 type Change = StorageChanges["results"][number];
 const describe = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** Copies to the trash, then deletes; a refused or failed delete drops the copy only if the object is still in place. */
+/** The bucket as the trash procedures see it, copying only content that hashes to `oid`. */
+function trashStore(storage: RepositoryStorage, oid: string): TrashStore {
+  return {
+    async copy(source, target) {
+      const copied = await storage.copy(source, target, { sha256: oid });
+      if (copied === "copied") return { ok: true };
+      return { ok: false, refusal: copied === "checksum-mismatch" ? "failed" : copied, detail: copied };
+    },
+    async delete(key) {
+      return (await storage.delete(key)) === "deleted" ? { ok: true } : { ok: false, refusal: "locked", detail: "locked" };
+    },
+    exists: async (key) => (await storage.head(key)) !== null,
+  };
+}
+
 async function trash(storage: RepositoryStorage, oid: string, live: string, trashed: string): Promise<Change> {
-  const copied = await storage.copy(live, trashed, { sha256: oid });
-  if (copied === "missing") return { oid, outcome: "missing" };
-  if (copied !== "copied") return { oid, outcome: "failed", message: `copying to the trash: ${copied}` };
-  try {
-    if ((await storage.delete(live)) === "deleted") return { oid, outcome: "trashed" };
-    await storage.delete(trashed);
-    return { oid, outcome: "locked" };
-  } catch (err) {
-    const stillThere = await storage.head(live).catch(() => undefined);
-    if (stillThere === null) return { oid, outcome: "trashed" };
-    if (stillThere) await storage.delete(trashed).catch(() => {});
-    return { oid, outcome: "failed", message: describe(err) };
+  const result = await moveToTrash(trashStore(storage, oid), live, trashed);
+  switch (result.outcome) {
+    case "trashed":
+    case "locked":
+      return { oid, outcome: result.outcome };
+    case "copy-refused":
+      if (result.refusal === "missing") return { oid, outcome: "missing" };
+      return { oid, outcome: "failed", message: `copying to the trash: ${result.detail}` };
+    case "delete-refused":
+      return { oid, outcome: "failed", message: result.detail };
   }
 }
 
 async function restore(storage: RepositoryStorage, oid: string, live: string, trashed: string): Promise<Change> {
-  const copied = await storage.copy(trashed, live, { sha256: oid });
-  // A lock rule refuses to overwrite only an object that is already back in place.
-  if (copied === "missing") return { oid, outcome: "missing" };
-  if (copied !== "copied" && copied !== "locked") return { oid, outcome: "failed", message: `copying back: ${copied}` };
-  // The object is back either way; a leftover trash copy expires with the lifecycle rule.
-  await storage.delete(trashed).catch(() => {});
-  return { oid, outcome: "restored" };
+  const result = await restoreFromTrash(trashStore(storage, oid), trashed, live);
+  if (result.outcome === "restored") return { oid, outcome: "restored" };
+  if (result.refusal === "missing") return { oid, outcome: "missing" };
+  return { oid, outcome: "failed", message: `copying back: ${result.detail}` };
 }
 
 async function tier(storage: RepositoryStorage, oid: string, live: string): Promise<Change> {
