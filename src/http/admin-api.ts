@@ -8,7 +8,7 @@ import { countStorage, lastStorageReport } from "../app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../app/admin-tokens.ts";
 import { changeRefusal } from "../app/admin.ts";
 import type { Result } from "../app/lfs.ts";
-import type { Config } from "../domain/config.ts";
+import { type Config, publicSettings } from "../domain/config.ts";
 import type { Env } from "../env.ts";
 import { AnalyticsSqlActivity } from "../infra/analytics-sql.ts";
 import type { Fetcher } from "../infra/host-permissions.ts";
@@ -46,12 +46,13 @@ export class WorkerAdminApi implements AdminApi {
 
   overview(): Overview {
     const c = this.config;
+    const info = publicSettings(c);
     return {
       email: this.email,
-      authMode: c.authMode,
-      ...(c.authMode === "token" ? {} : { authHost: c.host.url }),
-      storageLayout: c.storageLayout,
-      transfer: c.presign ? "presigned" : "proxy",
+      authMode: info.authMode,
+      ...(info.authHost === undefined ? {} : { authHost: info.authHost }),
+      storageLayout: info.storageLayout,
+      transfer: info.transfer,
       encrypted: c.encryptionKey !== undefined,
       verifyUploads: c.verifyUploads,
       allowedRepos: [...c.allowedRepos],
@@ -60,8 +61,7 @@ export class WorkerAdminApi implements AdminApi {
       ...(c.quotaBytes === undefined ? {} : { quotaBytes: c.quotaBytes }),
       staticTokens: c.tokens.length,
       ...(c.actionsOidc ? { actionsOidc: c.actionsOidc } : {}),
-      // As INFO_PATH reports them.
-      endpoints: { sessions: true, storage: c.storageLayout === "per-repo" },
+      endpoints: { sessions: info.sessions === true, storage: info.storage === true },
       access:
         this.refusal === undefined ? { canChange: true, limited: c.adminEmails !== undefined } : { canChange: false, reason: this.refusal },
       warnings: [...c.warnings],
