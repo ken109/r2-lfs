@@ -1,7 +1,7 @@
 import { UsageError } from "../domain/errors.ts";
 import { oidOfKey, type StoredObject } from "../domain/objects.ts";
 import { type Decision, planObjects } from "../domain/plan.ts";
-import { collectFacts, livePrefix, loadPolicy, presence, resolveLayout, trashPrefix } from "./common.ts";
+import { collectFacts, loadPolicy, presence, resolveLayout } from "./common.ts";
 import type { ObjectStorage, GitRepository, LfsClient, Reporter } from "./ports.ts";
 
 export interface WhyDeps {
@@ -64,8 +64,8 @@ export async function explain(deps: WhyDeps, target: string, opts: { layout?: st
   const trashed = new Set<string>();
   if (deps.storage) {
     const layout = await resolveLayout(client, opts.layout);
-    for (const object of await deps.storage.list(livePrefix(client, layout))) stored.set(oidOfKey(object.key) ?? "", object);
-    for (const object of await deps.storage.list(trashPrefix(client, layout))) trashed.add(oidOfKey(object.key) ?? "");
+    for (const object of await deps.storage.list("live", layout)) stored.set(oidOfKey(object.key) ?? "", object);
+    for (const object of await deps.storage.list("trash", layout)) trashed.add(oidOfKey(object.key) ?? "");
   }
 
   const objects = oids.map((oid): ExplainedObject => {

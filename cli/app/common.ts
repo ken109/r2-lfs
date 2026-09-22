@@ -1,10 +1,10 @@
-import { repoPrefix, type ServerInfo, type StorageLayout, TRASH_PREFIX } from "../../src/shared/contract.ts";
+import { repoPrefix, type ServerInfo, type StorageLayout } from "../../src/shared/contract.ts";
 import { UsageError } from "../domain/errors.ts";
 import { addPath, buildHistory, type History } from "../domain/history.ts";
 import type { ObjectRef } from "../domain/objects.ts";
 import type { Facts } from "../domain/plan.ts";
 import { checkKeepVersions, keepDayWindows, POLICY_FILE, type Policy, parsePolicy } from "../domain/policy.ts";
-import type { GitRepository, LfsClient } from "./ports.ts";
+import type { GitRepository, LfsClient, ObjectStorage } from "./ports.ts";
 
 export async function requireServerInfo(client: LfsClient): Promise<ServerInfo> {
   const result = await client.info();
@@ -29,19 +29,30 @@ export async function resolveLayout(client: LfsClient, override: string | undefi
 }
 
 /** Copies of encrypted objects need the key; without it gc and restore would only fail object by object. */
-export async function requireKeyIfEncrypted(client: LfsClient, storage: { encrypted: boolean }): Promise<void> {
+export async function requireKeyIfEncrypted(client: LfsClient, storage: ObjectStorage): Promise<void> {
   const info = await client.info().catch(() => undefined);
-  if (info?.kind === "ok" && info.info.encrypted && !storage.encrypted) {
+  if (info?.kind === "ok" && info.info.encrypted && !storage.supports.encryptedObjects) {
     throw new UsageError("the server encrypts objects; set R2_LFS_ENCRYPTION_KEY to the same key as its ENCRYPTION_KEY");
   }
 }
 
-export function livePrefix(client: LfsClient, layout: StorageLayout): string {
-  return repoPrefix(layout, client.location.owner, client.location.repo);
+const ONLY_WITH_THE_BUCKET = {
+  sharedLayout: { asked: "in the shared layout", because: "the server serves only the per-repo layout" },
+  deleteWithoutTrash: { asked: "--no-trash", because: "the server only moves objects to the trash" },
+};
+
+/** Stops a command that asks for what only the bucket itself can do before it changes anything. */
+export function requireSupport(storage: ObjectStorage, feature: keyof typeof ONLY_WITH_THE_BUCKET, command: string): void {
+  if (storage.supports[feature]) return;
+  const { asked, because } = ONLY_WITH_THE_BUCKET[feature];
+  throw new UsageError(
+    `${command} ${asked} needs R2 API credentials, since ${because}; set R2_ACCOUNT_ID, R2_BUCKET_NAME, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY`,
+  );
 }
 
-export function trashPrefix(client: LfsClient, layout: StorageLayout): string {
-  return `${TRASH_PREFIX}${livePrefix(client, layout)}`;
+/** For messages: where the repository's objects are in `layout`. */
+export function livePrefix(client: LfsClient, layout: StorageLayout): string {
+  return repoPrefix(layout, client.location.owner, client.location.repo);
 }
 
 export interface PolicyOverrides {

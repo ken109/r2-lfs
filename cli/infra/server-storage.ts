@@ -1,12 +1,13 @@
 import {
   MAX_STORAGE_CHANGES,
+  repoPrefix,
   STORAGE_ENDPOINT,
   type StorageAction,
   type StorageChanges,
   type StorageListing,
   TRASH_PREFIX,
 } from "../../src/shared/contract.ts";
-import type { ObjectStorage, Outcome, RestoredObject } from "../app/ports.ts";
+import type { ObjectStorage, Outcome, RestoredObject, StorageSupport } from "../app/ports.ts";
 import { UsageError } from "../domain/errors.ts";
 import { oidOfKey, type StoredObject } from "../domain/objects.ts";
 import type { LfsLocation } from "../domain/remote.ts";
@@ -15,8 +16,7 @@ type Change = StorageChanges["results"][number];
 
 /** A repository's objects through the server's storage endpoints, with the permissions the server gives the credentials. */
 export class ServerStorage implements ObjectStorage {
-  readonly encrypted = true;
-  readonly throughServer = true;
+  readonly supports: StorageSupport = { sharedLayout: false, deleteWithoutTrash: false, encryptedObjects: true };
   private readonly location: LfsLocation;
   private readonly token: string;
 
@@ -46,8 +46,10 @@ export class ServerStorage implements ObjectStorage {
     throw new UsageError(`${this.location.origin} answered ${res.status}: ${body?.message ?? res.statusText}`);
   }
 
-  async list(prefix: string): Promise<StoredObject[]> {
-    const where = prefix.startsWith(TRASH_PREFIX) ? "trash" : "live";
+  /** The server keeps every repository in the per-repo layout, whatever `layout` says. */
+  async list(where: "live" | "trash"): Promise<StoredObject[]> {
+    const live = repoPrefix("per-repo", this.location.owner, this.location.repo);
+    const prefix = where === "live" ? live : `${TRASH_PREFIX}${live}`;
     const objects: StoredObject[] = [];
     let cursor: string | undefined;
     do {
@@ -81,8 +83,9 @@ export class ServerStorage implements ObjectStorage {
     });
   }
 
+  /** Not supported: gc checks `supports.deleteWithoutTrash` first. */
   async delete(): Promise<Outcome[]> {
-    throw new UsageError("through the server gc only moves objects to the trash; --no-trash needs the R2_* variables");
+    throw new Error("the server does not delete objects without the trash");
   }
 
   async tier(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]> {

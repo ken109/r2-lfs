@@ -1,6 +1,6 @@
 // Interfaces the use cases depend on. Implementations live in ../infra; tests supply fakes.
 
-import type { BatchObjectResult, LfsAction, MultipartStart, ServerInfo } from "../../src/shared/contract.ts";
+import type { BatchObjectResult, LfsAction, MultipartStart, ServerInfo, StorageLayout } from "../../src/shared/contract.ts";
 import type { PointerChange } from "../domain/history.ts";
 import type { ObjectRef, StoredObject } from "../domain/objects.ts";
 import type { Pointer } from "../domain/pointer.ts";
@@ -148,6 +148,16 @@ export interface RestoredObject {
   message?: string;
 }
 
+/** What an `ObjectStorage` can do beyond listing, trashing, tiering and restoring a repository's objects. */
+export interface StorageSupport {
+  /** The shared layout, where one object serves several repositories; the server serves only the per-repo layout. */
+  sharedLayout: boolean;
+  /** Deleting without the trash; the server only moves objects to the trash. */
+  deleteWithoutTrash: boolean;
+  /** Copying objects stored with SSE-C, which needs the key; the server always holds it. */
+  encryptedObjects: boolean;
+}
+
 /**
  * Where gc, restore and the reports list and change a repository's objects: the bucket directly with R2 API credentials,
  * or the server's storage endpoints with the repository permissions it enforces.
@@ -155,11 +165,9 @@ export interface RestoredObject {
 export interface ObjectStorage {
   /** For messages, such as the bucket name or the server's host. */
   readonly name: string;
-  /** Whether copies of SSE-C objects will work; the server always holds the key. */
-  readonly encrypted: boolean;
-  /** Through the server, which only moves objects to the trash and serves only the per-repo layout. */
-  readonly throughServer: boolean;
-  list(prefix: string): Promise<StoredObject[]>;
+  readonly supports: StorageSupport;
+  /** The repository's objects, or its trashed ones keyed under the trash prefix, as `layout` stores them. */
+  list(where: "live" | "trash", layout: StorageLayout): Promise<StoredObject[]>;
   trash(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]>;
   delete(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]>;
   tier(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]>;

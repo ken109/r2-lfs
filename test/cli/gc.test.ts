@@ -12,11 +12,13 @@ import {
   FakeLfsClient,
   MemoryBucket,
   MemoryObjectStorage,
+  REPOSITORY,
   scenario,
   scenarioDeps,
   SilentReporter,
   storedObject,
   TempRepo,
+  THROUGH_SERVER,
 } from "./helpers.ts";
 
 const cleanup = cleanups();
@@ -95,6 +97,32 @@ describe("gc", () => {
     ]);
     expect(storage.objects.get(`${s.prefix}${s.oldOid}`)?.storageClass).toBe("STANDARD_IA");
     expect(storage.objects.has(`_trash/${s.prefix}${s.orphan}`)).toBe(true);
+  });
+
+  it("through the server, trashes but refuses what needs the bucket itself before changing anything", async () => {
+    const s = scenario();
+    cleanup(() => s.repo.remove());
+    const storage = new MemoryObjectStorage();
+    storage.supports = THROUGH_SERVER;
+    for (const object of await s.bucket.list("")) storage.objects.set(object.key, object);
+    const deps = scenarioDeps(s, { storage });
+
+    const plan = await planGc(deps, { fetch: false, mode: "apply", keepDays: "90" });
+    await expect(applyGc(deps, plan.candidates, { trash: false })).rejects.toThrow(
+      "gc --no-trash needs R2 API credentials, since the server only moves objects to the trash",
+    );
+    expect(storage.objects.size).toBe(5);
+    expect(await applyGc(deps, plan.candidates, { trash: true })).toEqual(
+      plan.candidates.map((p) => ({ key: p.object.key, action: "trashed", ok: true })),
+    );
+
+    // An encrypting server holds the key its copies need.
+    s.client.serverInfo = { ...s.client.serverInfo, encrypted: true };
+    await expect(planGc(deps, { fetch: false, mode: "apply" })).resolves.toMatchObject({ prefix: s.prefix });
+    s.client.serverInfo.storageLayout = "shared";
+    await expect(planGc(deps, { fetch: false, mode: "dry-run" })).rejects.toThrow(
+      "gc in the shared layout needs R2 API credentials, since the server serves only the per-repo layout",
+    );
   });
 
   it("reports objects a bucket lock still protects as locked, dropping the trash copy", async () => {
@@ -213,7 +241,7 @@ describe("gc", () => {
         repo: Git.open(repo.dir),
         otherRepos: [],
         client: new FakeLfsClient(),
-        storage: new BucketStorage(bucket),
+        storage: new BucketStorage(bucket, REPOSITORY),
         reporter: new SilentReporter(),
       },
       { fetch: false, mode: "dry-run" },
@@ -308,7 +336,7 @@ describe("gc", () => {
     s.client.serverInfo.storageLayout = "shared";
     const bucket = new MemoryBucket();
     for (const oid of [s.oldOid, s.newOid, finalOld, finalNew, s.orphan]) bucket.seed(`_shared/${oid}`, { size: 5, ageDays: 400 });
-    const deps = scenarioDeps(s, { otherRepos: [Git.open(other.dir)], storage: new BucketStorage(bucket) });
+    const deps = scenarioDeps(s, { otherRepos: [Git.open(other.dir)], storage: new BucketStorage(bucket, REPOSITORY) });
     s.repo.write(".r2-lfs.toml", "keep_days = 90\n");
 
     const plan = await planGc(deps, { fetch: false, mode: "apply" });

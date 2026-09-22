@@ -6,7 +6,17 @@ import { explain } from "../../cli/app/why.ts";
 import { UsageError } from "../../cli/domain/errors.ts";
 import { BucketStorage } from "../../cli/infra/bucket-storage.ts";
 import { Git } from "../../cli/infra/git.ts";
-import { cleanups, FakeLfsClient, MemoryBucket, pointerText, scenario, scenarioDeps, SilentReporter, TempRepo } from "./helpers.ts";
+import {
+  cleanups,
+  FakeLfsClient,
+  MemoryBucket,
+  pointerText,
+  REPOSITORY,
+  scenario,
+  scenarioDeps,
+  SilentReporter,
+  TempRepo,
+} from "./helpers.ts";
 
 const cleanup = cleanups();
 
@@ -69,7 +79,7 @@ describe("verify, usage and why", () => {
     await expect(explain(deps, "abcdef")).rejects.toThrow(/abcdef is ambiguous/);
     await expect(explain(deps, "abcdef9")).rejects.toThrow(/no LFS object in history starts with abcdef9/);
 
-    const withBucket = await explain({ ...deps, storage: new BucketStorage(bucket) }, "abcdef1");
+    const withBucket = await explain({ ...deps, storage: new BucketStorage(bucket, REPOSITORY) }, "abcdef1");
     expect(withBucket.path).toBeUndefined();
     expect(withBucket.objects).toEqual([
       expect.objectContaining({
@@ -84,7 +94,7 @@ describe("verify, usage and why", () => {
     const withoutBucket = await explain(deps, "abcdef1");
     expect(withoutBucket.objects[0]).toMatchObject({ onServer: true, decision: { kind: "delete" } });
     expect(withoutBucket.objects[0]?.uploaded).toBeUndefined();
-    expect((await explain({ ...deps, storage: new BucketStorage(bucket) }, "abcdef2")).objects[0]).toMatchObject({
+    expect((await explain({ ...deps, storage: new BucketStorage(bucket, REPOSITORY) }, "abcdef2")).objects[0]).toMatchObject({
       onServer: false,
       inTrash: true,
     });

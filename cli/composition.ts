@@ -90,8 +90,8 @@ function repositoryLocation(repo: GitRepository): LfsLocation {
 
 /** The bucket directly when the R2_* variables are set, otherwise through the server with git's credentials for it. */
 export function storageFor(repo: GitRepository): ObjectStorage {
-  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv());
   const location = repositoryLocation(repo);
+  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv(), location);
   const token = gitConfig.credentialFor(location.origin);
   if (!token) {
     throw new UsageError(
@@ -103,8 +103,8 @@ export function storageFor(repo: GitRepository): ObjectStorage {
 
 /** Storage for commands where listing objects only adds detail: undefined when neither the bucket nor the server can list. */
 export async function optionalStorage(repo: GitRepository): Promise<ObjectStorage | undefined> {
-  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv());
   const location = repositoryLocation(repo);
+  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv(), location);
   const token = gitConfig.credentialFor(location.origin);
   if (!token) return undefined;
   const info = await connect(location, token)

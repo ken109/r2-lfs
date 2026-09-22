@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import { listTrash, restoreObjects, selectTrash } from "../../cli/app/restore.ts";
 import { BucketStorage } from "../../cli/infra/bucket-storage.ts";
-import { at, cleanups, MemoryBucket, scenario, scenarioDeps, SilentReporter, storedObject } from "./helpers.ts";
+import {
+  at,
+  cleanups,
+  MemoryBucket,
+  MemoryObjectStorage,
+  REPOSITORY,
+  scenario,
+  scenarioDeps,
+  SilentReporter,
+  storedObject,
+  THROUGH_SERVER,
+} from "./helpers.ts";
 
 const cleanup = cleanups();
 
@@ -45,7 +56,7 @@ describe("restore", () => {
     const [missing, locked] = trash;
     bucket.seed(locked!.object.key);
     bucket.locked.push("_trash/");
-    expect(await restoreObjects({ storage: new BucketStorage(bucket), reporter }, [missing!, locked!])).toEqual([
+    expect(await restoreObjects({ storage: new BucketStorage(bucket, REPOSITORY), reporter }, [missing!, locked!])).toEqual([
       { oid: missing!.oid, ok: false, message: "copy failed: 404 NoSuchKey" },
       { oid: locked!.oid, ok: true, message: expect.stringContaining("trash copy could not be removed") },
     ]);
@@ -58,9 +69,26 @@ describe("restore", () => {
     bucket.seed(back.object.key);
     bucket.seed(`acme/assets/${back.oid}`);
     bucket.locked.push("acme/");
-    expect(await restoreObjects({ storage: new BucketStorage(bucket), reporter: new SilentReporter() }, [back])).toEqual([
+    expect(await restoreObjects({ storage: new BucketStorage(bucket, REPOSITORY), reporter: new SilentReporter() }, [back])).toEqual([
       { oid: back.oid, ok: true },
     ]);
     expect(bucket.objects.has(back.object.key)).toBe(false);
+  });
+
+  it("through the server, lists and restores the repository's trash, but not in the shared layout", async () => {
+    const s = scenario();
+    cleanup(() => s.repo.remove());
+    const storage = new MemoryObjectStorage();
+    storage.supports = THROUGH_SERVER;
+    storage.seed(`_trash/${s.prefix}${s.oldOid}`);
+    storage.seed(`_trash/other/repo/${s.newOid}`);
+    const deps = scenarioDeps(s, { storage });
+
+    const trash = await listTrash(deps);
+    expect(trash.map((t) => t.oid)).toEqual([s.oldOid]);
+    expect(await restoreObjects(deps, trash)).toEqual([{ oid: s.oldOid, ok: true }]);
+    expect(storage.objects.has(`${s.prefix}${s.oldOid}`)).toBe(true);
+
+    await expect(listTrash(deps, "shared")).rejects.toThrow("restore in the shared layout needs R2 API credentials");
   });
 });

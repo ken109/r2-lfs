@@ -1,5 +1,5 @@
 import { type BucketUsage, bucketUsage, type FileUsage, fileUsage } from "../domain/usage.ts";
-import { livePrefix, presence, readHistory, resolveLayout, trashPrefix } from "./common.ts";
+import { presence, readHistory, resolveLayout } from "./common.ts";
 import type { ObjectStorage, GitRepository, LfsClient, Reporter } from "./ports.ts";
 
 export interface UsageDeps {
@@ -38,7 +38,7 @@ export async function usageReport(deps: UsageDeps, opts: { offline: boolean; lay
     const layout = await resolveLayout(client, opts.layout);
     const store = deps.storage;
     bucket = await reporter.task("Listing the bucket", async () =>
-      bucketUsage(history, await store.list(livePrefix(client, layout)), await store.list(trashPrefix(client, layout))),
+      bucketUsage(history, await store.list("live", layout), await store.list("trash", layout)),
     );
   }
 

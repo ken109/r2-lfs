@@ -1,6 +1,6 @@
-import { TRASH_PREFIX } from "../../src/shared/contract.ts";
+import { repoPrefix, type StorageLayout, TRASH_PREFIX } from "../../src/shared/contract.ts";
 import { moveToTrash, restoreFromTrash, type TrashStep, type TrashStore } from "../../src/shared/trash.ts";
-import type { Bucket, ObjectStorage, Outcome, RestoredObject, WriteResult } from "../app/ports.ts";
+import type { Bucket, ObjectStorage, Outcome, RestoredObject, StorageSupport, WriteResult } from "../app/ports.ts";
 import type { StoredObject } from "../domain/objects.ts";
 
 const step = (result: WriteResult): TrashStep =>
@@ -44,23 +44,26 @@ async function each<T>(objects: readonly StoredObject[], progress: (done: number
 
 /** The bucket through R2's S3 API, with credentials that reach every repository's objects. */
 export class BucketStorage implements ObjectStorage {
-  readonly throughServer = false;
   private readonly bucket: Bucket;
+  private readonly repository: { owner: string; repo: string };
 
-  constructor(bucket: Bucket) {
+  /** Lists the objects of `repository`, the one whose lfs.url commands run against. */
+  constructor(bucket: Bucket, repository: { owner: string; repo: string }) {
     this.bucket = bucket;
+    this.repository = repository;
   }
 
   get name(): string {
     return this.bucket.name;
   }
 
-  get encrypted(): boolean {
-    return this.bucket.encrypted;
+  get supports(): StorageSupport {
+    return { sharedLayout: true, deleteWithoutTrash: true, encryptedObjects: this.bucket.encrypted };
   }
 
-  list(prefix: string): Promise<StoredObject[]> {
-    return this.bucket.list(prefix);
+  list(where: "live" | "trash", layout: StorageLayout): Promise<StoredObject[]> {
+    const live = repoPrefix(layout, this.repository.owner, this.repository.repo);
+    return this.bucket.list(where === "live" ? live : `${TRASH_PREFIX}${live}`);
   }
 
   trash(objects: readonly StoredObject[], progress: (done: number) => void): Promise<Outcome[]> {

@@ -1,6 +1,6 @@
 import { UsageError } from "../domain/errors.ts";
 import { oidOfKey, type StoredObject } from "../domain/objects.ts";
-import { readHistory, requireKeyIfEncrypted, resolveLayout, trashPrefix } from "./common.ts";
+import { readHistory, requireKeyIfEncrypted, requireSupport, resolveLayout } from "./common.ts";
 import type { GitRepository, LfsClient, ObjectStorage, Reporter } from "./ports.ts";
 
 export interface RestoreDeps {
@@ -25,13 +25,10 @@ export interface TrashedObject {
 export async function listTrash(deps: RestoreDeps, layout?: string): Promise<TrashedObject[]> {
   const { repo, client, storage, reporter } = deps;
   const resolved = await resolveLayout(client, layout);
-  if (resolved === "shared" && storage.throughServer) {
-    throw new UsageError("restore in the shared layout needs R2 API credentials; set the R2_* variables");
-  }
-  const prefix = trashPrefix(client, resolved);
+  if (resolved === "shared") requireSupport(storage, "sharedLayout", "restore");
   const trash = await reporter.task(
     "Listing the trash",
-    () => storage.list(prefix),
+    () => storage.list("trash", resolved),
     (t) => `${t.length} objects in the trash`,
   );
   const history = readHistory(repo);

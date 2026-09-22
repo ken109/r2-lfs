@@ -446,14 +446,16 @@ describe("ServerStorage", () => {
     try {
       const { port } = server.address() as AddressInfo;
       const storage = new ServerStorage(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, "admin-token");
-      const live = await storage.list("acme/assets/");
+      expect(storage.supports).toEqual({ sharedLayout: false, deleteWithoutTrash: false, encryptedObjects: true });
+      const live = await storage.list("live");
       expect(live.map((o) => o.key)).toEqual(oids.slice(0, 3).map((oid) => `acme/assets/${oid}`));
       expect(requests.map((r) => r.url)).toEqual([
         "/acme/assets/r2-lfs/objects?in=live",
         "/acme/assets/r2-lfs/objects?in=live&cursor=next",
       ]);
-      await storage.list("_trash/acme/assets/");
+      const trashed = await storage.list("trash");
       expect(requests.at(-2)?.url).toBe("/acme/assets/r2-lfs/objects?in=trash");
+      expect(trashed[0]?.key).toBe(`_trash/acme/assets/${oids[0]}`);
 
       requests.length = 0;
       const objects = oids.map((oid) => ({ key: `acme/assets/${oid}`, size: 5, lastModified: new Date(), storageClass: "STANDARD" }));
@@ -468,10 +470,9 @@ describe("ServerStorage", () => {
         () => {},
       );
       expect(restored).toEqual([{ key: `_trash/${objects[1]!.key}`, ok: false, message: "locked" }]);
-      await expect(storage.delete()).rejects.toThrow(/--no-trash needs the R2_\* variables/);
 
       const old = new ServerStorage(parseLfsUrl(`http://127.0.0.1:${port}/acme/old`)!, "t");
-      await expect(old.list("acme/old/")).rejects.toThrow(/upgrade the server, or set the R2_\* variables/);
+      await expect(old.list("live")).rejects.toThrow(/upgrade the server, or set the R2_\* variables/);
       const denied = new ServerStorage(parseLfsUrl(`http://127.0.0.1:${port}/acme/denied`)!, "t");
       await expect(denied.trash(objects.slice(0, 1), () => {})).rejects.toThrow(/403: You do not have admin access/);
     } finally {

@@ -1,7 +1,15 @@
 import { UsageError } from "../domain/errors.ts";
 import { combinePlans, type Planned, planObjects } from "../domain/plan.ts";
 import type { Policy } from "../domain/policy.ts";
-import { collectFacts, livePrefix, loadPolicy, type PolicyOverrides, requireKeyIfEncrypted, resolveLayout } from "./common.ts";
+import {
+  collectFacts,
+  livePrefix,
+  loadPolicy,
+  type PolicyOverrides,
+  requireKeyIfEncrypted,
+  requireSupport,
+  resolveLayout,
+} from "./common.ts";
 import type { GitRepository, LfsClient, ObjectStorage, Outcome, Reporter } from "./ports.ts";
 
 export interface GcDeps {
@@ -49,11 +57,7 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
   const layout = await resolveLayout(client, opts.layout);
   if (opts.mode !== "dry-run") await requireKeyIfEncrypted(client, storage);
   if (layout === "per-repo" && deps.otherRepos.length > 0) throw new UsageError("--repos only applies to the shared layout");
-  if (layout === "shared" && storage.throughServer) {
-    throw new UsageError(
-      "gc in the shared layout needs R2 API credentials; set R2_ACCOUNT_ID, R2_BUCKET_NAME, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
-    );
-  }
+  if (layout === "shared") requireSupport(storage, "sharedLayout", "gc");
   const sharedWithoutRepos = layout === "shared" && deps.otherRepos.length === 0;
   if (sharedWithoutRepos && opts.mode === "apply") {
     throw new UsageError("refusing to --apply in the shared layout without --repos; pick objects with -i or pass every repository");
@@ -92,7 +96,7 @@ export async function planGc(deps: GcDeps, opts: GcPlanOptions): Promise<GcPlan>
   const prefix = livePrefix(client, layout);
   const stored = await reporter.task(
     `Listing ${storage.name}/${prefix}`,
-    () => storage.list(prefix),
+    () => storage.list("live", layout),
     (s) => `${s.length} objects in ${storage.name}/${prefix}`,
   );
   const planned = combinePlans(views.map((v, i) => planObjects(stored, facts.all[i]!, v.policy, now)));
@@ -144,6 +148,7 @@ export async function applyGc(
   opts: { trash: boolean },
 ): Promise<Outcome[]> {
   const { storage, reporter } = deps;
+  if (!opts.trash) requireSupport(storage, "deleteWithoutTrash", "gc");
   const bar = reporter.progress(chosen.length, "Applying");
   const advance = (done: number) => bar.advance(done);
   const tiered = chosen.filter((p) => p.decision.kind === "tier").map((p) => p.object);

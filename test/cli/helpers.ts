@@ -25,6 +25,7 @@ import {
   type RestoredObject,
   type Session,
   type SessionCache,
+  type StorageSupport,
   type Wrangler,
   type WriteResult,
 } from "../../cli/app/ports.ts";
@@ -32,7 +33,7 @@ import type { ObjectRef, StoredObject } from "../../cli/domain/objects.ts";
 import { type LfsLocation, parseLfsUrl } from "../../cli/domain/remote.ts";
 import { BucketStorage } from "../../cli/infra/bucket-storage.ts";
 import { Git } from "../../cli/infra/git.ts";
-import { type ServerInfo, TRASH_PREFIX } from "../../src/shared/contract.ts";
+import { repoPrefix, type ServerInfo, type StorageLayout, TRASH_PREFIX } from "../../src/shared/contract.ts";
 
 export class SilentReporter implements Reporter {
   readonly warnings: string[] = [];
@@ -154,14 +155,20 @@ export const SERVER_INFO: ServerInfo = {
   proxyMaxUploadBytes: 100 * 1024 * 1024,
 };
 
+/** The repository `FakeLfsClient` points at, whose objects the storage fakes list. */
+export const REPOSITORY = { owner: "acme", repo: "assets" };
+
+/** What the server's storage endpoints allow. */
+export const THROUGH_SERVER: StorageSupport = { sharedLayout: false, deleteWithoutTrash: false, encryptedObjects: true };
+
 /**
  * The storage port in memory, without the bucket's copy-then-delete steps: what gc and restore see through either
  * adapter. Objects are keyed like the bucket, trashed ones under the trash prefix.
  */
 export class MemoryObjectStorage implements ObjectStorage {
   readonly name = "memory";
-  encrypted = false;
-  throughServer = false;
+  /** Everything, as with the bucket directly; `THROUGH_SERVER` for what the server's endpoints allow. */
+  supports: StorageSupport = { sharedLayout: true, deleteWithoutTrash: true, encryptedObjects: true };
   readonly objects = new Map<string, StoredObject>();
   /** Keys whose changes a bucket lock rule refuses. */
   readonly locked = new Set<string>();
@@ -175,7 +182,9 @@ export class MemoryObjectStorage implements ObjectStorage {
     });
   }
 
-  async list(prefix: string): Promise<StoredObject[]> {
+  async list(where: "live" | "trash", layout: StorageLayout): Promise<StoredObject[]> {
+    const live = repoPrefix(layout, REPOSITORY.owner, REPOSITORY.repo);
+    const prefix = where === "live" ? live : `${TRASH_PREFIX}${live}`;
     return [...this.objects.values()].filter((o) => o.key.startsWith(prefix));
   }
 
@@ -440,5 +449,12 @@ export interface ScenarioDeps {
 
 /** What gc, restore and the reports take for a scenario: its repository, server and bucket, with any of it replaced. */
 export function scenarioDeps(s: Scenario, over: Partial<ScenarioDeps> = {}): ScenarioDeps {
-  return { repo: s.git, otherRepos: [], client: s.client, storage: new BucketStorage(s.bucket), reporter: new SilentReporter(), ...over };
+  return {
+    repo: s.git,
+    otherRepos: [],
+    client: s.client,
+    storage: new BucketStorage(s.bucket, REPOSITORY),
+    reporter: new SilentReporter(),
+    ...over,
+  };
 }

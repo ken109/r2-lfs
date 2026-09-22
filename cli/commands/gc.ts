@@ -1,8 +1,8 @@
 import { defineCommand } from "citty";
 
+import { requireSupport } from "../app/common.ts";
 import { applyPlan, gcMode, type GcPlanOptions, planGc } from "../app/gc.ts";
 import * as compose from "../composition.ts";
-import { UsageError } from "../domain/errors.ts";
 import type { Planned } from "../domain/plan.ts";
 import { dim, formatBytes, formatDate, red, shortOid, table } from "../ui/format.ts";
 import { Terminal } from "../ui/terminal.ts";
@@ -40,9 +40,7 @@ export default defineCommand({
 
     const repo = compose.openRepo();
     const storage = compose.storageFor(repo);
-    if (!args.trash && storage.throughServer) {
-      throw new UsageError("through the server gc only moves objects to the trash; --no-trash needs the R2_* variables");
-    }
+    if (!args.trash) requireSupport(storage, "deleteWithoutTrash", "gc");
     const deps = {
       repo,
       otherRepos: commaList(args.repos).map((dir) => compose.openRepo(dir)),
