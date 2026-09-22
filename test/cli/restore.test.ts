@@ -51,4 +51,16 @@ describe("restore", () => {
     ]);
     expect(bucket.objects.has(`acme/assets/${locked!.oid}`)).toBe(true);
   });
+
+  it("counts an object a lock rule keeps from being overwritten as restored, since it is already back", async () => {
+    const bucket = new MemoryBucket();
+    const back = trashed("c".repeat(64), 1);
+    bucket.seed(back.object.key);
+    bucket.seed(`acme/assets/${back.oid}`);
+    bucket.locked.push("acme/");
+    expect(await restoreObjects({ storage: new BucketStorage(bucket), reporter: new SilentReporter() }, [back])).toEqual([
+      { oid: back.oid, ok: true },
+    ]);
+    expect(bucket.objects.has(back.object.key)).toBe(false);
+  });
 });

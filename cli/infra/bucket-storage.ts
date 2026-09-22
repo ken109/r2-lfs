@@ -9,11 +9,7 @@ const step = (result: WriteResult): TrashStep =>
 /** The bucket as the trash procedures see it; refusals read as the S3 API's status and message. */
 function trashStore(bucket: Bucket): TrashStore {
   return {
-    copy: async (source, target) => {
-      const copied = await bucket.copy(source, target);
-      // Until restore takes a refused overwrite as already restored, a lock rule's refusal reads as any other.
-      return copied.ok ? { ok: true } : { ok: false, refusal: "failed", detail: `${copied.status} ${copied.message}` };
-    },
+    copy: async (source, target) => step(await bucket.copy(source, target)),
     delete: async (key) => step(await bucket.delete(key)),
     exists: (key) => bucket.exists(key),
   };
