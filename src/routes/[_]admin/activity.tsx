@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { getActivity } from "./-functions.ts";
-import { Caption, Failure, formatBytes, formatCount, PageHeader, RouteError, RoutePending } from "./-ui.tsx";
+import { Caption, Failure, formatBytes, formatCount, PageHeader, RepoLink, RouteError, RoutePending } from "./-ui.tsx";
 
 const PERIODS = [
   { hours: 1, label: "Last hour" },
@@ -69,7 +69,9 @@ function ActivityPage(): ReactNode {
                 <tbody>
                   {result.value.repositories.map((row) => (
                     <tr key={row.repo}>
-                      <td className="mono">{row.repo}</td>
+                      <td>
+                        <RepoLink repo={row.repo} />
+                      </td>
                       <td className="num">{formatCount(row.requests)}</td>
                       <td className="num">{formatBytes(row.bytes)}</td>
                       <td className="num">{formatCount(row.errors)}</td>

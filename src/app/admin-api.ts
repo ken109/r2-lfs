@@ -1,4 +1,4 @@
-import type { AuthMode, GrantedPermission, LfsLock, StorageLayout } from "../shared/contract.ts";
+import type { AuthMode, GrantedPermission, LfsLock, StorageChanges, StorageLayout, StorageListing } from "../shared/contract.ts";
 import type { Activity } from "./admin-activity.ts";
 import type { StorageReport } from "./admin-storage.ts";
 import type { TokenSummary } from "./admin-tokens.ts";
@@ -34,5 +34,10 @@ export interface AdminApi {
   revokeToken(id: unknown): Promise<Result<TokenSummary>>;
   locks(repository: unknown, cursor?: unknown): Promise<Result<{ repository: string; locks: LfsLock[]; nextCursor?: string }>>;
   unlock(repository: unknown, id: unknown): Promise<Result<LfsLock>>;
-  activity(hours: unknown): Promise<Result<Activity>>;
+  /** Requests in the last `hours`, by repository or of one `repository`. */
+  activity(hours: unknown, repository?: unknown): Promise<Result<Activity>>;
+  /** One page of a repository's live or trashed objects (`where`: `live` or `trash`). */
+  objects(repository: unknown, where: unknown, cursor?: unknown): Promise<Result<StorageListing & { repository: string }>>;
+  /** Trashes, restores or tiers up to MAX_STORAGE_CHANGES objects of a repository. */
+  changeObjects(repository: unknown, action: unknown, oids: unknown): Promise<Result<StorageChanges>>;
 }

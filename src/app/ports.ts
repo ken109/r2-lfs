@@ -199,5 +199,6 @@ export interface BucketLister {
 
 /** Requests the Worker recorded in Workers Analytics Engine, by repository. */
 export interface ActivitySource {
-  byRepository(hours: number): Promise<{ repo: string; requests: number; bytes: number; errors: number }[]>;
+  /** With `repo` (lowercased owner/name), that repository alone. */
+  byRepository(hours: number, repo?: string): Promise<{ repo: string; requests: number; bytes: number; errors: number }[]>;
 }

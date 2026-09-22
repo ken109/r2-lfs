@@ -1,4 +1,24 @@
-// Formatting for the admin UI, free of React and the DOM so that tests can run it in the Worker.
+// Formatting and small helpers for the admin UI, free of React and the DOM so that tests can run them in the Worker.
+
+/** `owner/name` split for a route's params; undefined for anything else, such as an empty repository in metrics. */
+export function splitRepository(repo: string): { owner: string; name: string } | undefined {
+  const [owner, name, ...rest] = repo.split("/");
+  return owner && name && rest.length === 0 ? { owner, name } : undefined;
+}
+
+/** `items` in runs of at most `size`, in order. */
+export function chunks<T>(items: readonly T[], size: number): T[][] {
+  const runs: T[][] = [];
+  for (let i = 0; i < items.length; i += size) runs.push(items.slice(i, i + size));
+  return runs;
+}
+
+/** How many results ended each way, most frequent first. */
+export function countOutcomes(results: readonly { outcome: string }[]): { outcome: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const { outcome } of results) counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
+  return [...counts].map(([outcome, count]) => ({ outcome, count })).toSorted((a, b) => b.count - a.count);
+}
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

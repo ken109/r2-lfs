@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router"
 import type { FormEvent, ReactNode } from "react";
 
 import { getLocks, unlock } from "./-functions.ts";
-import { ActionStatus, Caption, Failure, PageHeader, RouteError, RoutePending, Time, useAction, useConfirm } from "./-ui.tsx";
+import { ActionStatus, Caption, Failure, PageHeader, RepoLink, RouteError, RoutePending, Time, useAction, useConfirm } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/locks")({
   validateSearch: (search: Record<string, unknown>): { repo?: string; cursor?: string } => ({
@@ -73,7 +73,9 @@ function LocksPage(): ReactNode {
 
       {result === undefined ? null : result.ok ? (
         <section>
-          <h2 className="mono">{result.value.repository}</h2>
+          <h2>
+            <RepoLink repo={result.value.repository} />
+          </h2>
           <div className="table-wrap">
             {result.value.locks.length === 0 ? (
               <p className="empty">Nothing is locked.</p>

@@ -355,10 +355,13 @@ The Worker serves an admin UI at `/_admin`. It stays closed until Cloudflare Acc
 The Worker checks the token Access adds to every request against your team's signing keys, so the UI
 refuses requests that did not come through that application.
 
-It has four pages:
+It has these pages:
 
 - **Overview**: the server's settings and warnings, and on request a count of what each repository
   stores, the trash and unfinished uploads.
+- **Repository** (open one from the other pages): its live and trashed objects, which you can move to the trash,
+  restore or move to Infrequent Access as `gc` and `restore` would, and its file locks and requests. Objects can be
+  changed in the `per-repo` layout only.
 - **Tokens**: create and revoke the tokens `r2-lfs token` keeps in the bucket. A new token is shown once.
 - **Locks**: a repository's file locks, with the holder and time, and unlocking any of them.
 - **Activity**: requests, bytes through the Worker and server errors by repository, from Workers

@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 
 import type { StorageReport } from "../../app/admin-storage.ts";
 import { getStorage } from "./-functions.ts";
-import { ActionStatus, Caption, formatBytes, formatCount, PageHeader, RouteError, RoutePending, useAction } from "./-ui.tsx";
+import { ActionStatus, Caption, formatBytes, formatCount, PageHeader, RepoLink, RouteError, RoutePending, useAction } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/")({
   component: OverviewPage,
@@ -130,7 +130,9 @@ function StorageView({ report, shared }: { report: StorageReport; shared: boolea
             <tbody>
               {report.repositories.map((repo) => (
                 <tr key={repo.repo}>
-                  <td className="mono">{repo.repo}</td>
+                  <td>
+                    <RepoLink repo={repo.repo} />
+                  </td>
                   <td className="num">{formatCount(repo.objects)}</td>
                   <td className="num">{formatBytes(repo.bytes)}</td>
                 </tr>

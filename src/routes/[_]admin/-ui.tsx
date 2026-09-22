@@ -1,7 +1,7 @@
-import { type ErrorComponentProps, useRouter } from "@tanstack/react-router";
+import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { formatDate, formatRelative } from "./-format.ts";
+import { formatDate, formatRelative, splitRepository } from "./-format.ts";
 
 /** Server functions answer with the use cases' results; a failed one carries the status and a message to show. */
 export type Outcome<T> = { ok: true; value: T } | { ok: false; status: number; message: string };
@@ -113,6 +113,17 @@ export function Failure({ message }: { message: string }): ReactNode {
     <p className="notice error" role="alert">
       {message}
     </p>
+  );
+}
+
+/** A repository's name, linking to its page when it is an `owner/name`. */
+export function RepoLink({ repo }: { repo: string }): ReactNode {
+  const params = splitRepository(repo);
+  if (!params) return <span className="mono">{repo || "(none)"}</span>;
+  return (
+    <Link to="/_admin/repos/$owner/$name" params={params} className="mono">
+      {repo}
+    </Link>
   );
 }
 
@@ -350,6 +361,19 @@ button:disabled { opacity: 0.6; cursor: default; }
 .toast-region { position: fixed; right: 20px; bottom: 20px; z-index: 10; }
 .toast { background: var(--text); color: var(--bg); border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); max-width: 360px; }
 .pending { color: var(--muted); padding: 28px 32px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.tab { padding: 6px 12px; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.toolbar .hint { margin-right: auto; }
+.progress label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-bottom: 12px; }
+.progress progress { width: 100%; accent-color: var(--accent); }
+.pager { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+tr.selected td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.report { margin-bottom: 12px; }
+.report p { margin: 0; }
+.report table { margin-top: 8px; }
+input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
 .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 @media (max-width: 720px) { .shell { grid-template-columns: 1fr; } .sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { margin: 0 12px 0 0; align-self: center; } .who { display: none; } main { padding: 20px 16px 40px; } }

@@ -1,6 +1,7 @@
 import { recentActivity } from "../app/admin-activity.ts";
 import type { AdminApi, Overview } from "../app/admin-api.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../app/admin-locks.ts";
+import { changeRepositoryObjects, repositoryObjects } from "../app/admin-objects.ts";
 import { storageReport } from "../app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../app/admin-tokens.ts";
 import type { Config } from "../domain/config.ts";
@@ -8,6 +9,7 @@ import type { Env } from "../env.ts";
 import { AnalyticsSqlActivity } from "../infra/analytics-sql.ts";
 import type { Fetcher } from "../infra/host-permissions.ts";
 import { R2BucketLister } from "../infra/r2-bucket-lister.ts";
+import { R2RepositoryStorage } from "../infra/r2-repository-storage.ts";
 import { R2TokensFile, RandomTokenMinter } from "../infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../infra/repo-locks.ts";
 
@@ -76,8 +78,20 @@ export class WorkerAdminApi implements AdminApi {
     return forceUnlock(new DurableObjectLockStore(this.env.LOCKS, repo), id);
   }
 
-  activity(hours: unknown) {
+  activity(hours: unknown, repository?: unknown) {
     const source = this.config.analytics ? new AnalyticsSqlActivity(this.fetcher, this.config.analytics) : undefined;
-    return recentActivity(source, hours);
+    return recentActivity(source, hours, repository);
+  }
+
+  private objectsDeps() {
+    return { config: this.config, storage: new R2RepositoryStorage(this.env.BUCKET, this.config.encryptionKey) };
+  }
+
+  objects(repository: unknown, where: unknown, cursor?: unknown) {
+    return repositoryObjects(this.objectsDeps(), repository, where, cursor);
+  }
+
+  changeObjects(repository: unknown, action: unknown, oids: unknown) {
+    return changeRepositoryObjects(this.objectsDeps(), repository, action, oids);
   }
 }

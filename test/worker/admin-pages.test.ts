@@ -3,16 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import { recentActivity } from "../../src/app/admin-activity.ts";
 import { forceUnlock, parseRepository, repositoryLocks } from "../../src/app/admin-locks.ts";
+import { changeRepositoryObjects, repositoryObjects } from "../../src/app/admin-objects.ts";
 import { storageReport } from "../../src/app/admin-storage.ts";
 import { createToken, listTokens, revokeToken } from "../../src/app/admin-tokens.ts";
 import type { BucketLister } from "../../src/app/ports.ts";
 import { parseConfig } from "../../src/domain/config.ts";
 import { AnalyticsSqlActivity } from "../../src/infra/analytics-sql.ts";
 import { R2BucketLister } from "../../src/infra/r2-bucket-lister.ts";
+import { R2RepositoryStorage } from "../../src/infra/r2-repository-storage.ts";
 import { R2TokensFile, RandomTokenMinter } from "../../src/infra/r2-tokens-file.ts";
 import { DurableObjectLockStore } from "../../src/infra/repo-locks.ts";
 import { CombinedTokenDirectory } from "../../src/infra/token-directory.ts";
-import { formatCount, formatDate, formatRelative } from "../../src/routes/[_]admin/-format.ts";
+import { chunks, countOutcomes, formatCount, formatDate, formatRelative, splitRepository } from "../../src/routes/[_]admin/-format.ts";
 import { TOKENS_KEY } from "../../src/shared/contract.ts";
 
 const OID = (n: number) => n.toString(16).padStart(64, "0");
@@ -193,6 +195,63 @@ describe("admin activity", () => {
   });
 });
 
+async function sha256(data: Uint8Array): Promise<string> {
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", data))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const perRepo = parseConfig({ ALLOWED_REPOS: "acme/*", AUTH_MODE: "token" });
+const deps = (config = perRepo) => ({ config, storage: new R2RepositoryStorage(env.BUCKET) });
+
+describe("admin repository objects", () => {
+  it("lists, trashes and restores a repository's objects as its administrator", async () => {
+    const data = new TextEncoder().encode("scene");
+    const oid = await sha256(data);
+    await env.BUCKET.put(`acme/objects/${oid}`, data);
+
+    const live = await repositoryObjects(deps(), "Acme/Objects", "live", undefined);
+    expect(live).toMatchObject({ ok: true, value: { repository: "acme/objects", objects: [{ oid, size: 5, storage_class: "STANDARD" }] } });
+
+    expect(await changeRepositoryObjects(deps(), "acme/objects", "trash", [oid])).toEqual({
+      ok: true,
+      value: { results: [{ oid, outcome: "trashed" }] },
+    });
+    expect(await repositoryObjects(deps(), "acme/objects", "trash", "")).toMatchObject({ ok: true, value: { objects: [{ oid }] } });
+    expect(await changeRepositoryObjects(deps(), "acme/objects", "restore", [oid])).toMatchObject({
+      ok: true,
+      value: { results: [{ oid, outcome: "restored" }] },
+    });
+    expect(await env.BUCKET.head(`acme/objects/${oid}`)).not.toBeNull();
+  });
+
+  it("refuses bad input, more than one request's worth of oids and the shared layout", async () => {
+    expect(await repositoryObjects(deps(), "acme", "live", undefined)).toMatchObject({ ok: false, status: 422 });
+    expect(await repositoryObjects(deps(), "acme/x", "elsewhere", undefined)).toMatchObject({ ok: false, status: 422 });
+    expect(await changeRepositoryObjects(deps(), "acme/x", "delete", [OID(1)])).toMatchObject({ ok: false, status: 422 });
+    const eleven = Array.from({ length: 11 }, (_, i) => OID(i));
+    expect(await changeRepositoryObjects(deps(), "acme/x", "trash", eleven)).toMatchObject({ ok: false, status: 422 });
+    const shared = parseConfig({ ALLOWED_REPOS: "acme/*", AUTH_MODE: "token", STORAGE_LAYOUT: "shared" });
+    expect(await repositoryObjects(deps(shared), "acme/x", "live", undefined)).toMatchObject({
+      ok: false,
+      status: 409,
+      message: expect.stringContaining("shared layout"),
+    });
+  });
+
+  it("queries one repository's activity", async () => {
+    const bodies: string[] = [];
+    const source = new AnalyticsSqlActivity(
+      async (input, init) => {
+        bodies.push(await new Request(input, init).text());
+        return Response.json({ data: [] });
+      },
+      { accountId: "a", apiToken: "t" },
+    );
+    expect(await recentActivity(source, 24, "Acme/Game")).toMatchObject({ ok: true });
+    expect(bodies[0]).toContain("AND blob1 = 'acme/game'");
+    expect(await recentActivity(source, 24, "acme")).toMatchObject({ ok: false, status: 422 });
+  });
+});
+
 describe("admin UI formatting", () => {
   it("renders dates the same in the Worker and in any browser, and relative times from a given now", () => {
     expect(formatDate("2026-09-14T08:05:59.123Z")).toBe("2026-09-14 08:05 UTC");
@@ -203,5 +262,17 @@ describe("admin UI formatting", () => {
     expect(formatRelative("2026-09-11T12:00:00Z", now)).toBe("3 days ago");
     expect(formatRelative("2026-08-14T12:00:00Z", now)).toBe("last month");
     expect(formatCount(1234567.4)).toBe("1,234,567");
+  });
+
+  it("splits selections into requests and counts their outcomes", () => {
+    expect(chunks([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(chunks([], 10)).toEqual([]);
+    expect(countOutcomes([{ outcome: "trashed" }, { outcome: "locked" }, { outcome: "trashed" }])).toEqual([
+      { outcome: "trashed", count: 2 },
+      { outcome: "locked", count: 1 },
+    ]);
+    expect(splitRepository("acme/game")).toEqual({ owner: "acme", name: "game" });
+    expect(splitRepository("")).toBeUndefined();
+    expect(splitRepository("a/b/c")).toBeUndefined();
   });
 });

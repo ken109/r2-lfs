@@ -24,11 +24,13 @@ export class AnalyticsSqlActivity implements ActivitySource {
     this.apiToken = settings.apiToken;
   }
 
-  async byRepository(hours: number) {
+  async byRepository(hours: number, repo?: string) {
+    // Callers pass a parsed owner/name, which has no quotes; they are escaped all the same.
+    const only = repo === undefined ? "" : `AND blob1 = '${repo.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
     const sql = `SELECT blob1 AS repo, SUM(_sample_interval) AS requests, SUM(_sample_interval * double1) AS bytes,
   SUM(IF(double2 >= 500, _sample_interval, 0)) AS errors
 FROM ${METRICS_DATASET}
-WHERE timestamp > NOW() - INTERVAL '${Math.floor(hours)}' HOUR
+WHERE timestamp > NOW() - INTERVAL '${Math.floor(hours)}' HOUR ${only}
 GROUP BY repo ORDER BY requests DESC LIMIT 200
 FORMAT JSON`;
     const res = await this.fetcher(`https://api.cloudflare.com/client/v4/accounts/${this.accountId}/analytics_engine/sql`, {

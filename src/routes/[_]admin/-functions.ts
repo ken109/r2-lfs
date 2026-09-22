@@ -26,5 +26,13 @@ export const unlock = createServerFn({ method: "POST" })
   .handler(({ context, data }) => context.admin.unlock(data.repository, data.id));
 
 export const getActivity = createServerFn({ method: "GET" })
-  .inputValidator((input: { hours: number }) => input)
-  .handler(({ context, data }) => context.admin.activity(data.hours));
+  .inputValidator((input: { hours: number; repository?: string }) => input)
+  .handler(({ context, data }) => context.admin.activity(data.hours, data.repository));
+
+export const getObjects = createServerFn({ method: "GET" })
+  .inputValidator((input: { repository: string; in: "live" | "trash"; cursor?: string }) => input)
+  .handler(({ context, data }) => context.admin.objects(data.repository, data.in, data.cursor));
+
+export const changeObjects = createServerFn({ method: "POST" })
+  .inputValidator((input: { repository: string; action: "trash" | "restore" | "tier"; oids: string[] }) => input)
+  .handler(({ context, data }) => context.admin.changeObjects(data.repository, data.action, data.oids));
