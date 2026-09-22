@@ -1,6 +1,7 @@
 import { hasPermission, type Permission } from "../domain/access.ts";
 import type { Config } from "../domain/config.ts";
 import type { Repo } from "../domain/repo.ts";
+import { read, StorageChangeRequest } from "../domain/requests.ts";
 import {
   MAX_STORAGE_CHANGES,
   OID_PATTERN,
@@ -52,10 +53,8 @@ export async function listObjects(ctx: StorageContext, where: string | null, cur
 }
 
 function parseOids(body: unknown): Result<string[]> {
-  const oids = (body as { oids?: unknown } | null)?.oids;
-  if (!Array.isArray(oids) || oids.length === 0 || !oids.every((o): o is string => typeof o === "string" && OID_PATTERN.test(o))) {
-    return reject(422, "oids must be a non-empty array of SHA-256 oids");
-  }
+  const oids = read(StorageChangeRequest, body)?.oids;
+  if (!oids) return reject(422, "oids must be a non-empty array of SHA-256 oids");
   if (oids.length > MAX_STORAGE_CHANGES) return reject(422, `At most ${MAX_STORAGE_CHANGES} oids per request`);
   return { ok: true, value: [...new Set(oids)] };
 }

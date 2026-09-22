@@ -1,6 +1,6 @@
 import { hasPermission } from "../domain/access.ts";
-import { isValidObject } from "../domain/batch.ts";
 import { objectKey } from "../domain/repo.ts";
+import { MultipartCompleteRequest, MultipartStartRequest, Oid, read, UploadedParts } from "../domain/requests.ts";
 import { incomingKey, memberKey, MIN_PART_BYTES, type MultipartStart } from "../shared/contract.ts";
 import type { LfsContext, Result } from "./lfs.ts";
 import type { MultipartStore } from "./ports.ts";
@@ -27,12 +27,13 @@ export function partSizeFor(size: number, proxyMaxUploadBytes: number): number |
 /** POST /objects/<oid>/multipart {size} */
 export async function startMultipart(ctx: MultipartContext, oid: string, body: unknown): Promise<Result<MultipartStart>> {
   if (!hasPermission(ctx.permission, "write")) return reject(403, "You do not have write access to this repository");
-  const size = (body as { size?: unknown } | null)?.size;
-  if (!isValidObject(oid, size)) return reject(422, "Invalid oid or size");
-  if (ctx.config.maxObjectBytes !== undefined && (size as number) > ctx.config.maxObjectBytes) {
+  const request = read(MultipartStartRequest, body);
+  if (read(Oid, oid) === undefined || !request) return reject(422, "Invalid oid or size");
+  const { size } = request;
+  if (ctx.config.maxObjectBytes !== undefined && size > ctx.config.maxObjectBytes) {
     return reject(422, `Object is larger than ${Math.floor(ctx.config.maxObjectBytes / 1024 ** 2)} MB, this server's limit`);
   }
-  const partSize = partSizeFor(size as number, ctx.config.proxyMaxUploadBytes);
+  const partSize = partSizeFor(size, ctx.config.proxyMaxUploadBytes);
   if (partSize === undefined) return reject(422, "Object needs more than 10,000 parts of this server's request size");
   return { ok: true, value: { uploadId: await ctx.multipart.create(staging(ctx, oid)), partSize } };
 }
@@ -65,17 +66,17 @@ export async function completeMultipart(
   body: unknown,
 ): Promise<Result<Record<string, never>>> {
   if (!hasPermission(ctx.permission, "write")) return reject(403, "You do not have write access to this repository");
-  const { size, parts } = (body ?? {}) as { size?: unknown; parts?: unknown };
-  if (!isValidObject(oid, size) || !Array.isArray(parts)) return reject(422, "size and parts are required");
-  const list = parts as { partNumber?: unknown; etag?: unknown }[];
-  if (!list.every((p) => typeof p?.partNumber === "number" && typeof p.etag === "string"))
-    return reject(422, "Each part needs partNumber and etag");
+  const request = read(MultipartCompleteRequest, body);
+  if (read(Oid, oid) === undefined || !request) return reject(422, "size and parts are required");
+  const { size } = request;
+  const parts = read(UploadedParts, request.parts);
+  if (!parts) return reject(422, "Each part needs partNumber and etag");
 
   const key = staging(ctx, oid);
   const live = objectKey(ctx.config.storageLayout, ctx.repo, oid);
   const marker = memberKey(ctx.repo.owner, ctx.repo.name, oid);
   try {
-    await ctx.multipart.complete(key, uploadId, list as { partNumber: number; etag: string }[]);
+    await ctx.multipart.complete(key, uploadId, parts);
   } catch (err) {
     // A client retrying after losing the answer finds the upload already completed: carry on from what it left.
     if ((await ctx.store.head(key))?.size !== size) {
@@ -90,7 +91,7 @@ export async function completeMultipart(
   let outcome: "stored" | "checksum-mismatch";
   if (!uploaded || uploaded.size !== size) outcome = "checksum-mismatch";
   else if (await ctx.store.head(live)) outcome = (await ctx.store.sha256(key)) === oid ? "stored" : "checksum-mismatch";
-  else outcome = await ctx.multipart.promote(key, live, oid, size as number);
+  else outcome = await ctx.multipart.promote(key, live, oid, size);
   await ctx.store.delete(key);
 
   if (outcome === "checksum-mismatch") return reject(422, "Uploaded content does not match the oid and size");

@@ -2,8 +2,7 @@ import { hasPermission, type Permission } from "../domain/access.ts";
 import {
   applyQuota,
   decideUpload,
-  isValidObject,
-  type ObjectSpec,
+  objectSpec,
   parseBatchRequest,
   parseObjectSpec,
   R2_MAX_SINGLE_UPLOAD_BYTES,
@@ -55,10 +54,8 @@ async function planObject(
   raw: { oid: unknown; size: unknown },
   multipart: boolean,
 ): Promise<BatchObjectResult> {
-  if (!isValidObject(raw.oid, raw.size)) {
-    return { oid: String(raw.oid), size: Number(raw.size) || 0, error: { code: 422, message: "Invalid oid or size" } };
-  }
-  const object = raw as ObjectSpec;
+  const object = objectSpec(raw);
+  if (!object) return { oid: String(raw.oid), size: Number(raw.size) || 0, error: { code: 422, message: "Invalid oid or size" } };
   const key = liveKey(ctx, object.oid);
   const stored = await ctx.store.head(key);
 

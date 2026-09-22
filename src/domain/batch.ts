@@ -1,5 +1,7 @@
-import { OID_PATTERN } from "../shared/contract.ts";
+import * as v from "valibot";
+
 import type { Permission } from "./access.ts";
+import { BatchEntry, JsonObject, ObjectSpec as ObjectSpecSchema, Operation, read } from "./requests.ts";
 
 export const MAX_OBJECTS_PER_BATCH = 1000;
 
@@ -18,8 +20,9 @@ export interface Rejection {
 
 export type Parsed<T> = { ok: true; value: T } | ({ ok: false } & Rejection);
 
-export function isValidObject(oid: unknown, size: unknown): boolean {
-  return typeof oid === "string" && OID_PATTERN.test(oid) && typeof size === "number" && Number.isSafeInteger(size) && size >= 0;
+/** The object `raw` names, or undefined when its oid or size is invalid. */
+export function objectSpec(raw: unknown): ObjectSpec | undefined {
+  return read(ObjectSpecSchema, raw);
 }
 
 export interface BatchRequest {
@@ -30,32 +33,32 @@ export interface BatchRequest {
   transfers: string[];
 }
 
+const BatchObjects = v.pipe(v.array(v.unknown()), v.maxLength(MAX_OBJECTS_PER_BATCH));
+
 export function parseBatchRequest(body: unknown): Parsed<BatchRequest> {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+  // JSON arrays are objects too, but not what a batch request is.
+  if (!v.is(JsonObject, body) || Array.isArray(body)) {
     return { ok: false, status: 400, message: "Request body must be a JSON object" };
   }
-  const { operation, objects, hash_algo, transfers } = body as Record<string, unknown>;
-  if (operation !== "upload" && operation !== "download") {
-    return { ok: false, status: 422, message: "operation must be upload or download" };
-  }
+  const { operation, objects, hash_algo, transfers } = body;
+  if (!v.is(Operation, operation)) return { ok: false, status: 422, message: "operation must be upload or download" };
   if (hash_algo !== undefined && hash_algo !== "sha256") return { ok: false, status: 409, message: "Only sha256 is supported" };
-  if (!Array.isArray(objects) || objects.length > MAX_OBJECTS_PER_BATCH) {
+  if (!v.is(BatchObjects, objects)) {
     return { ok: false, status: 422, message: `objects must be an array of at most ${MAX_OBJECTS_PER_BATCH} entries` };
   }
   return {
     ok: true,
     value: {
       operation,
-      objects: objects.map((o) => ({ oid: (o as { oid?: unknown } | null)?.oid, size: (o as { size?: unknown } | null)?.size })),
+      objects: objects.map((o) => (v.is(BatchEntry, o) ? { oid: o.oid, size: o.size } : { oid: undefined, size: undefined })),
       transfers: Array.isArray(transfers) ? transfers.filter((t): t is string => typeof t === "string") : ["basic"],
     },
   };
 }
 
 export function parseObjectSpec(body: unknown): Parsed<ObjectSpec> {
-  const { oid, size } = (body ?? {}) as Record<string, unknown>;
-  if (!isValidObject(oid, size)) return { ok: false, status: 422, message: "Invalid oid or size" };
-  return { ok: true, value: { oid: oid as string, size: size as number } };
+  const spec = objectSpec(body);
+  return spec ? { ok: true, value: spec } : { ok: false, status: 422, message: "Invalid oid or size" };
 }
 
 export function requiredPermission(operation: Operation): Permission {

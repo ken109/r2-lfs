@@ -1,4 +1,5 @@
 import { hasPermission, type Permission } from "../domain/access.ts";
+import { CreateLockRequest, ForceUnlockRequest, read, VerifyLocksRequest } from "../domain/requests.ts";
 import type { LfsLock } from "../shared/contract.ts";
 import type { LockStore } from "./ports.ts";
 
@@ -31,8 +32,9 @@ async function holder(ctx: LocksContext): Promise<string | LockResponse> {
 export async function createLock(ctx: LocksContext, body: unknown): Promise<LockResponse> {
   const owner = await holder(ctx);
   if (typeof owner !== "string") return owner;
-  const path = (body as { path?: unknown } | null)?.path;
-  if (typeof path !== "string" || path.trim() === "") return message(422, "path is required");
+  const request = read(CreateLockRequest, body);
+  if (!request) return message(422, "path is required");
+  const { path } = request;
   const { created, lock } = await ctx.locks.create(path, owner);
   return created
     ? { status: 201, body: { lock } }
@@ -57,10 +59,10 @@ export async function listLocks(ctx: LocksContext, query: URLSearchParams): Prom
 export async function verifyLocks(ctx: LocksContext, body: unknown): Promise<LockResponse> {
   const owner = await holder(ctx);
   if (typeof owner !== "string") return owner;
-  const { cursor, limit: rawLimit } = (body ?? {}) as { cursor?: unknown; limit?: unknown };
+  const { cursor, limit: rawLimit } = read(VerifyLocksRequest, body) ?? {};
   const limit = limitOf(rawLimit);
   if (limit === undefined) return message(422, "limit must be a positive integer");
-  const page = await ctx.locks.list({ limit, ...(typeof cursor === "string" && cursor ? { cursor } : {}) });
+  const page = await ctx.locks.list({ limit, ...(cursor ? { cursor } : {}) });
   const ours: LfsLock[] = [];
   const theirs: LfsLock[] = [];
   for (const lock of page.locks) (lock.owner.name === owner ? ours : theirs).push(lock);
@@ -74,7 +76,7 @@ export async function unlock(ctx: LocksContext, id: string, body: unknown): Prom
   const lock = await ctx.locks.find(id);
   if (!lock) return message(404, "Lock not found");
   if (lock.owner.name !== owner) {
-    if ((body as { force?: unknown } | null)?.force !== true) return message(403, `${lock.path} is locked by ${lock.owner.name}`);
+    if (!read(ForceUnlockRequest, body)) return message(403, `${lock.path} is locked by ${lock.owner.name}`);
     if (!hasPermission(ctx.permission, "admin")) return message(403, "Only admins can unlock files locked by someone else");
   }
   await ctx.locks.remove(id);

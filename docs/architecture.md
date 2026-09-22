@@ -35,7 +35,7 @@ flowchart LR
 
 | Layer     | Holds                                                                                                     | May import                           |
 | --------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `domain/` | Configuration parsing and its public settings, permission rules, batch request validation, key layout     | `shared/`                            |
+| `domain/` | Configuration parsing and its public settings, permission rules, request body schemas, key layout         | `shared/`, `valibot`                 |
 | `app/`    | Use cases: authorize, sessions, batch, verify, download, upload. `ports.ts` declares their outside needs. | `domain/`, `shared/`                 |
 | `infra/`  | Port implementations: R2 binding, presigned URLs, GitHub API, token directory                             | `app/ports.ts`, `domain/`, `shared/` |
 | `http/`   | Routing and the methods each route takes, Request/Response mapping, composition of infra per request      | everything above                     |

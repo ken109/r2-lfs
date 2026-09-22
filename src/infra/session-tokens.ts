@@ -1,5 +1,8 @@
+import * as v from "valibot";
+
 import type { SessionClaims, SessionTokens } from "../app/ports.ts";
-import { isGrantedPermission, SESSION_KEY_KEY, SESSION_TOKEN_PREFIX } from "../shared/contract.ts";
+import { read } from "../domain/requests.ts";
+import { type GrantedPermission, isGrantedPermission, SESSION_KEY_KEY, SESSION_TOKEN_PREFIX } from "../shared/contract.ts";
 
 const KEY_TTL_MS = 5 * 60_000;
 // Per isolate. Deleting the key object revokes every token once isolates reload it.
@@ -26,15 +29,24 @@ function fromBase64url(text: string): Uint8Array<ArrayBuffer> | undefined {
   }
 }
 
+/** Claims as a token carries them, under short keys; optional ones of another type are ignored. */
+const EncodedClaims = v.object({
+  r: v.string(),
+  p: v.custom<GrantedPermission>(isGrantedPermission),
+  e: v.number(),
+  u: v.fallback(v.optional(v.string()), undefined),
+  o: v.fallback(v.optional(v.string()), undefined),
+});
+
 function parseClaims(json: unknown): SessionClaims | undefined {
-  const c = json as Record<string, unknown> | null;
-  if (typeof c?.r !== "string" || !isGrantedPermission(c.p) || typeof c.e !== "number") return undefined;
+  const c = read(EncodedClaims, json);
+  if (!c) return undefined;
   return {
     repo: c.r,
     permission: c.p,
     expires: c.e,
-    ...(typeof c.u === "string" ? { login: c.u } : {}),
-    ...(typeof c.o === "string" ? { oid: c.o } : {}),
+    ...(c.u === undefined ? {} : { login: c.u }),
+    ...(c.o === undefined ? {} : { oid: c.o }),
   };
 }
 
