@@ -21,7 +21,7 @@ import { ServerStorage } from "../../cli/infra/server-storage.ts";
 import { FileSessionCache } from "../../cli/infra/session-cache.ts";
 import { TarWriter } from "../../cli/infra/tar-writer.ts";
 import { parseWhoami } from "../../cli/infra/wrangler-cli.ts";
-import { TempRepo } from "./helpers.ts";
+import { SERVER_INFO, TempRepo } from "./helpers.ts";
 
 describe("Git adapter", () => {
   let repo: TempRepo;
@@ -406,6 +406,26 @@ describe("HttpLfsClient", () => {
       expect(seen[0]?.authorization).toBe(`Basic ${Buffer.from("r2-lfs:gho_login").toString("base64")}`);
       expect(await new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/old`)!, "gho_login").session()).toBeUndefined();
       expect(await new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, undefined).session()).toBeUndefined();
+    } finally {
+      server.close();
+    }
+  });
+
+  it("asks for the server's settings once, and again only after the request failed", async () => {
+    let asked = 0;
+    const server = createServer((_req, res) => {
+      asked++;
+      if (asked === 1) return void res.destroy();
+      res.writeHead(200).end(JSON.stringify({ ...SERVER_INFO, name: "r2-lfs" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = new HttpLfsClient(parseLfsUrl(`http://127.0.0.1:${port}/acme/assets`)!, "token");
+      await expect(client.info()).rejects.toThrow("fetch failed");
+      expect(await client.info()).toEqual({ kind: "ok", info: SERVER_INFO });
+      expect(await client.info()).toEqual({ kind: "ok", info: SERVER_INFO });
+      expect(asked).toBe(2);
     } finally {
       server.close();
     }

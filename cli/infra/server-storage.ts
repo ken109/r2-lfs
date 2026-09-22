@@ -11,6 +11,7 @@ import type { ObjectStorage, Outcome, RestoredObject, StorageSupport } from "../
 import { UsageError } from "../domain/errors.ts";
 import { oidOfKey, type StoredObject } from "../domain/objects.ts";
 import type { LfsLocation } from "../domain/remote.ts";
+import { errorMessage, LfsEndpoint } from "./lfs-client.ts";
 
 type Change = StorageChanges["results"][number];
 
@@ -18,32 +19,24 @@ type Change = StorageChanges["results"][number];
 export class ServerStorage implements ObjectStorage {
   readonly supports: StorageSupport = { sharedLayout: false, deleteWithoutTrash: false, encryptedObjects: true };
   private readonly location: LfsLocation;
-  private readonly token: string;
+  private readonly endpoint: LfsEndpoint;
 
   constructor(location: LfsLocation, token: string) {
     this.location = location;
-    this.token = token;
+    this.endpoint = new LfsEndpoint(location, token);
   }
 
   get name(): string {
     return this.location.host;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const res = await fetch(`${this.location.url}/${STORAGE_ENDPOINT}${path}`, {
-      ...init,
-      headers: {
-        Accept: "application/vnd.git-lfs+json",
-        "Content-Type": "application/vnd.git-lfs+json",
-        Authorization: `Basic ${Buffer.from(`r2-lfs:${this.token}`).toString("base64")}`,
-      },
-    });
-    const body = (await res.json().catch(() => undefined)) as (T & { message?: string }) | undefined;
-    if (res.ok && body) return body;
-    if (res.status === 404 && !body?.message) {
+  private async request<T>(path: string, init: { method?: string; body?: string } = {}): Promise<T> {
+    const answer = await this.endpoint.request<T>(`${STORAGE_ENDPOINT}${path}`, init);
+    if (answer.res.ok && answer.body) return answer.body;
+    if (answer.res.status === 404 && !answer.body?.message) {
       throw new UsageError(`${this.location.origin} cannot list or change objects; upgrade the server, or set the R2_* variables`);
     }
-    throw new UsageError(`${this.location.origin} answered ${res.status}: ${body?.message ?? res.statusText}`);
+    throw new UsageError(`${this.location.origin} answered ${answer.res.status}: ${errorMessage(answer)}`);
   }
 
   /** The server keeps every repository in the per-repo layout, whatever `layout` says. */

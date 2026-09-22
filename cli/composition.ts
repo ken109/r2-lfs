@@ -88,11 +88,18 @@ function repositoryLocation(repo: GitRepository): LfsLocation {
   return location;
 }
 
+/** The bucket directly when the R2_* variables are set; otherwise the server, reached with git's credentials for it if any. */
+function reachStorage(repo: GitRepository): { location: LfsLocation; direct?: ObjectStorage; token?: string } {
+  const location = repositoryLocation(repo);
+  if (r2Configured()) return { location, direct: new BucketStorage(R2Bucket.fromEnv(), location) };
+  const token = gitConfig.credentialFor(location.origin);
+  return token ? { location, token } : { location };
+}
+
 /** The bucket directly when the R2_* variables are set, otherwise through the server with git's credentials for it. */
 export function storageFor(repo: GitRepository): ObjectStorage {
-  const location = repositoryLocation(repo);
-  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv(), location);
-  const token = gitConfig.credentialFor(location.origin);
+  const { location, direct, token } = reachStorage(repo);
+  if (direct) return direct;
   if (!token) {
     throw new UsageError(
       `no credentials for ${location.host}; push once so git stores them, or set the R2_* variables to use the bucket directly`,
@@ -103,10 +110,8 @@ export function storageFor(repo: GitRepository): ObjectStorage {
 
 /** Storage for commands where listing objects only adds detail: undefined when neither the bucket nor the server can list. */
 export async function optionalStorage(repo: GitRepository): Promise<ObjectStorage | undefined> {
-  const location = repositoryLocation(repo);
-  if (r2Configured()) return new BucketStorage(R2Bucket.fromEnv(), location);
-  const token = gitConfig.credentialFor(location.origin);
-  if (!token) return undefined;
+  const { location, direct, token } = reachStorage(repo);
+  if (direct || !token) return direct;
   const info = await connect(location, token)
     .info()
     .catch(() => undefined);

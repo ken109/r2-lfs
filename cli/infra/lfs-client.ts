@@ -5,18 +5,20 @@ import type { LfsLocation } from "../domain/remote.ts";
 
 const BATCH_SIZE = 100;
 
-/** Speaks the Git LFS batch API to an r2-lfs server. */
-export class HttpLfsClient implements LfsClient {
+/** An answer from a repository's LFS URL: the response, and its JSON body unless it had none. */
+export interface LfsAnswer<T> {
+  res: Response;
+  body: (T & { message?: string }) | undefined;
+}
+
+/** Requests to a repository's LFS URL with the headers git-lfs sends, and the token as Basic credentials. */
+export class LfsEndpoint {
   readonly location: LfsLocation;
-  private readonly token: string | undefined;
+  readonly token: string | undefined;
 
   constructor(location: LfsLocation, token: string | undefined) {
     this.location = location;
     this.token = token;
-  }
-
-  get hasCredentials(): boolean {
-    return this.token !== undefined;
   }
 
   private headers(): Record<string, string> {
@@ -28,7 +30,42 @@ export class HttpLfsClient implements LfsClient {
     return headers;
   }
 
-  async info(): Promise<InfoResult> {
+  /** `path` is relative to the LFS URL, such as `objects/batch`. */
+  async request<T>(path: string, init: { method?: string; body?: string } = {}): Promise<LfsAnswer<T>> {
+    const res = await fetch(`${this.location.url}/${path}`, { ...init, headers: this.headers() });
+    const body = (await res.json().catch(() => undefined)) as LfsAnswer<T>["body"];
+    return { res, body };
+  }
+}
+
+/** What an error answer says went wrong: its message, or the status text. */
+export const errorMessage = ({ res, body }: LfsAnswer<unknown>): string => body?.message ?? res.statusText;
+
+/** Speaks the Git LFS batch API to an r2-lfs server. */
+export class HttpLfsClient implements LfsClient {
+  readonly location: LfsLocation;
+  private readonly endpoint: LfsEndpoint;
+  private infoAnswer: Promise<InfoResult> | undefined;
+
+  constructor(location: LfsLocation, token: string | undefined) {
+    this.location = location;
+    this.endpoint = new LfsEndpoint(location, token);
+  }
+
+  get hasCredentials(): boolean {
+    return this.endpoint.token !== undefined;
+  }
+
+  /** Asked once per client: the settings do not change while a command runs. */
+  info(): Promise<InfoResult> {
+    this.infoAnswer ??= this.fetchInfo().catch((err: unknown) => {
+      this.infoAnswer = undefined;
+      throw err;
+    });
+    return this.infoAnswer;
+  }
+
+  private async fetchInfo(): Promise<InfoResult> {
     const res = await fetch(`${this.location.origin}${INFO_PATH}`);
     const body = (await res.json().catch(() => undefined)) as ServerInfo | MisconfiguredInfo | undefined;
     if (body?.name !== "r2-lfs") return { kind: "not-r2-lfs", status: res.status };
@@ -37,23 +74,20 @@ export class HttpLfsClient implements LfsClient {
   }
 
   async session(): Promise<Session | undefined> {
-    if (!this.token) return undefined;
-    const res = await fetch(`${this.location.url}/${SESSION_ENDPOINT}`, { method: "POST", headers: this.headers() });
+    if (!this.endpoint.token) return undefined;
+    const { res, body } = await this.endpoint.request<Partial<SessionResponse>>(SESSION_ENDPOINT, { method: "POST" });
     if (!res.ok) return undefined;
-    const body = (await res.json().catch(() => undefined)) as Partial<SessionResponse> | undefined;
     const expiresAt = new Date(body?.expires_at ?? Number.NaN);
     return typeof body?.token === "string" && !Number.isNaN(expiresAt.getTime()) ? { token: body.token, expiresAt } : undefined;
   }
 
   private async batchOnce(operation: "upload" | "download", objects: ObjectRef[]): Promise<BatchObject[]> {
-    const res = await fetch(`${this.location.url}/objects/batch`, {
+    const answer = await this.endpoint.request<{ objects?: BatchObject[] }>("objects/batch", {
       method: "POST",
-      headers: this.headers(),
       body: JSON.stringify({ operation, transfers: ["basic"], objects, hash_algo: "sha256" }),
     });
-    const body = (await res.json().catch(() => ({}))) as { objects?: BatchObject[]; message?: string };
-    if (!res.ok) throw new BatchRequestError(res.status, body.message ?? res.statusText);
-    return body.objects ?? [];
+    if (!answer.res.ok) throw new BatchRequestError(answer.res.status, errorMessage(answer));
+    return answer.body?.objects ?? [];
   }
 
   async batch(operation: "upload" | "download", objects: ObjectRef[]): Promise<BatchObject[]> {
