@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 
 import type { StorageReport } from "../../app/admin-storage.ts";
 import { getStorage } from "./-functions.ts";
-import { formatBytes, formatCount, PageHeader } from "./-ui.tsx";
+import { Caption, Failure, formatBytes, formatCount, PageHeader } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/")({
   component: OverviewPage,
@@ -90,7 +90,7 @@ function OverviewPage(): ReactNode {
             <button type="button" className="primary" onClick={countStorage} disabled={storage === "loading"}>
               {storage === "loading" ? "Counting…" : "Count storage"}
             </button>
-            {failure ? <p className="notice error">{failure}</p> : null}
+            {failure ? <Failure message={failure} /> : null}
           </div>
         ) : (
           <StorageView report={storage} shared={overview.storageLayout === "shared"} />
@@ -121,6 +121,7 @@ function StorageView({ report, shared }: { report: StorageReport; shared: boolea
           <p className="empty">No objects yet.</p>
         ) : (
           <table>
+            <Caption>Storage by repository</Caption>
             <thead>
               <tr>
                 <th>Repository</th>

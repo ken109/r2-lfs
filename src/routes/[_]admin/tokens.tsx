@@ -2,7 +2,7 @@ import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router"
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createToken, getTokens, revokeToken } from "./-functions.ts";
-import { Failure, PageHeader, Time } from "./-ui.tsx";
+import { Caption, CopyButton, Failure, PageHeader, Time } from "./-ui.tsx";
 
 export const Route = createFileRoute("/_admin/tokens")({
   loader: () => getTokens(),
@@ -80,10 +80,8 @@ function TokensPage(): ReactNode {
             <div className="notice" role="status">
               Token for <strong>{created.label}</strong>. Copy it now: it is not shown again.
               <div className="secret">
-                <code>{created.token}</code>
-                <button type="button" onClick={() => navigator.clipboard.writeText(created.token)}>
-                  Copy
-                </button>
+                <code id="new-token">{created.token}</code>
+                <CopyButton text={created.token} target={() => document.getElementById("new-token")} />
               </div>
             </div>
           ) : null}
@@ -100,6 +98,7 @@ function TokensPage(): ReactNode {
               <p className="empty">No tokens in the bucket.</p>
             ) : (
               <table>
+                <Caption>Tokens in the bucket</Caption>
                 <thead>
                   <tr>
                     <th>Label</th>
@@ -107,7 +106,9 @@ function TokensPage(): ReactNode {
                     <th>Permission</th>
                     <th>Created</th>
                     <th>ID</th>
-                    <th />
+                    <th>
+                      <span className="visually-hidden">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -123,7 +124,12 @@ function TokensPage(): ReactNode {
                       </td>
                       <td className="mono">{token.id}</td>
                       <td className="num">
-                        <button type="button" className="danger" onClick={() => revoke(token.id, token.label)}>
+                        <button
+                          type="button"
+                          className="danger"
+                          aria-label={`Revoke ${token.label}`}
+                          onClick={() => revoke(token.id, token.label)}
+                        >
                           Revoke
                         </button>
                       </td>

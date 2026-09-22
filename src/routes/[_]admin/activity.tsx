@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { getActivity } from "./-functions.ts";
-import { Failure, formatBytes, formatCount, PageHeader } from "./-ui.tsx";
+import { Caption, Failure, formatBytes, formatCount, PageHeader } from "./-ui.tsx";
 
 const PERIODS = [
   { hours: 1, label: "Last hour" },
@@ -55,6 +55,7 @@ function ActivityPage(): ReactNode {
               <p className="empty">No requests in this period.</p>
             ) : (
               <table>
+                <Caption>Requests by repository</Caption>
                 <thead>
                   <tr>
                     <th>Repository</th>

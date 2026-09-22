@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { formatDate, formatRelative } from "./-format.ts";
 
@@ -36,6 +36,51 @@ export function Failure({ message }: { message: string }): ReactNode {
   );
 }
 
+/** A table's caption, for screen readers only: the heading above the table already says it on screen. */
+export function Caption({ children }: { children: ReactNode }): ReactNode {
+  return <caption className="visually-hidden">{children}</caption>;
+}
+
+/**
+ * Copies `text`. Where the clipboard is unavailable (an insecure origin, a refused permission), it selects the text
+ * of `target` instead and asks to copy it by hand.
+ */
+export function CopyButton({ text, target }: { text: string; target: () => HTMLElement | null }): ReactNode {
+  const [state, setState] = useState<"idle" | "copied" | "manual">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  async function copy() {
+    clearTimeout(timer.current);
+    try {
+      await navigator.clipboard.writeText(text);
+      setState("copied");
+      timer.current = setTimeout(() => setState("idle"), 2000);
+    } catch {
+      const element = target();
+      if (element) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      setState("manual");
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={copy}>
+        {state === "copied" ? "Copied" : "Copy"}
+      </button>
+      <span role="status" className={state === "manual" ? "hint" : "visually-hidden"}>
+        {state === "copied" ? "Copied to the clipboard" : state === "manual" ? "Selected: press Ctrl+C or ⌘C to copy" : ""}
+      </span>
+    </>
+  );
+}
+
 export function PageHeader({ title, children }: { title: string; children?: ReactNode }): ReactNode {
   return (
     <header className="page-header">
@@ -48,8 +93,9 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
 /** The admin UI's styles: one sheet, light and dark. */
 export const STYLES = `
 :root { color-scheme: light dark; --bg: #f7f7f5; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
-  --accent: #f38020; --accent-text: #fff; --danger: #c62828; --ok: #2e7d32; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-@media (prefers-color-scheme: dark) { :root { --bg: #141413; --panel: #1d1d1b; --text: #ececea; --muted: #9a9a94; --line: #33332f; --danger: #ef6c6c; --ok: #7bc47f; } }
+  --accent: #b34d00; --accent-text: #fff; --danger: #c62828; --ok: #2e7d32; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+@media (prefers-color-scheme: dark) { :root { --bg: #141413; --panel: #1d1d1b; --text: #ececea; --muted: #9a9a94; --line: #33332f;
+  --accent: #f38020; --accent-text: #141413; --danger: #ef6c6c; --ok: #7bc47f; } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
 a { color: inherit; }
@@ -88,6 +134,7 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; 
 input, select { font: inherit; height: 36px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 button { font: inherit; height: 36px; border-radius: 6px; padding: 6px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button.danger { color: var(--danger); }
 button:disabled { opacity: 0.6; cursor: default; }
@@ -96,6 +143,8 @@ button:disabled { opacity: 0.6; cursor: default; }
 .notice.warn { border-color: var(--accent); }
 .secret { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .secret code { background: var(--bg); padding: 6px 10px; border-radius: 6px; overflow-wrap: anywhere; flex: 1; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.hint { font-size: 12px; color: var(--muted); }
 .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 @media (max-width: 720px) { .shell { grid-template-columns: 1fr; } .sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { margin: 0 12px 0 0; align-self: center; } .who { display: none; } main { padding: 20px 16px 40px; } }
