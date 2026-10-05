@@ -11,47 +11,47 @@ import { cleanups, SilentReporter, TempRepo } from "./helpers.ts";
 
 const cleanup = cleanups();
 
+function archiving() {
+  const repo = new TempRepo();
+  cleanup(() => repo.remove());
+  repo.git("remote", "add", "origin", "https://github.com/acme/assets.git");
+  repo.write("README.md", "hello");
+  const oid = repo.writeLfs("hero.blend", "hero content");
+  repo.commit("release");
+  repo.git("tag", "v1");
+
+  const git = Git.open(repo.dir);
+  const media = join(repo.dir, ".git", "test-lfs");
+  git.lfsObjectPath = (id) => join(media, id);
+  git.lfsFetch = async () => 0;
+  const files = new LocalFiles();
+  files.mkdirp(media);
+  const events: string[] = [];
+  let state: "draft" | "published" | undefined;
+  const gh: GitHubCli = {
+    available: () => true,
+    loggedIn: () => true,
+    token: () => "gho_release",
+    releaseState: () => state,
+    createDraftRelease: (target, tag) => {
+      events.push(`draft ${target} ${tag}`);
+      state = "draft";
+    },
+    uploadAssets: async (_target, _tag, assets) => {
+      events.push(`upload ${assets.length}`);
+      return 0;
+    },
+    publishRelease: () => {
+      events.push("publish");
+      state = "published";
+    },
+  };
+  const deps = { repo: git, gh, files, reporter: new SilentReporter() };
+  const opts = { tag: "v1", partBytes: 1024 ** 2, upload: true, remote: "origin" };
+  return { repo, files, media, oid, events, deps, opts, setState: (s: typeof state) => (state = s) };
+}
+
 describe("archive", () => {
-  function archiving() {
-    const repo = new TempRepo();
-    cleanup(() => repo.remove());
-    repo.git("remote", "add", "origin", "https://github.com/acme/assets.git");
-    repo.write("README.md", "hello");
-    const oid = repo.writeLfs("hero.blend", "hero content");
-    repo.commit("release");
-    repo.git("tag", "v1");
-
-    const git = Git.open(repo.dir);
-    const media = join(repo.dir, ".git", "test-lfs");
-    git.lfsObjectPath = (id) => join(media, id);
-    git.lfsFetch = async () => 0;
-    const files = new LocalFiles();
-    files.mkdirp(media);
-    const events: string[] = [];
-    let state: "draft" | "published" | undefined;
-    const gh: GitHubCli = {
-      available: () => true,
-      loggedIn: () => true,
-      token: () => "gho_release",
-      releaseState: () => state,
-      createDraftRelease: (target, tag) => {
-        events.push(`draft ${target} ${tag}`);
-        state = "draft";
-      },
-      uploadAssets: async (_target, _tag, assets) => {
-        events.push(`upload ${assets.length}`);
-        return 0;
-      },
-      publishRelease: () => {
-        events.push("publish");
-        state = "published";
-      },
-    };
-    const deps = { repo: git, gh, files, reporter: new SilentReporter() };
-    const opts = { tag: "v1", partBytes: 1024 ** 2, upload: true, remote: "origin" };
-    return { repo, files, media, oid, events, deps, opts, setState: (s: typeof state) => (state = s) };
-  }
-
   it("needs every LFS object locally, then uploads to a draft before publishing", async () => {
     const a = archiving();
     await expect(archiveTag(a.deps, a.opts)).rejects.toThrow(/hero.blend is not available locally/);

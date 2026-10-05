@@ -526,6 +526,8 @@ describe("transfer agent adapters", () => {
   it("calls the multipart endpoints under the action's href with its headers", async () => {
     const seen: { method: string; url: string; auth: string | undefined; body: string }[] = [];
     const server = createServer((req, res) => {
+      const json = (status: number, body: unknown) =>
+        res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
       const chunks: Buffer[] = [];
       req.on("data", (c: Buffer) => chunks.push(c));
       req.on("end", () => {
@@ -535,8 +537,6 @@ describe("transfer agent adapters", () => {
           auth: req.headers.authorization,
           body: Buffer.concat(chunks).toString(),
         });
-        const json = (status: number, body: unknown) =>
-          res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
         if (req.url === "/o/multipart") return json(200, { uploadId: "id/+=", partSize: 5 });
         if (req.url === "/o/multipart/id%2F%2B%3D/1") return json(200, { partNumber: 1, etag: "e1" });
         if (req.url === "/o/multipart/id%2F%2B%3D/2") return json(404, { message: "No such upload" });

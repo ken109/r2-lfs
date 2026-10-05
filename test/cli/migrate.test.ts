@@ -8,54 +8,54 @@ import { cleanups, FakeGitConfig, FakeLfsClient, noGh, SilentReporter, TempRepo 
 
 const cleanup = cleanups();
 
+function migrating() {
+  const origin = new TempRepo();
+  origin.write(".gitattributes", "*.blend filter=lfs diff=lfs merge=lfs -text\n");
+  const oldOid = origin.writeLfs("hero.blend", "hero v1");
+  origin.commit("v1", 100);
+  origin.git("switch", "-q", "-c", "wip");
+  const wipOid = origin.writeLfs("wip.blend", "work in progress");
+  origin.commit("wip");
+  origin.git("switch", "-q", "main");
+  const newOid = origin.writeLfs("hero.blend", "hero v2");
+  origin.commit("v2");
+  const clone = new TempRepo(origin);
+  clone.git("config", "filter.lfs.process", "git-lfs filter-process");
+  cleanup(
+    () => origin.remove(),
+    () => clone.remove(),
+  );
+
+  const git = Git.open(clone.dir);
+  const calls: string[] = [];
+  git.lfsFetch = async (remote, refs, opts) => {
+    calls.push(`fetch ${remote} ${refs.join(" ")} all=${opts?.all} url=${opts?.url} wip=${git.refTips().length}`);
+    return 0;
+  };
+  git.lfsPushAll = async (remote) => {
+    calls.push(`push ${remote}`);
+    return 0;
+  };
+  git.lfsMigrateImport = async () => {
+    calls.push("import");
+    return 0;
+  };
+  const client = new FakeLfsClient();
+  const deps = { repo: git, gitConfig: new FakeGitConfig(), gh: noGh, reporter: new SilentReporter(), connect: () => client };
+  const opts = {
+    server: "https://lfs.example.com",
+    repo: "acme/assets",
+    track: [],
+    from: "https://github.com/acme/assets.git/info/lfs",
+    remote: "origin",
+    importPatterns: [],
+    rewriteHistory: false,
+    commit: true,
+  };
+  return { origin, clone, git, calls, client, deps, opts, oldOid, wipOid, newOid };
+}
+
 describe("migrate", () => {
-  function migrating() {
-    const origin = new TempRepo();
-    origin.write(".gitattributes", "*.blend filter=lfs diff=lfs merge=lfs -text\n");
-    const oldOid = origin.writeLfs("hero.blend", "hero v1");
-    origin.commit("v1", 100);
-    origin.git("switch", "-q", "-c", "wip");
-    const wipOid = origin.writeLfs("wip.blend", "work in progress");
-    origin.commit("wip");
-    origin.git("switch", "-q", "main");
-    const newOid = origin.writeLfs("hero.blend", "hero v2");
-    origin.commit("v2");
-    const clone = new TempRepo(origin);
-    clone.git("config", "filter.lfs.process", "git-lfs filter-process");
-    cleanup(
-      () => origin.remove(),
-      () => clone.remove(),
-    );
-
-    const git = Git.open(clone.dir);
-    const calls: string[] = [];
-    git.lfsFetch = async (remote, refs, opts) => {
-      calls.push(`fetch ${remote} ${refs.join(" ")} all=${opts?.all} url=${opts?.url} wip=${git.refTips().length}`);
-      return 0;
-    };
-    git.lfsPushAll = async (remote) => {
-      calls.push(`push ${remote}`);
-      return 0;
-    };
-    git.lfsMigrateImport = async () => {
-      calls.push("import");
-      return 0;
-    };
-    const client = new FakeLfsClient();
-    const deps = { repo: git, gitConfig: new FakeGitConfig(), gh: noGh, reporter: new SilentReporter(), connect: () => client };
-    const opts = {
-      server: "https://lfs.example.com",
-      repo: "acme/assets",
-      track: [],
-      from: "https://github.com/acme/assets.git/info/lfs",
-      remote: "origin",
-      importPatterns: [],
-      rewriteHistory: false,
-      commit: true,
-    };
-    return { origin, clone, git, calls, client, deps, opts, oldOid, wipOid, newOid };
-  }
-
   it("fetches every ref, copies from the old endpoint, pushes and counts what the server lacks across all history", async () => {
     const m = migrating();
     // A branch pushed after cloning must still be migrated.
