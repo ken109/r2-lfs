@@ -105,22 +105,22 @@ export class Terminal implements Reporter {
 
   async confirm(message: string, initialValue = false): Promise<boolean> {
     if (!this.interactive) return initialValue;
-    return this.settle(await clack.confirm({ message, initialValue }));
+    return this.settle<boolean>(await clack.confirm({ message, initialValue }));
   }
 
   async text(message: string, opts: { placeholder?: string; validate?: (value: string) => string | undefined } = {}): Promise<string> {
     this.requireInteractive(message);
-    return this.settle(await clack.text({ message, placeholder: opts.placeholder, validate: (v) => opts.validate?.(v ?? "") }));
+    return this.settle<string>(await clack.text({ message, placeholder: opts.placeholder, validate: (v) => opts.validate?.(v ?? "") }));
   }
 
   async select<T extends string>(message: string, options: { value: T; label: string; hint?: string }[], initialValue?: T): Promise<T> {
     this.requireInteractive(message);
-    return this.settle(await clack.select({ message, options: options as clack.Option<T>[], initialValue }));
+    return this.settle<T>(await clack.select({ message, options: options as clack.Option<T>[], initialValue }));
   }
 
   async multiselect<T>(message: string, options: { value: T; label: string; hint?: string }[], initialValues: T[] = []): Promise<T[]> {
     this.requireInteractive(message);
-    return this.settle(
+    return this.settle<T[]>(
       await clack.autocompleteMultiselect({ message, options: options as clack.Option<T>[], initialValues, required: false }),
     );
   }

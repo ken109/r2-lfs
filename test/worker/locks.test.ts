@@ -135,9 +135,9 @@ const anonymousApp: Fetcher = async (input) =>
     ? new Response("{}", { status: 401 })
     : Response.json({ permissions: { push: true, pull: true } });
 
-describe("file locking (github mode)", () => {
-  const githubEnv = (): Env => ({ ...tokenEnv(), AUTH_MODE: "github", AUTH_TOKENS: "" });
+const githubEnv = (): Env => ({ ...tokenEnv(), AUTH_MODE: "github", AUTH_TOKENS: "" });
 
+describe("file locking (github mode)", () => {
   it("names locks by GitHub login and treats maintainers as admins", async () => {
     const repo = freshRepo();
     const octocat = github("octocat", { push: true, pull: true });

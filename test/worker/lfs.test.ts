@@ -546,16 +546,16 @@ const s3: Fetcher = async (input, init) => {
   return new Response("<CopyObjectResult/>");
 };
 
-describe("presigned transfers", () => {
-  const presignEnv = () =>
-    makeEnv({
-      TRANSFER_MODE: "auto",
-      R2_ACCOUNT_ID: "0123456789abcdef",
-      R2_BUCKET_NAME: "lfs-bucket",
-      R2_ACCESS_KEY_ID: "AKIDEXAMPLE",
-      R2_SECRET_ACCESS_KEY: "secret",
-    });
+const presignEnv = () =>
+  makeEnv({
+    TRANSFER_MODE: "auto",
+    R2_ACCOUNT_ID: "0123456789abcdef",
+    R2_BUCKET_NAME: "lfs-bucket",
+    R2_ACCESS_KEY_ID: "AKIDEXAMPLE",
+    R2_SECRET_ACCESS_KEY: "secret",
+  });
 
+describe("presigned transfers", () => {
   it("hands out signed R2 URLs for upload and keeps verify on the Worker", async () => {
     const object = await blob();
     const { objects } = await batch(presignEnv(), "/acme/app", "upload", [object]);
@@ -638,8 +638,9 @@ describe("presigned transfers", () => {
   });
 });
 
+const githubEnv = () => makeEnv({ AUTH_MODE: "github", AUTH_TOKENS: "" });
+
 describe("authentication (github mode)", () => {
-  const githubEnv = () => makeEnv({ AUTH_MODE: "github", AUTH_TOKENS: "" });
   const GH_TOKEN = "ghp_example";
 
   it("grants upload to collaborators with push access", async () => {
