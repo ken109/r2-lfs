@@ -301,6 +301,9 @@ deploy the new version.
 **If you deployed with `setup`**, run `npx r2-lfs@latest setup` again with the same options. It keeps the
 bucket, applies the rules again and deploys the Worker from the new package. Options you leave out go back
 to their defaults.
+Lifecycle rules that already exist are kept as they are, so a changed `--trash-days` does not apply to them;
+to change the days, delete the rule with `wrangler r2 bucket lifecycle remove` or edit it in the R2 dashboard,
+then run `setup` again.
 
 Either way, keep settings in `wrangler.jsonc` or the `setup` options rather than only in the dashboard:
 every deploy sets the Worker's variables from them. Secrets are kept.

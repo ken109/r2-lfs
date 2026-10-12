@@ -37,8 +37,11 @@ import { repoPrefix, type ServerInfo, type StorageLayout, TRASH_PREFIX } from ".
 
 export class SilentReporter implements Reporter {
   readonly warnings: string[] = [];
+  readonly infos: string[] = [];
   step(): void {}
-  info(): void {}
+  info(message: string): void {
+    this.infos.push(message);
+  }
   success(): void {}
   warn(message: string): void {
     this.warnings.push(message);
@@ -401,6 +404,11 @@ export class RecordingFiles implements Files {
 /** Wrangler logged in to one account, where the bucket already exists and deploys succeed. */
 export class FakeWrangler implements Wrangler {
   readonly runs: { args: string[]; cwd?: string }[] = [];
+  /** Answer a lifecycle rule that is already on the bucket the way wrangler does, instead of adding it again. */
+  rejectDuplicateLifecycleRules = false;
+  /** Fail every lifecycle add with this output. */
+  lifecycleError: string | undefined;
+  private readonly lifecycleRules = new Set<string>();
 
   whoami() {
     return { email: "me@example.com", accountId: "acc123" };
@@ -409,6 +417,14 @@ export class FakeWrangler implements Wrangler {
   run(args: string[], opts?: { input?: string; cwd?: string }) {
     this.runs.push({ args, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
     if (args[0] === "r2" && args[2] === "create") return { code: 1, output: "The bucket already exists" };
+    if (args[0] === "r2" && args[2] === "lifecycle") {
+      if (this.lifecycleError) return { code: 1, output: this.lifecycleError };
+      const rule = `${args[4]}/${args[5]}`;
+      if (this.rejectDuplicateLifecycleRules && this.lifecycleRules.has(rule)) {
+        return { code: 1, output: "Invalid Lifecycle Configuration: Rule IDs must be unique. [code: 10061]" };
+      }
+      this.lifecycleRules.add(rule);
+    }
     return { code: 0, output: args[0] === "deploy" ? "Deployed https://r2-lfs.me.workers.dev" : "" };
   }
 }

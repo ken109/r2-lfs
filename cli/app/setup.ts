@@ -117,6 +117,9 @@ function check(result: { code: number; output: string }, what: string, alreadyDo
   throw new UsageError(`${what} failed:\n${result.output.trim().split("\n").slice(-8).join("\n")}`);
 }
 
+// What wrangler answers when a lifecycle rule with that ID is already on the bucket (error code 10061).
+const LIFECYCLE_RULE_EXISTS = /Rule IDs must be unique/i;
+
 export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<SetupResult> {
   const { wrangler, files, reporter } = deps;
   if (opts.repos.length === 0) throw new UsageError("--repos is required, e.g. --repos 'my-name/*,my-org/assets'");
@@ -133,7 +136,7 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
   if (created === "existed") reporter.info(`Bucket ${opts.bucket} already exists; keeping it`);
 
   if (opts.trashDays > 0) {
-    await reporter.task(`Expiring ${TRASH_PREFIX} after ${opts.trashDays} days`, () =>
+    const trash = await reporter.task(`Expiring ${TRASH_PREFIX} after ${opts.trashDays} days`, () =>
       check(
         wrangler.run([
           "r2",
@@ -148,11 +151,15 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
           "--force",
         ]),
         "adding the trash lifecycle rule",
+        LIFECYCLE_RULE_EXISTS,
       ),
     );
+    if (trash === "existed") {
+      reporter.info(`The trash lifecycle rule already exists; keeping it as it is, so --trash-days does not change its number of days`);
+    }
   }
   // Presigned uploads that git-lfs never verified, and multipart uploads abandoned for longer than a resume would wait.
-  await reporter.task(`Expiring ${INCOMING_PREFIX} after 1 day`, () =>
+  const incoming = await reporter.task(`Expiring ${INCOMING_PREFIX} after 1 day`, () =>
     check(
       wrangler.run([
         "r2",
@@ -169,11 +176,16 @@ export async function setupServer(deps: SetupDeps, opts: SetupOptions): Promise<
         "--force",
       ]),
       "adding the incoming uploads lifecycle rule",
+      LIFECYCLE_RULE_EXISTS,
     ),
   );
+  if (incoming === "existed") reporter.info("The incoming uploads lifecycle rule already exists; keeping it as it is");
 
   const { prefixes, unlockable } = lockPrefixes(opts.layout, opts.repos);
   if (opts.lockDays > 0) {
+    // Unlike the lifecycle rules above, a lock rule that already exists is not tolerated: wrangler's wording for a
+    // duplicate lock ID has not been checked against a real bucket, so running setup twice may fail here.
+    // Check what `wrangler r2 bucket lock add` prints for an existing ID before adding it to `check`.
     if (unlockable.length > 0) {
       reporter.warn(`${unlockable.join(", ")} cannot be locked without also locking the trash or other owners; no lock rule for them`);
     }

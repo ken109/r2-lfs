@@ -61,4 +61,28 @@ describe("setup", () => {
     await expect(setupServer(f.deps, { ...base, repos: ["acme"] })).rejects.toThrow(/is not owner\/repo/);
     await expect(setupServer(f.deps, { ...base, repos: [] })).rejects.toThrow(/--repos is required/);
   });
+
+  it("runs twice with the same options: the second run keeps the existing lifecycle rules and still deploys", async () => {
+    const f = setupFakes();
+    f.deps.wrangler.rejectDuplicateLifecycleRules = true;
+    const first = await setupServer(f.deps, base);
+    expect(f.deps.reporter.infos.filter((m) => /lifecycle rule already exists/.test(m))).toEqual([]);
+
+    const second = await setupServer(f.deps, { ...base, trashDays: 7 });
+    expect(second).toEqual(first);
+    expect(f.runs.filter((r) => r.args[0] === "deploy")).toHaveLength(2);
+    expect(f.deps.reporter.infos).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/trash lifecycle rule already exists.*--trash-days does not change/),
+        expect.stringMatching(/incoming uploads lifecycle rule already exists/),
+      ]),
+    );
+  });
+
+  it("does not swallow other lifecycle failures", async () => {
+    const f = setupFakes();
+    f.deps.wrangler.lifecycleError = "Authentication error [code: 10000]";
+    await expect(setupServer(f.deps, base)).rejects.toThrow(/adding the trash lifecycle rule failed:\nAuthentication error/);
+    expect(f.runs.some((r) => r.args[0] === "deploy")).toBe(false);
+  });
 });
