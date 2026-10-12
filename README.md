@@ -305,6 +305,20 @@ Lifecycle rules that already exist are kept as they are, so a changed `--trash-d
 to change the days, delete the rule with `wrangler r2 bucket lifecycle remove` or edit it in the R2 dashboard,
 then run `setup` again.
 
+**To deploy every push automatically after `setup`**, connect the Worker to this repository, or to your
+fork, with Workers Builds: _Workers & Pages > your Worker > Settings > Builds > Connect_, branch `main`.
+Connecting does not start a build; the first one runs at the next push, or when you retry a build in the
+dashboard. A build that fails leaves the running Worker as it is. Set:
+
+- Build command: `pnpm build`
+- Deploy command: `pnpm exec wrangler deploy --var ALLOWED_REPOS:'my-name/*'`, with one more `--var NAME:value`
+  for each other variable you set, such as `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` and `R2_ACCOUNT_ID`
+
+`wrangler.jsonc` in this repository leaves those variables empty, and every deploy sets the Worker's
+variables from it. Without the `--var` options the first build would put the empty values back, and the
+server would serve no repository. `--var` takes precedence over `wrangler.jsonc`. Workers Builds runs the
+commands as typed, so `vite build` alone fails with `vite: not found`; use the `pnpm` forms above.
+
 Either way, keep settings in `wrangler.jsonc` or the `setup` options rather than only in the dashboard:
 every deploy sets the Worker's variables from them. Secrets are kept.
 
